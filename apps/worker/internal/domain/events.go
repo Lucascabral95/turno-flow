@@ -1,0 +1,72 @@
+package domain
+
+import (
+	"encoding/json"
+	"time"
+)
+
+const (
+	EventAppointmentCreated      = "appointment.created.v1"
+	EventAppointmentCancelled    = "appointment.cancelled.v1"
+	EventAppointmentMarkedNoShow = "appointment.marked_no_show.v1"
+	EventWaitlistOfferCreated    = "waitlist.offer_created.v1"
+)
+
+type Event struct {
+	AggregateID string          `json:"aggregateId"`
+	BusinessID  string          `json:"businessId"`
+	EventID     string          `json:"eventId"`
+	OccurredAt  time.Time       `json:"occurredAt"`
+	Payload     json.RawMessage `json:"payload"`
+	Type        string          `json:"type"`
+	Version     int             `json:"version"`
+}
+
+type AppointmentPayload struct {
+	AppointmentID     string    `json:"appointmentId"`
+	BusinessID        string    `json:"businessId"`
+	CancellationToken string    `json:"cancellationToken"`
+	Customer          Customer  `json:"customer"`
+	EndsAt            time.Time `json:"endsAt"`
+	Service           Service   `json:"service"`
+	StaffMember       Staff     `json:"staffMember"`
+	StartsAt          time.Time `json:"startsAt"`
+	Status            string    `json:"status"`
+}
+
+type Customer struct {
+	Email       string  `json:"email"`
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	NoShowCount int     `json:"noShowCount"`
+	Phone       *string `json:"phone"`
+}
+
+type Service struct {
+	DurationMinutes int    `json:"durationMinutes"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	PriceCents      int    `json:"priceCents"`
+}
+
+type Staff struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type WaitlistCandidate struct {
+	CustomerEmail string
+	CustomerName  string
+	EntryID       string
+	NoShowCount   int
+}
+
+type ReminderAppointment struct {
+	AppointmentID     string
+	BusinessID        string
+	CancellationToken string
+	CustomerEmail     string
+	CustomerName      string
+	ServiceName       string
+	StartsAt          time.Time
+}

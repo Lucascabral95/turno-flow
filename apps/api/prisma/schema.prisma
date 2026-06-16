@@ -1,0 +1,283 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AppointmentStatus {
+  PENDING               @map("pending")
+  CONFIRMED             @map("confirmed")
+  CANCELLED_BY_CUSTOMER @map("cancelled_by_customer")
+  CANCELLED_BY_BUSINESS @map("cancelled_by_business")
+  COMPLETED             @map("completed")
+  NO_SHOW               @map("no_show")
+
+  @@map("appointment_status")
+}
+
+enum WaitlistStatus {
+  WAITING   @map("waiting")
+  OFFERED   @map("offered")
+  BOOKED    @map("booked")
+  EXPIRED   @map("expired")
+  CANCELLED @map("cancelled")
+
+  @@map("waitlist_status")
+}
+
+enum WaitlistOfferStatus {
+  PENDING  @map("pending")
+  ACCEPTED @map("accepted")
+  EXPIRED  @map("expired")
+
+  @@map("waitlist_offer_status")
+}
+
+enum NotificationStatus {
+  PENDING @map("pending")
+  SENT    @map("sent")
+  FAILED  @map("failed")
+
+  @@map("notification_status")
+}
+
+enum EventOutboxStatus {
+  PENDING   @map("pending")
+  PUBLISHED @map("published")
+  FAILED    @map("failed")
+
+  @@map("event_outbox_status")
+}
+
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  email        String     @unique
+  passwordHash String     @map("password_hash")
+  name         String
+  businesses   Business[]
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+model Business {
+  id                String             @id @default(uuid()) @db.Uuid
+  ownerId           String             @map("owner_id") @db.Uuid
+  owner             User               @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name              String
+  slug              String             @unique
+  timezone          String             @default("America/Argentina/Buenos_Aires")
+  email             String?
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  services          Service[]
+  staffMembers      StaffMember[]
+  availabilityRules AvailabilityRule[]
+  customers         Customer[]
+  appointments      Appointment[]
+  waitlistEntries   WaitlistEntry[]
+  notificationLogs  NotificationLog[]
+  appointmentEvents AppointmentEvent[]
+  eventOutbox       EventOutbox[]
+
+  @@map("businesses")
+}
+
+model StaffMember {
+  id                String             @id @default(uuid()) @db.Uuid
+  businessId        String             @map("business_id") @db.Uuid
+  business          Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name              String
+  email             String?
+  active            Boolean            @default(true)
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  appointments      Appointment[]
+  availabilityRules AvailabilityRule[]
+
+  @@index([businessId])
+  @@map("staff_members")
+}
+
+model Service {
+  id              String           @id @default(uuid()) @db.Uuid
+  businessId      String           @map("business_id") @db.Uuid
+  business        Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name            String
+  durationMinutes Int              @map("duration_minutes")
+  priceCents      Int              @default(0) @map("price_cents")
+  bufferMinutes   Int              @default(0) @map("buffer_minutes")
+  active          Boolean          @default(true)
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  appointments    Appointment[]
+  waitlistEntries WaitlistEntry[]
+
+  @@index([businessId])
+  @@map("services")
+}
+
+model AvailabilityRule {
+  id            String      @id @default(uuid()) @db.Uuid
+  businessId    String      @map("business_id") @db.Uuid
+  business      Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  staffMemberId String      @map("staff_member_id") @db.Uuid
+  staffMember   StaffMember @relation(fields: [staffMemberId], references: [id], onDelete: Cascade)
+  weekday       Int
+  startTime     String      @map("start_time")
+  endTime       String      @map("end_time")
+  active        Boolean     @default(true)
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  @@index([businessId, weekday])
+  @@map("availability_rules")
+}
+
+model Customer {
+  id                String           @id @default(uuid()) @db.Uuid
+  businessId        String           @map("business_id") @db.Uuid
+  business          Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name              String
+  email             String
+  phone             String?
+  noShowCount       Int              @default(0) @map("no_show_count")
+  totalAppointments Int              @default(0) @map("total_appointments")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+  appointments      Appointment[]
+  waitlistEntries   WaitlistEntry[]
+
+  @@unique([businessId, email])
+  @@map("customers")
+}
+
+model Appointment {
+  id                String             @id @default(uuid()) @db.Uuid
+  businessId        String             @map("business_id") @db.Uuid
+  business          Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  serviceId         String             @map("service_id") @db.Uuid
+  service           Service            @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  staffMemberId     String             @map("staff_member_id") @db.Uuid
+  staffMember       StaffMember        @relation(fields: [staffMemberId], references: [id], onDelete: Restrict)
+  customerId        String             @map("customer_id") @db.Uuid
+  customer          Customer           @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  startsAt          DateTime           @map("starts_at") @db.Timestamptz(3)
+  endsAt            DateTime           @map("ends_at") @db.Timestamptz(3)
+  status            AppointmentStatus  @default(CONFIRMED)
+  cancellationToken String             @unique @map("cancellation_token")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  notificationLogs  NotificationLog[]
+  appointmentEvents AppointmentEvent[]
+  waitlistOffers    WaitlistOffer[]
+
+  @@index([businessId, startsAt])
+  @@index([staffMemberId, startsAt])
+  @@map("appointments")
+}
+
+model WaitlistEntry {
+  id                 String              @id @default(uuid()) @db.Uuid
+  businessId         String              @map("business_id") @db.Uuid
+  business           Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  serviceId          String              @map("service_id") @db.Uuid
+  service            Service             @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  customerId         String              @map("customer_id") @db.Uuid
+  customer           Customer            @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  preferredDateStart DateTime            @map("preferred_date_start") @db.Date
+  preferredDateEnd   DateTime            @map("preferred_date_end") @db.Date
+  earliestTime       String?             @map("earliest_time")
+  latestTime         String?             @map("latest_time")
+  status             WaitlistStatus      @default(WAITING)
+  priorityScore      Int                 @default(0) @map("priority_score")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  offers             WaitlistOffer[]
+  notificationLogs   NotificationLog[]
+
+  @@index([businessId, serviceId, status])
+  @@map("waitlist_entries")
+}
+
+model WaitlistOffer {
+  id              String              @id @default(uuid()) @db.Uuid
+  waitlistEntryId String              @map("waitlist_entry_id") @db.Uuid
+  waitlistEntry   WaitlistEntry       @relation(fields: [waitlistEntryId], references: [id], onDelete: Cascade)
+  appointmentId   String              @map("appointment_id") @db.Uuid
+  appointment     Appointment         @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  token           String              @unique
+  status          WaitlistOfferStatus @default(PENDING)
+  expiresAt       DateTime            @map("expires_at") @db.Timestamptz(3)
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+
+  @@index([status, expiresAt])
+  @@map("waitlist_offers")
+}
+
+model NotificationLog {
+  id              String             @id @default(uuid()) @db.Uuid
+  businessId      String             @map("business_id") @db.Uuid
+  business        Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  appointmentId   String?            @map("appointment_id") @db.Uuid
+  appointment     Appointment?       @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  waitlistEntryId String?            @map("waitlist_entry_id") @db.Uuid
+  waitlistEntry   WaitlistEntry?     @relation(fields: [waitlistEntryId], references: [id], onDelete: SetNull)
+  email           String
+  template        String
+  status          NotificationStatus @default(PENDING)
+  attempts        Int                @default(0)
+  lastError       String?            @map("last_error")
+  sentAt          DateTime?          @map("sent_at") @db.Timestamptz(3)
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+
+  @@index([businessId, status])
+  @@map("notification_logs")
+}
+
+model AppointmentEvent {
+  id            String      @id @default(uuid()) @db.Uuid
+  businessId    String      @map("business_id") @db.Uuid
+  business      Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  appointmentId String      @map("appointment_id") @db.Uuid
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  eventType     String      @map("event_type")
+  metadata      Json
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  @@index([businessId, appointmentId])
+  @@map("appointment_events")
+}
+
+model EventOutbox {
+  id          String            @id @default(uuid()) @db.Uuid
+  type        String
+  version     Int
+  businessId  String            @map("business_id") @db.Uuid
+  business    Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  aggregateId String            @map("aggregate_id") @db.Uuid
+  payload     Json
+  status      EventOutboxStatus @default(PENDING)
+  attempts    Int               @default(0)
+  lastError   String?           @map("last_error")
+  publishedAt DateTime?         @map("published_at") @db.Timestamptz(3)
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+
+  @@index([status, createdAt])
+  @@map("event_outbox")
+}
+
+model ProcessedEvent {
+  eventId     String   @id @map("event_id") @db.Uuid
+  type        String
+  processedAt DateTime @default(now()) @map("processed_at") @db.Timestamptz(3)
+
+  @@map("processed_events")
+}

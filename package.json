@@ -1,0 +1,20 @@
+{
+  "name": "turnoflow",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
+  "scripts": {
+    "build": "npm --workspaces run build",
+    "dev": "npm --workspaces run dev",
+    "lint": "npm --workspaces run lint",
+    "test": "npm --workspaces run test",
+    "typecheck": "npm --workspaces run typecheck"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}

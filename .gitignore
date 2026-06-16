@@ -1,0 +1,16 @@
+node_modules
+.next
+dist
+coverage
+.env
+.env.local
+.env.*.local
+.cache
+.turbo
+tmp
+*.log
+*.tsbuildinfo
+apps/api/generated
+apps/api/prisma/migrations/*/migration_lock.toml
+apps/worker/bin
+apps/worker/worker.exe
