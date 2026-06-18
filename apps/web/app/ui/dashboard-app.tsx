@@ -2,29 +2,30 @@
 
 import {
   CalendarClock,
+  CalendarDays,
   CheckCircle2,
   ClipboardList,
+  Clock,
   LogIn,
   RefreshCcw,
   Scissors,
+  Settings2,
   UserPlus,
   Users
 } from "lucide-react";
 import Link from "next/link";
 import type { FormEvent, ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import type { Appointment, CurrentBusiness, DashboardMetrics } from "../../lib/api";
-import {
-  formatDateTime,
-  formatMoney,
-  requestJson
-} from "../../lib/api";
+import type { Appointment, AvailabilitySlot, CurrentBusiness, DashboardMetrics } from "../../lib/api";
+import { formatDateTime, formatMoney, requestJson } from "../../lib/api";
 import { formNumber, formString } from "../../lib/form";
 
 type AuthMode = "login" | "register";
+type DashboardView = "setup" | "schedule" | "appointments";
 
 export function DashboardApp() {
+  const [activeView, setActiveView] = useState<DashboardView>("setup");
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [business, setBusiness] = useState<CurrentBusiness | null>(null);
@@ -167,6 +168,19 @@ export function DashboardApp() {
     });
   }
 
+  async function handleAvailabilityException(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    await submitAndRefresh(event.currentTarget, "/availability-exceptions", {
+      date: formString(formData, "date"),
+      endTime: formString(formData, "endTime"),
+      reason: formString(formData, "reason") || undefined,
+      staffMemberId: formString(formData, "staffMemberId") || undefined,
+      startTime: formString(formData, "startTime"),
+      type: formString(formData, "type", "BLOCKED")
+    });
+  }
+
   async function submitAndRefresh(form: HTMLFormElement, path: string, payload: unknown) {
     setError(null);
     try {
@@ -211,9 +225,14 @@ export function DashboardApp() {
         </div>
         <div className="inline">
           {business ? (
-            <Link className="button-link button-secondary" href={`/${business.slug}`}>
-              Pagina publica
-            </Link>
+            <>
+              <Link className="button-link button-secondary" href={`/${business.slug}`}>
+                Pagina publica
+              </Link>
+              <Link className="button-link button-secondary" href={`/${business.slug}/book`}>
+                Reservar
+              </Link>
+            </>
           ) : null}
           {token ? (
             <>
@@ -232,71 +251,232 @@ export function DashboardApp() {
       {error ? <div className="error">{error}</div> : null}
 
       {!token ? (
-        <section className="layout-grid">
-          <form className="panel stack" onSubmit={(event) => void handleAuth(event)}>
-            <h2>{authMode === "login" ? "Entrar" : "Crear usuario"}</h2>
-            {authMode === "register" ? (
-              <label>
-                Nombre
-                <input name="name" required />
-              </label>
-            ) : null}
-            <label>
-              Email
-              <input name="email" required type="email" />
-            </label>
-            <label>
-              Password
-              <input minLength={8} name="password" required type="password" />
-            </label>
-            <button className="button-primary" type="submit">
-              {authMode === "login" ? <LogIn size={18} /> : <UserPlus size={18} />}
-              {authMode === "login" ? "Entrar" : "Registrarme"}
-            </button>
-            <button
-              className="button-muted"
-              onClick={() => setAuthMode(authMode === "login" ? "register" : "login")}
-              type="button"
-            >
-              {authMode === "login" ? "Crear cuenta" : "Ya tengo cuenta"}
-            </button>
-          </form>
-          <section className="panel stack">
-            <h2>Demo local</h2>
-            <p>Despues de correr `make db-seed`, podes entrar con:</p>
-            <div className="message">lucas@turnoflow.local / turnoflow123</div>
-          </section>
-        </section>
+        <AuthView authMode={authMode} onAuthMode={setAuthMode} onSubmit={(event) => void handleAuth(event)} />
       ) : (
-        <section className="layout-grid">
-          <aside className="stack">
-            <BusinessPanel business={business} onSubmit={(event) => void handleBusiness(event)} />
-            {business ? (
-              <>
-                <ServicePanel onSubmit={(event) => void handleService(event)} />
-                <StaffPanel onSubmit={(event) => void handleStaff(event)} />
-                <AvailabilityPanel business={business} onSubmit={(event) => void handleAvailability(event)} />
-              </>
-            ) : null}
-          </aside>
-
-          <section className="stack">
-            <MetricsPanel metrics={metrics} />
-            <InventoryPanel business={business} />
-            <AppointmentsPanel
+        <>
+          <DashboardTabs activeView={activeView} onChange={setActiveView} />
+          {activeView === "setup" ? (
+            <SetupView
+              business={business}
+              onBusinessSubmit={(event) => void handleBusiness(event)}
+              onServiceSubmit={(event) => void handleService(event)}
+              onStaffSubmit={(event) => void handleStaff(event)}
+            />
+          ) : null}
+          {activeView === "schedule" ? (
+            <ScheduleView
+              business={business}
+              onAvailabilityExceptionSubmit={(event) => void handleAvailabilityException(event)}
+              onAvailabilitySubmit={(event) => void handleAvailability(event)}
+            />
+          ) : null}
+          {activeView === "appointments" ? (
+            <AppointmentsView
               appointments={appointments}
+              business={business}
+              metrics={metrics}
               onStatus={(appointmentId, status) => {
                 void updateAppointmentStatus(appointmentId, status);
               }}
             />
-          </section>
-        </section>
+          ) : null}
+        </>
       )}
     </main>
   );
 }
 
-function BusinessPanel({ business, onSubmit }: { business: CurrentBusiness | null; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+function AuthView({
+  authMode,
+  onAuthMode,
+  onSubmit
+}: {
+  authMode: AuthMode;
+  onAuthMode: (mode: AuthMode) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <section className="layout-grid">
+      <form className="panel stack" onSubmit={onSubmit}>
+        <h2>{authMode === "login" ? "Entrar" : "Crear usuario"}</h2>
+        {authMode === "register" ? (
+          <label>
+            Nombre
+            <input name="name" required />
+          </label>
+        ) : null}
+        <label>
+          Email
+          <input name="email" required type="email" />
+        </label>
+        <label>
+          Password
+          <input minLength={8} name="password" required type="password" />
+        </label>
+        <button className="button-primary" type="submit">
+          {authMode === "login" ? <LogIn size={18} /> : <UserPlus size={18} />}
+          {authMode === "login" ? "Entrar" : "Registrarme"}
+        </button>
+        <button
+          className="button-muted"
+          onClick={() => onAuthMode(authMode === "login" ? "register" : "login")}
+          type="button"
+        >
+          {authMode === "login" ? "Crear cuenta" : "Ya tengo cuenta"}
+        </button>
+      </form>
+      <section className="panel stack">
+        <h2>Demo local</h2>
+        <p>Despues de correr `make db-seed`, podes entrar con:</p>
+        <div className="message">lucas@turnoflow.local / turnoflow123</div>
+      </section>
+    </section>
+  );
+}
+
+function DashboardTabs({
+  activeView,
+  onChange
+}: {
+  activeView: DashboardView;
+  onChange: (view: DashboardView) => void;
+}) {
+  return (
+    <nav className="tabbar" aria-label="Dashboard">
+      <TabButton active={activeView === "setup"} icon={<Settings2 size={18} />} label="Configuracion" onClick={() => onChange("setup")} />
+      <TabButton
+        active={activeView === "schedule"}
+        icon={<CalendarDays size={18} />}
+        label="Disponibilidad"
+        onClick={() => onChange("schedule")}
+      />
+      <TabButton
+        active={activeView === "appointments"}
+        icon={<ClipboardList size={18} />}
+        label="Turnos"
+        onClick={() => onChange("appointments")}
+      />
+    </nav>
+  );
+}
+
+function TabButton({
+  active,
+  icon,
+  label,
+  onClick
+}: {
+  active: boolean;
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button aria-pressed={active} className="tab-button" onClick={onClick} type="button">
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function SetupView({
+  business,
+  onBusinessSubmit,
+  onServiceSubmit,
+  onStaffSubmit
+}: {
+  business: CurrentBusiness | null;
+  onBusinessSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onServiceSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onStaffSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <section className="layout-grid">
+      <aside className="stack">
+        <BusinessPanel business={business} onSubmit={onBusinessSubmit} />
+        {business ? (
+          <>
+            <ServicePanel onSubmit={onServiceSubmit} />
+            <StaffPanel onSubmit={onStaffSubmit} />
+          </>
+        ) : null}
+      </aside>
+      <section className="stack">
+        <InventoryPanel business={business} />
+      </section>
+    </section>
+  );
+}
+
+function ScheduleView({
+  business,
+  onAvailabilityExceptionSubmit,
+  onAvailabilitySubmit
+}: {
+  business: CurrentBusiness | null;
+  onAvailabilityExceptionSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onAvailabilitySubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  if (!business) {
+    return <div className="message">Configura tu negocio para cargar servicios, staff y disponibilidad.</div>;
+  }
+
+  return (
+    <section className="layout-grid">
+      <aside className="stack">
+        <AvailabilityPanel business={business} onSubmit={onAvailabilitySubmit} />
+        <AvailabilityExceptionPanel business={business} onSubmit={onAvailabilityExceptionSubmit} />
+      </aside>
+      <section className="stack">
+        <SchedulePreview business={business} />
+        <section className="grid-2">
+          <InventoryList
+            icon={<CalendarClock size={18} />}
+            title="Reglas semanales"
+            values={business.availabilityRules.map((rule) => `${weekdayName(rule.weekday)} ${rule.startTime}-${rule.endTime}`)}
+          />
+          <InventoryList
+            icon={<Clock size={18} />}
+            title="Excepciones"
+            values={business.availabilityExceptions.map((exception) => {
+              const staff = business.staffMembers.find((staffMember) => staffMember.id === exception.staffMemberId);
+              const scope = staff ? staff.name : "Todos";
+              return `${formatDateOnly(exception.date)} ${exception.startTime}-${exception.endTime} ${scope} ${exception.type}`;
+            })}
+          />
+        </section>
+      </section>
+    </section>
+  );
+}
+
+function AppointmentsView({
+  appointments,
+  business,
+  metrics,
+  onStatus
+}: {
+  appointments: Appointment[];
+  business: CurrentBusiness | null;
+  metrics: DashboardMetrics | null;
+  onStatus: (appointmentId: string, status: "completed" | "no_show" | "cancelled_by_business") => void;
+}) {
+  return (
+    <section className="stack">
+      <MetricsPanel metrics={metrics} />
+      <InventoryPanel business={business} />
+      <AppointmentsPanel appointments={appointments} onStatus={onStatus} />
+    </section>
+  );
+}
+
+function BusinessPanel({
+  business,
+  onSubmit
+}: {
+  business: CurrentBusiness | null;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
   return (
     <form className="panel stack" onSubmit={onSubmit}>
       <h2>{business ? "Negocio" : "Configurar negocio"}</h2>
@@ -383,19 +563,19 @@ function AvailabilityPanel({
   business: CurrentBusiness;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
+  const activeStaffMembers = business.staffMembers.filter((staffMember) => staffMember.active);
+
   return (
     <form className="panel stack" onSubmit={onSubmit}>
       <h3>Nueva disponibilidad</h3>
       <label>
         Staff
         <select name="staffMemberId" required>
-          {business.staffMembers
-            .filter((staffMember) => staffMember.active)
-            .map((staffMember) => (
-              <option key={staffMember.id} value={staffMember.id}>
-                {staffMember.name}
-              </option>
-            ))}
+          {activeStaffMembers.map((staffMember) => (
+            <option key={staffMember.id} value={staffMember.id}>
+              {staffMember.name}
+            </option>
+          ))}
         </select>
       </label>
       <div className="grid-3">
@@ -420,11 +600,152 @@ function AvailabilityPanel({
           <input defaultValue="18:00" name="endTime" required type="time" />
         </label>
       </div>
-      <button className="button-primary" type="submit">
+      <button className="button-primary" disabled={activeStaffMembers.length === 0} type="submit">
         <CalendarClock size={18} />
         Agregar disponibilidad
       </button>
     </form>
+  );
+}
+
+function AvailabilityExceptionPanel({
+  business,
+  onSubmit
+}: {
+  business: CurrentBusiness;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  const activeStaffMembers = business.staffMembers.filter((staffMember) => staffMember.active);
+
+  return (
+    <form className="panel stack" onSubmit={onSubmit}>
+      <h3>Nueva excepcion</h3>
+      <label>
+        Tipo
+        <select defaultValue="BLOCKED" name="type">
+          <option value="BLOCKED">Bloqueo</option>
+          <option value="EXTRA_OPENING">Apertura extra</option>
+        </select>
+      </label>
+      <label>
+        Staff
+        <select name="staffMemberId">
+          <option value="">Todos</option>
+          {activeStaffMembers.map((staffMember) => (
+            <option key={staffMember.id} value={staffMember.id}>
+              {staffMember.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="grid-3">
+        <label>
+          Fecha
+          <input defaultValue={new Date().toISOString().slice(0, 10)} name="date" required type="date" />
+        </label>
+        <label>
+          Desde
+          <input defaultValue="09:00" name="startTime" required type="time" />
+        </label>
+        <label>
+          Hasta
+          <input defaultValue="10:00" name="endTime" required type="time" />
+        </label>
+      </div>
+      <label>
+        Motivo
+        <input name="reason" placeholder="Feriado, capacitacion, apertura especial" />
+      </label>
+      <button className="button-primary" type="submit">
+        <Clock size={18} />
+        Agregar excepcion
+      </button>
+    </form>
+  );
+}
+
+function SchedulePreview({ business }: { business: CurrentBusiness }) {
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [error, setError] = useState<string | null>(null);
+  const [selectedServiceId, setSelectedServiceId] = useState(business.services[0]?.id ?? "");
+  const [slots, setSlots] = useState<AvailabilitySlot[]>([]);
+
+  const selectedService = useMemo(
+    () => business.services.find((service) => service.id === selectedServiceId) ?? null,
+    [business.services, selectedServiceId]
+  );
+
+  useEffect(() => {
+    setSelectedServiceId((currentServiceId) => currentServiceId || business.services[0]?.id || "");
+  }, [business.services]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadAvailability() {
+      if (!selectedServiceId) {
+        setSlots([]);
+        return;
+      }
+
+      setError(null);
+      try {
+        const slotResponse = await requestJson<AvailabilitySlot[]>(
+          `/public/businesses/${business.slug}/availability?serviceId=${selectedServiceId}&date=${date}`
+        );
+
+        if (active) {
+          setSlots(slotResponse);
+        }
+      } catch (availabilityError) {
+        if (active) {
+          setSlots([]);
+          setError(availabilityError instanceof Error ? availabilityError.message : "No se pudo cargar disponibilidad");
+        }
+      }
+    }
+
+    void loadAvailability();
+
+    return () => {
+      active = false;
+    };
+  }, [business.slug, date, selectedServiceId]);
+
+  return (
+    <section className="panel stack">
+      <h2 className="inline">
+        <CalendarDays size={20} />
+        Preview agenda
+      </h2>
+      <div className="grid-2">
+        <label>
+          Servicio
+          <select value={selectedServiceId} onChange={(event) => setSelectedServiceId(event.target.value)}>
+            {business.services.map((service) => (
+              <option key={service.id} value={service.id}>
+                {service.name} - {service.durationMinutes} min
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Dia
+          <input value={date} onChange={(event) => setDate(event.target.value)} type="date" />
+        </label>
+      </div>
+      {selectedService ? <div className="message">{selectedService.name}: {formatMoney(selectedService.priceCents)}</div> : null}
+      {error ? <div className="error">{error}</div> : null}
+      <div className="slot-grid">
+        {slots.map((slot) => (
+          <div className="slot-chip" key={`${slot.staffMemberId}-${slot.startsAt}`}>
+            <Clock size={16} />
+            {new Date(slot.startsAt).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}
+          </div>
+        ))}
+      </div>
+      {slots.length === 0 ? <div className="message">No hay horarios visibles para ese dia.</div> : null}
+    </section>
   );
 }
 
@@ -545,4 +866,8 @@ function statusClass(status: Appointment["status"]): string {
 
 function weekdayName(weekday: number): string {
   return ["Dom", "Lun", "Mar", "Mie", "Jue", "Vie", "Sab"][weekday] ?? "Dia";
+}
+
+function formatDateOnly(value: string): string {
+  return value.slice(0, 10);
 }

@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 
-import type { EventType } from "./event-types";
+import type { EventRoutingKey, EventType } from "./event-types";
 
 type TransactionClient = Prisma.TransactionClient;
 
@@ -14,6 +14,7 @@ export class OutboxService {
       version: number;
       businessId: string;
       aggregateId: string;
+      routingKey: EventRoutingKey;
       payload: Prisma.InputJsonValue;
     }
   ): Promise<void> {
@@ -22,6 +23,7 @@ export class OutboxService {
         aggregateId: input.aggregateId,
         businessId: input.businessId,
         payload: input.payload,
+        routingKey: input.routingKey,
         type: input.type,
         version: input.version
       }

@@ -5,7 +5,7 @@ import type { AuthenticatedUser } from "../common/authenticated-user";
 import { createPublicToken } from "../common/tokens";
 import { dateOnly, parseDateOnly, weekdayUtc } from "../common/time";
 import { BusinessesService } from "../businesses/businesses.service";
-import { EventTypes } from "../events/event-types";
+import { EventRoutingKeys, EventTypes } from "../events/event-types";
 import { OutboxService } from "../events/outbox.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { activeAppointmentStatuses, fromPrismaAppointmentStatus, toPrismaAppointmentStatus } from "./status";
@@ -80,7 +80,11 @@ export class AppointmentsService {
     const nextDate = new Date(requestedDate);
     nextDate.setUTCDate(nextDate.getUTCDate() + 1);
 
-    const [rules, busySlots] = await Promise.all([
+    const [activeStaffMembers, rules, exceptions, busySlots] = await Promise.all([
+      this.prisma.staffMember.findMany({
+        select: { id: true },
+        where: { active: true, businessId: business.id }
+      }),
       this.prisma.availabilityRule.findMany({
         select: {
           endTime: true,
@@ -92,6 +96,19 @@ export class AppointmentsService {
           businessId: business.id,
           staffMember: { active: true },
           weekday: weekdayUtc(requestedDate)
+        }
+      }),
+      this.prisma.availabilityException.findMany({
+        select: {
+          endTime: true,
+          staffMemberId: true,
+          startTime: true,
+          type: true
+        },
+        where: {
+          businessId: business.id,
+          date: requestedDate,
+          OR: [{ staffMemberId: null }, { staffMember: { active: true } }]
         }
       }),
       this.prisma.appointment.findMany({
@@ -110,10 +127,12 @@ export class AppointmentsService {
     ]);
 
     return calculateAvailability({
+      activeStaffMemberIds: activeStaffMembers.map((staffMember) => staffMember.id),
       bufferMinutes: service.bufferMinutes,
       busySlots,
       date,
       durationMinutes: service.durationMinutes,
+      exceptions,
       rules
     });
   }
@@ -174,6 +193,7 @@ export class AppointmentsService {
         aggregateId: appointment.id,
         businessId: appointment.businessId,
         payload: this.appointmentPayload(updatedAppointment),
+        routingKey: EventRoutingKeys.AppointmentCancelled,
         type: EventTypes.AppointmentCancelled,
         version: 1
       });
@@ -201,24 +221,42 @@ export class AppointmentsService {
       throw new ConflictException("Preferred date range is invalid");
     }
 
-    const customer = await this.upsertCustomer(this.prisma, {
-      businessId: business.id,
-      email: input.customerEmail,
-      name: input.customerName,
-      phone: input.customerPhone
-    });
-
-    return this.prisma.waitlistEntry.create({
-      data: {
+    return this.prisma.$transaction(async (tx) => {
+      const customer = await this.upsertCustomer(tx, {
         businessId: business.id,
-        customerId: customer.id,
-        earliestTime: input.earliestTime,
-        latestTime: input.latestTime,
-        preferredDateEnd,
-        preferredDateStart,
-        priorityScore: Math.max(0, 10 - customer.noShowCount * 2),
-        serviceId: service.id
-      }
+        email: input.customerEmail,
+        name: input.customerName,
+        phone: input.customerPhone
+      });
+
+      const entry = await tx.waitlistEntry.create({
+        data: {
+          businessId: business.id,
+          customerId: customer.id,
+          earliestTime: input.earliestTime,
+          latestTime: input.latestTime,
+          preferredDateEnd,
+          preferredDateStart,
+          priorityScore: Math.max(0, 10 - customer.noShowCount * 2),
+          serviceId: service.id
+        }
+      });
+
+      await this.outbox.create(tx, {
+        aggregateId: entry.id,
+        businessId: business.id,
+        payload: {
+          businessId: business.id,
+          customerId: customer.id,
+          serviceId: service.id,
+          waitlistEntryId: entry.id
+        },
+        routingKey: EventRoutingKeys.WaitlistEntryCreated,
+        type: EventTypes.WaitlistEntryCreated,
+        version: 1
+      });
+
+      return entry;
     });
   }
 
@@ -308,6 +346,7 @@ export class AppointmentsService {
           aggregateId: appointment.id,
           businessId: business.id,
           payload: this.appointmentPayload(updated),
+          routingKey: EventRoutingKeys.AppointmentMarkedNoShow,
           type: EventTypes.AppointmentMarkedNoShow,
           version: 1
         });
@@ -318,6 +357,7 @@ export class AppointmentsService {
           aggregateId: appointment.id,
           businessId: business.id,
           payload: this.appointmentPayload(updated),
+          routingKey: EventRoutingKeys.AppointmentCancelled,
           type: EventTypes.AppointmentCancelled,
           version: 1
         });
@@ -393,7 +433,7 @@ export class AppointmentsService {
           data: {
             appointmentId: appointment.id,
             businessId: input.businessId,
-            eventType: EventTypes.AppointmentCreated,
+            eventType: EventTypes.AppointmentBooked,
             metadata: { source: input.waitlistOfferId ? "waitlist_offer" : "public_booking" }
           }
         });
@@ -402,7 +442,8 @@ export class AppointmentsService {
           aggregateId: appointment.id,
           businessId: input.businessId,
           payload: this.appointmentPayload(appointment),
-          type: EventTypes.AppointmentCreated,
+          routingKey: EventRoutingKeys.AppointmentBooked,
+          type: EventTypes.AppointmentBooked,
           version: 1
         });
 
@@ -482,7 +523,11 @@ export class AppointmentsService {
     nextDate.setUTCDate(nextDate.getUTCDate() + 1);
     const service = await tx.service.findUniqueOrThrow({ where: { id: serviceId } });
 
-    const [rules, busySlots] = await Promise.all([
+    const [activeStaffMembers, rules, exceptions, busySlots] = await Promise.all([
+      tx.staffMember.findMany({
+        select: { id: true },
+        where: { active: true, businessId }
+      }),
       tx.availabilityRule.findMany({
         select: {
           endTime: true,
@@ -494,6 +539,19 @@ export class AppointmentsService {
           businessId,
           staffMember: { active: true },
           weekday: weekdayUtc(requestedDate)
+        }
+      }),
+      tx.availabilityException.findMany({
+        select: {
+          endTime: true,
+          staffMemberId: true,
+          startTime: true,
+          type: true
+        },
+        where: {
+          businessId,
+          date: requestedDate,
+          OR: [{ staffMemberId: null }, { staffMember: { active: true } }]
         }
       }),
       tx.appointment.findMany({
@@ -512,10 +570,12 @@ export class AppointmentsService {
     ]);
 
     return calculateAvailability({
+      activeStaffMemberIds: activeStaffMembers.map((staffMember) => staffMember.id),
       bufferMinutes: service.bufferMinutes,
       busySlots,
       date,
       durationMinutes: service.durationMinutes,
+      exceptions,
       rules
     });
   }

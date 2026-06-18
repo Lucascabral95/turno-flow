@@ -4,6 +4,7 @@ import type { AuthenticatedUser } from "../common/authenticated-user";
 import { CurrentUser } from "../common/current-user.decorator";
 import { AuthGuard } from "../auth/auth.guard";
 import { BusinessesService } from "./businesses.service";
+import { CreateAvailabilityExceptionDto, UpdateAvailabilityExceptionDto } from "./dto/availability-exception.dto";
 import { CreateAvailabilityRuleDto, UpdateAvailabilityRuleDto } from "./dto/availability-rule.dto";
 import { CreateBusinessDto, UpdateBusinessDto } from "./dto/business.dto";
 import { CreateServiceDto, UpdateServiceDto } from "./dto/service.dto";
@@ -99,5 +100,29 @@ export class BusinessesController {
   @Delete("availability-rules/:id")
   deactivateAvailabilityRule(@CurrentUser() user: AuthenticatedUser, @Param("id", ParseUUIDPipe) id: string) {
     return this.businesses.deactivateAvailabilityRule(user, id);
+  }
+
+  @Get("availability-exceptions")
+  listAvailabilityExceptions(@CurrentUser() user: AuthenticatedUser) {
+    return this.businesses.listAvailabilityExceptions(user);
+  }
+
+  @Post("availability-exceptions")
+  createAvailabilityException(@CurrentUser() user: AuthenticatedUser, @Body() input: CreateAvailabilityExceptionDto) {
+    return this.businesses.createAvailabilityException(user, input);
+  }
+
+  @Patch("availability-exceptions/:id")
+  updateAvailabilityException(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() input: UpdateAvailabilityExceptionDto
+  ) {
+    return this.businesses.updateAvailabilityException(user, id, input);
+  }
+
+  @Delete("availability-exceptions/:id")
+  deleteAvailabilityException(@CurrentUser() user: AuthenticatedUser, @Param("id", ParseUUIDPipe) id: string) {
+    return this.businesses.deleteAvailabilityException(user, id);
   }
 }

@@ -6,10 +6,10 @@ import (
 )
 
 const (
-	EventAppointmentCreated      = "appointment.created.v1"
-	EventAppointmentCancelled    = "appointment.cancelled.v1"
-	EventAppointmentMarkedNoShow = "appointment.marked_no_show.v1"
-	EventWaitlistOfferCreated    = "waitlist.offer_created.v1"
+	EventAppointmentBooked       = "AppointmentBooked"
+	EventAppointmentCancelled    = "AppointmentCancelled"
+	EventAppointmentMarkedNoShow = "AppointmentMarkedNoShow"
+	EventWaitlistOfferCreated    = "WaitlistOfferCreated"
 )
 
 type Event struct {
@@ -18,6 +18,7 @@ type Event struct {
 	EventID     string          `json:"eventId"`
 	OccurredAt  time.Time       `json:"occurredAt"`
 	Payload     json.RawMessage `json:"payload"`
+	RoutingKey  string          `json:"routingKey"`
 	Type        string          `json:"type"`
 	Version     int             `json:"version"`
 }

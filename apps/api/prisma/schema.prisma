@@ -52,6 +52,13 @@ enum EventOutboxStatus {
   @@map("event_outbox_status")
 }
 
+enum AvailabilityExceptionType {
+  BLOCKED       @map("blocked")
+  EXTRA_OPENING @map("extra_opening")
+
+  @@map("availability_exception_type")
+}
+
 model User {
   id           String     @id @default(uuid()) @db.Uuid
   email        String     @unique
@@ -77,6 +84,7 @@ model Business {
   services          Service[]
   staffMembers      StaffMember[]
   availabilityRules AvailabilityRule[]
+  availabilityExceptions AvailabilityException[]
   customers         Customer[]
   appointments      Appointment[]
   waitlistEntries   WaitlistEntry[]
@@ -98,6 +106,7 @@ model StaffMember {
   updatedAt         DateTime           @updatedAt @map("updated_at")
   appointments      Appointment[]
   availabilityRules AvailabilityRule[]
+  availabilityExceptions AvailabilityException[]
 
   @@index([businessId])
   @@map("staff_members")
@@ -136,6 +145,25 @@ model AvailabilityRule {
 
   @@index([businessId, weekday])
   @@map("availability_rules")
+}
+
+model AvailabilityException {
+  id            String                    @id @default(uuid()) @db.Uuid
+  businessId    String                    @map("business_id") @db.Uuid
+  business      Business                  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  staffMemberId String?                   @map("staff_member_id") @db.Uuid
+  staffMember   StaffMember?              @relation(fields: [staffMemberId], references: [id], onDelete: SetNull)
+  date          DateTime                  @db.Date
+  startTime     String                    @map("start_time")
+  endTime       String                    @map("end_time")
+  type          AvailabilityExceptionType
+  reason        String?
+  createdAt     DateTime                  @default(now()) @map("created_at")
+  updatedAt     DateTime                  @updatedAt @map("updated_at")
+
+  @@index([businessId, date])
+  @@index([staffMemberId, date])
+  @@map("availability_exceptions")
 }
 
 model Customer {
@@ -262,6 +290,7 @@ model EventOutbox {
   businessId  String            @map("business_id") @db.Uuid
   business    Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
   aggregateId String            @map("aggregate_id") @db.Uuid
+  routingKey  String            @map("routing_key")
   payload     Json
   status      EventOutboxStatus @default(PENDING)
   attempts    Int               @default(0)
@@ -271,7 +300,7 @@ model EventOutbox {
   updatedAt   DateTime          @updatedAt @map("updated_at")
 
   @@index([status, createdAt])
-  @@map("event_outbox")
+  @@map("outbox_events")
 }
 
 model ProcessedEvent {

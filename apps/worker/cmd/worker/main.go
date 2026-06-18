@@ -19,8 +19,10 @@ import (
 
 const (
 	eventsExchange = "turnoflow.events"
-	workerQueue    = "turnoflow.worker"
+	workerQueue    = "worker.appointments"
 )
+
+var eventBindingKeys = []string{"appointment.booked", "appointment.cancelled", "appointment.marked_no_show"}
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -80,7 +82,7 @@ func consumeEvents(channel *amqp.Channel) (<-chan amqp.Delivery, error) {
 		return nil, err
 	}
 
-	for _, bindingKey := range []string{"appointment.*.v1", "waitlist.*.v1"} {
+	for _, bindingKey := range eventBindingKeys {
 		if err := channel.QueueBind(queue.Name, bindingKey, eventsExchange, false, nil); err != nil {
 			return nil, err
 		}
