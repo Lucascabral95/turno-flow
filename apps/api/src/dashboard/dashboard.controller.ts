@@ -14,4 +14,9 @@ export class DashboardController {
   getMetrics(@CurrentUser() user: AuthenticatedUser) {
     return this.dashboard.getMetrics(user);
   }
+
+  @Get("notifications")
+  getNotifications(@CurrentUser() user: AuthenticatedUser) {
+    return this.dashboard.getNotifications(user);
+  }
 }

@@ -1,15 +1,18 @@
 "use client";
 
 import {
+  BellRing,
   CalendarClock,
   CalendarDays,
   CheckCircle2,
   ClipboardList,
   Clock,
+  Mail,
   LogIn,
   RefreshCcw,
   Scissors,
   Settings2,
+  ShieldAlert,
   UserPlus,
   Users
 } from "lucide-react";
@@ -17,12 +20,19 @@ import Link from "next/link";
 import type { FormEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 
-import type { Appointment, AvailabilitySlot, CurrentBusiness, DashboardMetrics } from "../../lib/api";
+import type {
+  Appointment,
+  AvailabilitySlot,
+  CurrentBusiness,
+  DashboardMetrics,
+  NotificationHistoryItem,
+  ReminderSettings
+} from "../../lib/api";
 import { formatDateTime, formatMoney, requestJson } from "../../lib/api";
 import { formNumber, formString } from "../../lib/form";
 
 type AuthMode = "login" | "register";
-type DashboardView = "setup" | "schedule" | "appointments";
+type DashboardView = "setup" | "schedule" | "appointments" | "reminders";
 
 export function DashboardApp() {
   const [activeView, setActiveView] = useState<DashboardView>("setup");
@@ -32,6 +42,8 @@ export function DashboardApp() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [notificationHistory, setNotificationHistory] = useState<NotificationHistoryItem[]>([]);
+  const [reminderSettings, setReminderSettings] = useState<ReminderSettings | null>(null);
   const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
@@ -64,7 +76,7 @@ export function DashboardApp() {
     setLoading(true);
     setError(null);
     try {
-      const [currentBusiness, currentAppointments, currentMetrics] = await Promise.all([
+      const [currentBusiness, currentAppointments, currentMetrics, currentReminderSettings, currentNotificationHistory] = await Promise.all([
         requestJson<CurrentBusiness | null>("/businesses/current", {
           headers: { Authorization: `Bearer ${activeToken}` }
         }),
@@ -73,11 +85,19 @@ export function DashboardApp() {
         }).catch(() => []),
         requestJson<DashboardMetrics>("/dashboard/metrics", {
           headers: { Authorization: `Bearer ${activeToken}` }
-        }).catch(() => null)
+        }).catch(() => null),
+        requestJson<ReminderSettings>("/businesses/current/reminder-settings", {
+          headers: { Authorization: `Bearer ${activeToken}` }
+        }).catch(() => null),
+        requestJson<NotificationHistoryItem[]>("/dashboard/notifications", {
+          headers: { Authorization: `Bearer ${activeToken}` }
+        }).catch(() => [])
       ]);
       setBusiness(currentBusiness);
       setAppointments(currentAppointments);
       setMetrics(currentMetrics);
+      setReminderSettings(currentReminderSettings);
+      setNotificationHistory(currentNotificationHistory);
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : "No se pudo cargar el dashboard");
     } finally {
@@ -208,11 +228,34 @@ export function DashboardApp() {
     }
   }
 
+  async function handleReminderSettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    const formData = new FormData(event.currentTarget);
+
+    try {
+      await authRequest<ReminderSettings>("/businesses/current/reminder-settings", {
+        body: JSON.stringify({
+          channel: "mock",
+          enabled: formString(formData, "enabled", "true") === "true",
+          offsetMinutes: formNumber(formData, "offsetMinutes", 1440),
+          template: formString(formData, "template", "appointment_reminder_24h")
+        }),
+        method: "PATCH"
+      });
+      await refresh();
+    } catch (settingsError) {
+      setError(settingsError instanceof Error ? settingsError.message : "No se pudo guardar la configuracion");
+    }
+  }
+
   function logout() {
     window.localStorage.removeItem("turnoflow.token");
     setAppointments([]);
     setBusiness(null);
     setMetrics(null);
+    setNotificationHistory([]);
+    setReminderSettings(null);
     setToken(null);
   }
 
@@ -278,6 +321,13 @@ export function DashboardApp() {
               onStatus={(appointmentId, status) => {
                 void updateAppointmentStatus(appointmentId, status);
               }}
+            />
+          ) : null}
+          {activeView === "reminders" ? (
+            <RemindersView
+              history={notificationHistory}
+              settings={reminderSettings}
+              onSubmit={(event) => void handleReminderSettings(event)}
             />
           ) : null}
         </>
@@ -356,6 +406,7 @@ function DashboardTabs({
         label="Turnos"
         onClick={() => onChange("appointments")}
       />
+      <TabButton active={activeView === "reminders"} icon={<BellRing size={18} />} label="Recordatorios" onClick={() => onChange("reminders")} />
     </nav>
   );
 }
@@ -466,6 +517,28 @@ function AppointmentsView({
       <MetricsPanel metrics={metrics} />
       <InventoryPanel business={business} />
       <AppointmentsPanel appointments={appointments} onStatus={onStatus} />
+    </section>
+  );
+}
+
+function RemindersView({
+  history,
+  onSubmit,
+  settings
+}: {
+  history: NotificationHistoryItem[];
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  settings: ReminderSettings | null;
+}) {
+  return (
+    <section className="layout-grid">
+      <aside className="stack">
+        <ReminderSettingsPanel onSubmit={onSubmit} settings={settings} />
+      </aside>
+      <section className="stack">
+        <ReminderSummaryPanel history={history} settings={settings} />
+        <NotificationHistoryPanel history={history} />
+      </section>
     </section>
   );
 }
@@ -749,6 +822,76 @@ function SchedulePreview({ business }: { business: CurrentBusiness }) {
   );
 }
 
+function ReminderSettingsPanel({
+  onSubmit,
+  settings
+}: {
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  settings: ReminderSettings | null;
+}) {
+  return (
+    <form className="panel stack" onSubmit={onSubmit}>
+      <h2 className="inline">
+        <BellRing size={20} />
+        Configuracion de recordatorios
+      </h2>
+      <label>
+        Recordatorios automáticos
+        <select defaultValue={settings?.enabled ? "true" : "false"} name="enabled">
+          <option value="true">Activados</option>
+          <option value="false">Pausados</option>
+        </select>
+      </label>
+      <label>
+        Anticipacion
+        <select defaultValue={String(settings?.offsetMinutes ?? 1440)} name="offsetMinutes">
+          <option value="60">1 hora antes</option>
+          <option value="180">3 horas antes</option>
+          <option value="720">12 horas antes</option>
+          <option value="1440">24 horas antes</option>
+          <option value="2880">48 horas antes</option>
+        </select>
+      </label>
+      <label>
+        Canal
+        <input disabled name="channel" readOnly value="mock" />
+      </label>
+      <label>
+        Template
+        <input defaultValue={settings?.template ?? "appointment_reminder_24h"} name="template" />
+      </label>
+      <div className="message">
+        El MVP guarda entregas simuladas en base y reintenta fallos. Email real queda para la siguiente iteracion.
+      </div>
+      <button className="button-primary" type="submit">
+        <CheckCircle2 size={18} />
+        Guardar recordatorios
+      </button>
+    </form>
+  );
+}
+
+function ReminderSummaryPanel({
+  history,
+  settings
+}: {
+  history: NotificationHistoryItem[];
+  settings: ReminderSettings | null;
+}) {
+  const sentCount = history.filter((item) => item.status === "sent").length;
+  const failedCount = history.filter((item) => item.status === "failed").length;
+  const pendingCount = history.filter((item) => item.status === "pending").length;
+
+  return (
+    <section className="metric-grid">
+      <Metric label="Estado" value={settings?.enabled ? "Activo" : "Pausado"} />
+      <Metric label="Enviados" value={sentCount} />
+      <Metric label="Pendientes" value={pendingCount} tone="warning" />
+      <Metric label="Fallidos" value={failedCount} tone="danger" />
+    </section>
+  );
+}
+
 function MetricsPanel({ metrics }: { metrics: DashboardMetrics | null }) {
   return (
     <section className="metric-grid">
@@ -756,6 +899,49 @@ function MetricsPanel({ metrics }: { metrics: DashboardMetrics | null }) {
       <Metric label="Activos" value={metrics?.activeAppointments ?? 0} />
       <Metric label="No-shows" value={metrics?.noShowAppointments ?? 0} tone="danger" />
       <Metric label="Perdida estimada" value={formatMoney(metrics?.lostRevenueCents ?? 0)} tone="warning" />
+    </section>
+  );
+}
+
+function NotificationHistoryPanel({ history }: { history: NotificationHistoryItem[] }) {
+  return (
+    <section className="panel stack">
+      <h2 className="inline">
+        <Mail size={20} />
+        Historial de notificaciones
+      </h2>
+      {history.length === 0 ? (
+        <div className="message">Todavia no hay recordatorios procesados.</div>
+      ) : (
+        <div className="list">
+          {history.map((item) => (
+            <article className="list-item" key={item.id}>
+              <header>
+                <strong>{item.appointment?.customer.name ?? item.email}</strong>
+                <span className={notificationStatusClass(item.status)}>{item.status}</span>
+              </header>
+              <span>{item.email}</span>
+              <span>
+                {item.appointment
+                  ? `${item.appointment.service.name} · ${formatDateTime(item.appointment.startsAt)}`
+                  : "Sin turno asociado"}
+              </span>
+              <div className="detail-grid">
+                <span>Template: {item.template}</span>
+                <span>Intentos: {item.attempts}</span>
+                <span>Creado: {formatDateTime(item.createdAt)}</span>
+                <span>Enviado: {item.sentAt ? formatDateTime(item.sentAt) : "Pendiente"}</span>
+              </div>
+              {item.lastError ? (
+                <div className="error inline">
+                  <ShieldAlert size={16} />
+                  {item.lastError}
+                </div>
+              ) : null}
+            </article>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -859,6 +1045,16 @@ function statusClass(status: Appointment["status"]): string {
     return "badge badge-danger";
   }
   if (status === "completed") {
+    return "badge";
+  }
+  return "badge badge-warning";
+}
+
+function notificationStatusClass(status: NotificationHistoryItem["status"]): string {
+  if (status === "failed") {
+    return "badge badge-danger";
+  }
+  if (status === "sent") {
     return "badge";
   }
   return "badge badge-warning";

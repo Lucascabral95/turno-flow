@@ -80,6 +80,38 @@ export type DashboardMetrics = {
   totalAppointments: number;
 };
 
+export type ReminderSettings = {
+  businessId: string;
+  channel: "mock";
+  enabled: boolean;
+  offsetMinutes: number;
+  template: string;
+};
+
+export type NotificationHistoryItem = {
+  appointment: {
+    customer: {
+      id: string;
+      name: string;
+    };
+    id: string;
+    service: {
+      id: string;
+      name: string;
+    };
+    startsAt: string;
+    status: Appointment["status"];
+  } | null;
+  attempts: number;
+  createdAt: string;
+  email: string;
+  id: string;
+  lastError: string | null;
+  sentAt: string | null;
+  status: "pending" | "sent" | "failed";
+  template: string;
+};
+
 export type CurrentBusiness = Business & {
   availabilityExceptions: AvailabilityException[];
   availabilityRules: AvailabilityRule[];

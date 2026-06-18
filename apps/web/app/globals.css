@@ -77,6 +77,12 @@ select {
   width: 100%;
 }
 
+input:disabled,
+select:disabled {
+  background: #f4efe6;
+  color: var(--muted);
+}
+
 label {
   color: var(--muted);
   display: grid;
@@ -246,6 +252,14 @@ label {
   justify-content: space-between;
 }
 
+.detail-grid {
+  color: var(--muted);
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  font-size: 0.9rem;
+}
+
 .badge {
   background: var(--primary-soft);
   border-radius: 999px;
@@ -322,7 +336,8 @@ label {
   .layout-grid,
   .grid-2,
   .grid-3,
-  .metric-grid {
+  .metric-grid,
+  .detail-grid {
     grid-template-columns: 1fr;
   }
 
