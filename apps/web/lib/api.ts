@@ -110,21 +110,25 @@ export async function requestJson<T>(path: string, options: RequestInit = {}): P
   return body as T;
 }
 
-function parseJsonBody(value: string): { message?: string } | unknown {
+function parseJsonBody(value: string): unknown {
   if (value.trim() === "") {
     return null;
   }
 
-  return JSON.parse(value) as unknown;
+  return JSON.parse(value);
 }
 
 function errorMessageFromBody(value: unknown): string | undefined {
-  if (!value || typeof value !== "object" || !("message" in value)) {
+  if (!hasMessage(value)) {
     return undefined;
   }
 
-  const message = (value as { message: unknown }).message;
+  const { message } = value;
   return typeof message === "string" ? message : undefined;
+}
+
+function hasMessage(value: unknown): value is { message: unknown } {
+  return typeof value === "object" && value !== null && "message" in value;
 }
 
 export function formatMoney(cents: number): string {

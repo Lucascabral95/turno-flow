@@ -18,3 +18,12 @@ func TestRabbitMQContracts(t *testing.T) {
 		t.Fatalf("unexpected binding keys %#v", eventBindingKeys)
 	}
 }
+
+func TestStartupRetryPolicy(t *testing.T) {
+	if startupRetryAttempts != 30 {
+		t.Fatalf("unexpected retry attempts %d", startupRetryAttempts)
+	}
+	if startupRetryDelay <= 0 {
+		t.Fatal("startup retry delay must be positive")
+	}
+}
