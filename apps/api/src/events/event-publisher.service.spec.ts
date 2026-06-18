@@ -132,6 +132,7 @@ describe("EventPublisherService", () => {
     expect(rabbit.channel.assertQueue).toHaveBeenCalledWith("worker.metrics", { durable: true });
     expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.appointments", "turnoflow.events", "appointment.booked");
     expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.waitlist", "turnoflow.events", "waitlist.entry_created");
+    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.notifications", "turnoflow.events", "reminder.scheduled");
     expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.notifications", "turnoflow.events", "waitlist.offer_created");
     expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.metrics", "turnoflow.events", "metrics.recalculate");
   });

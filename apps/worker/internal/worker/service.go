@@ -12,6 +12,12 @@ import (
 	"github.com/turnoflow/turnoflow/apps/worker/internal/email"
 )
 
+const (
+	mockNotificationChannel     = "mock"
+	reminderScheduledRoutingKey = "reminder.scheduled"
+	reminderTemplate24Hours     = "appointment_reminder_24h"
+)
+
 type Service struct {
 	appBaseURL string
 	emailFrom  string
@@ -31,9 +37,11 @@ func NewService(repository Repository, sender email.Sender, appBaseURL string, e
 func (service *Service) HandleEvent(ctx context.Context, event domain.Event) error {
 	_, err := service.repository.RunOnce(ctx, event.EventID, event.Type, func(ctx context.Context, tx Tx) error {
 		switch event.Type {
+		case domain.EventAppointmentBooked:
+			return service.handleAppointmentBooked(ctx, tx, event.Payload)
 		case domain.EventAppointmentCancelled:
 			return service.handleAppointmentCancelled(ctx, tx, event.Payload)
-		case domain.EventAppointmentBooked, domain.EventAppointmentMarkedNoShow, domain.EventWaitlistOfferCreated:
+		case domain.EventAppointmentMarkedNoShow, domain.EventWaitlistOfferCreated:
 			return nil
 		default:
 			return nil
@@ -72,7 +80,7 @@ func (service *Service) SendDueReminders(ctx context.Context, now time.Time) err
 			BusinessID:    appointment.BusinessID,
 			Email:         appointment.CustomerEmail,
 			Status:        NotificationSent,
-			Template:      "appointment_reminder_24h",
+			Template:      reminderTemplate24Hours,
 		}
 		if sendErr != nil {
 			errorMessage := sendErr.Error()
@@ -89,6 +97,69 @@ func (service *Service) SendDueReminders(ctx context.Context, now time.Time) err
 
 func (service *Service) ExpireWaitlistOffers(ctx context.Context, now time.Time) error {
 	return service.repository.ExpireWaitlistOffers(ctx, now)
+}
+
+func (service *Service) handleAppointmentBooked(ctx context.Context, tx Tx, payload json.RawMessage) error {
+	var appointment domain.AppointmentPayload
+	if err := json.Unmarshal(payload, &appointment); err != nil {
+		return fmt.Errorf("decode appointment booking payload: %w", err)
+	}
+
+	cancelURL := fmt.Sprintf("%s/cancel/%s?token=%s", service.appBaseURL, appointment.AppointmentID, appointment.CancellationToken)
+	dueAt := appointment.StartsAt.Add(-24 * time.Hour)
+	notificationPayload, err := json.Marshal(map[string]any{
+		"appointmentId": appointment.AppointmentID,
+		"cancelUrl":     cancelURL,
+		"customerId":    appointment.Customer.ID,
+		"customerName":  appointment.Customer.Name,
+		"serviceId":     appointment.Service.ID,
+		"serviceName":   appointment.Service.Name,
+		"startsAt":      appointment.StartsAt.Format(time.RFC3339),
+	})
+	if err != nil {
+		return fmt.Errorf("encode reminder notification payload: %w", err)
+	}
+
+	notificationID, err := tx.CreateScheduledNotification(ctx, ScheduledNotificationInput{
+		AppointmentID: appointment.AppointmentID,
+		BusinessID:    appointment.BusinessID,
+		Channel:       mockNotificationChannel,
+		CustomerID:    appointment.Customer.ID,
+		DueAt:         dueAt,
+		Email:         appointment.Customer.Email,
+		Payload:       notificationPayload,
+		Template:      reminderTemplate24Hours,
+	})
+	if err != nil {
+		return fmt.Errorf("create scheduled reminder: %w", err)
+	}
+
+	eventPayload, err := json.Marshal(map[string]any{
+		"appointmentId":  appointment.AppointmentID,
+		"businessId":     appointment.BusinessID,
+		"channel":        mockNotificationChannel,
+		"customerEmail":  appointment.Customer.Email,
+		"customerId":     appointment.Customer.ID,
+		"dueAt":          dueAt.Format(time.RFC3339),
+		"notificationId": notificationID,
+		"template":       reminderTemplate24Hours,
+	})
+	if err != nil {
+		return fmt.Errorf("encode reminder scheduled event payload: %w", err)
+	}
+
+	if err := tx.CreateOutboxEvent(ctx, OutboxEventInput{
+		AggregateID: appointment.AppointmentID,
+		BusinessID:  appointment.BusinessID,
+		Payload:     eventPayload,
+		RoutingKey:  reminderScheduledRoutingKey,
+		Type:        domain.EventReminderScheduled,
+		Version:     1,
+	}); err != nil {
+		return fmt.Errorf("create reminder scheduled outbox event: %w", err)
+	}
+
+	return nil
 }
 
 func (service *Service) handleAppointmentCancelled(ctx context.Context, tx Tx, payload json.RawMessage) error {

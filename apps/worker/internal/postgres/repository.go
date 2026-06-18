@@ -168,6 +168,51 @@ func (repository *txRepository) CreateNotificationLog(ctx context.Context, input
 	return nil
 }
 
+func (repository *txRepository) CreateOutboxEvent(ctx context.Context, input worker.OutboxEventInput) error {
+	_, err := repository.tx.Exec(ctx, `
+		INSERT INTO outbox_events (
+			type,
+			version,
+			business_id,
+			aggregate_id,
+			routing_key,
+			payload
+		)
+		VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+	`, input.Type, input.Version, input.BusinessID, input.AggregateID, input.RoutingKey, string(input.Payload))
+	if err != nil {
+		return fmt.Errorf("insert outbox event: %w", err)
+	}
+
+	return nil
+}
+
+func (repository *txRepository) CreateScheduledNotification(ctx context.Context, input worker.ScheduledNotificationInput) (string, error) {
+	var notificationID string
+	err := repository.tx.QueryRow(ctx, `
+		INSERT INTO notifications (
+			business_id,
+			appointment_id,
+			customer_id,
+			channel,
+			email,
+			template,
+			status,
+			due_at,
+			payload
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8::jsonb)
+		ON CONFLICT (appointment_id, template) WHERE appointment_id IS NOT NULL
+		DO UPDATE SET updated_at = CURRENT_TIMESTAMP
+		RETURNING id
+	`, input.BusinessID, input.AppointmentID, input.CustomerID, input.Channel, input.Email, input.Template, input.DueAt, string(input.Payload)).Scan(&notificationID)
+	if err != nil {
+		return "", fmt.Errorf("insert scheduled notification: %w", err)
+	}
+
+	return notificationID, nil
+}
+
 func (repository *txRepository) CreateWaitlistOffer(ctx context.Context, input worker.WaitlistOfferInput) error {
 	_, err := repository.tx.Exec(ctx, `
 		INSERT INTO waitlist_offers (waitlist_entry_id, appointment_id, token, expires_at)

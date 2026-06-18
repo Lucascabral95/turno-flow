@@ -35,6 +35,46 @@ func TestHandleEventCreatesWaitlistOfferOnlyOnce(t *testing.T) {
 	}
 }
 
+func TestHandleEventSchedulesReminderOnlyOnceForAppointmentBooked(t *testing.T) {
+	ctx := context.Background()
+	repository := newFakeRepository()
+	sender := &fakeSender{}
+	service := NewService(repository, sender, "http://localhost:3000", "noreply@example.test")
+	event := bookedEvent(t)
+
+	if err := service.HandleEvent(ctx, event); err != nil {
+		t.Fatalf("first handle event: %v", err)
+	}
+	if err := service.HandleEvent(ctx, event); err != nil {
+		t.Fatalf("second handle event: %v", err)
+	}
+
+	if len(repository.scheduledNotifications) != 1 {
+		t.Fatalf("expected one scheduled notification, got %d", len(repository.scheduledNotifications))
+	}
+	notification := repository.scheduledNotifications[0]
+	if notification.Template != reminderTemplate24Hours {
+		t.Fatalf("unexpected template %q", notification.Template)
+	}
+	expectedDueAt := time.Date(2026, 6, 16, 10, 0, 0, 0, time.UTC)
+	if !notification.DueAt.Equal(expectedDueAt) {
+		t.Fatalf("expected due at %s, got %s", expectedDueAt, notification.DueAt)
+	}
+	if len(repository.outboxEvents) != 1 {
+		t.Fatalf("expected one outbox event, got %d", len(repository.outboxEvents))
+	}
+	outboxEvent := repository.outboxEvents[0]
+	if outboxEvent.Type != domain.EventReminderScheduled {
+		t.Fatalf("unexpected outbox event type %q", outboxEvent.Type)
+	}
+	if outboxEvent.RoutingKey != reminderScheduledRoutingKey {
+		t.Fatalf("unexpected routing key %q", outboxEvent.RoutingKey)
+	}
+	if len(sender.messages) != 0 {
+		t.Fatalf("expected no immediate email sends, got %d", len(sender.messages))
+	}
+}
+
 func TestSendDueRemindersLogsSentNotifications(t *testing.T) {
 	ctx := context.Background()
 	repository := newFakeRepository()
@@ -68,11 +108,13 @@ func TestSendDueRemindersLogsSentNotifications(t *testing.T) {
 }
 
 type fakeRepository struct {
-	candidate        *domain.WaitlistCandidate
-	notificationLogs []NotificationLog
-	offerCount       int
-	processed        map[string]bool
-	reminders        []domain.ReminderAppointment
+	candidate              *domain.WaitlistCandidate
+	notificationLogs       []NotificationLog
+	offerCount             int
+	outboxEvents           []OutboxEventInput
+	processed              map[string]bool
+	reminders              []domain.ReminderAppointment
+	scheduledNotifications []ScheduledNotificationInput
 }
 
 func newFakeRepository() *fakeRepository {
@@ -102,6 +144,16 @@ func (repository *fakeRepository) RunOnce(ctx context.Context, eventID string, _
 func (repository *fakeRepository) CreateNotificationLog(_ context.Context, input NotificationLog) error {
 	repository.notificationLogs = append(repository.notificationLogs, input)
 	return nil
+}
+
+func (repository *fakeRepository) CreateOutboxEvent(_ context.Context, input OutboxEventInput) error {
+	repository.outboxEvents = append(repository.outboxEvents, input)
+	return nil
+}
+
+func (repository *fakeRepository) CreateScheduledNotification(_ context.Context, input ScheduledNotificationInput) (string, error) {
+	repository.scheduledNotifications = append(repository.scheduledNotifications, input)
+	return "notification-1", nil
 }
 
 func (repository *fakeRepository) ExpireWaitlistOffers(_ context.Context, _ time.Time) error {
@@ -137,6 +189,45 @@ func (sender *fakeSender) Send(_ context.Context, message email.Message) error {
 func cancellationEvent(t *testing.T) domain.Event {
 	t.Helper()
 
+	payload := appointmentPayload()
+	payload.Status = "cancelled_by_customer"
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	return domain.Event{
+		AggregateID: payload.AppointmentID,
+		BusinessID:  payload.BusinessID,
+		EventID:     "00000000-0000-0000-0000-000000000001",
+		OccurredAt:  time.Now().UTC(),
+		Payload:     body,
+		Type:        domain.EventAppointmentCancelled,
+		Version:     1,
+	}
+}
+
+func bookedEvent(t *testing.T) domain.Event {
+	t.Helper()
+
+	payload := appointmentPayload()
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	return domain.Event{
+		AggregateID: payload.AppointmentID,
+		BusinessID:  payload.BusinessID,
+		EventID:     "00000000-0000-0000-0000-000000000002",
+		OccurredAt:  time.Now().UTC(),
+		Payload:     body,
+		Type:        domain.EventAppointmentBooked,
+		Version:     1,
+	}
+}
+
+func appointmentPayload() domain.AppointmentPayload {
 	payload := domain.AppointmentPayload{
 		AppointmentID:     "appointment-1",
 		BusinessID:        "business-1",
@@ -156,20 +247,8 @@ func cancellationEvent(t *testing.T) domain.Event {
 			ID:   "staff-1",
 			Name: "Lucas",
 		},
-		Status: "cancelled_by_customer",
-	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		t.Fatalf("marshal payload: %v", err)
+		Status: "confirmed",
 	}
 
-	return domain.Event{
-		AggregateID: "appointment-1",
-		BusinessID:  "business-1",
-		EventID:     "00000000-0000-0000-0000-000000000001",
-		OccurredAt:  time.Now().UTC(),
-		Payload:     body,
-		Type:        domain.EventAppointmentCancelled,
-		Version:     1,
-	}
+	return payload
 }

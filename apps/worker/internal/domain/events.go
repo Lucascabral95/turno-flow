@@ -9,6 +9,7 @@ const (
 	EventAppointmentBooked       = "AppointmentBooked"
 	EventAppointmentCancelled    = "AppointmentCancelled"
 	EventAppointmentMarkedNoShow = "AppointmentMarkedNoShow"
+	EventReminderScheduled       = "ReminderScheduled"
 	EventWaitlistOfferCreated    = "WaitlistOfferCreated"
 )
 

@@ -88,6 +88,7 @@ model Business {
   customers         Customer[]
   appointments      Appointment[]
   waitlistEntries   WaitlistEntry[]
+  notifications     Notification[]
   notificationLogs  NotificationLog[]
   appointmentEvents AppointmentEvent[]
   eventOutbox       EventOutbox[]
@@ -179,6 +180,7 @@ model Customer {
   updatedAt         DateTime         @updatedAt @map("updated_at")
   appointments      Appointment[]
   waitlistEntries   WaitlistEntry[]
+  notifications     Notification[]
 
   @@unique([businessId, email])
   @@map("customers")
@@ -200,6 +202,7 @@ model Appointment {
   cancellationToken String             @unique @map("cancellation_token")
   createdAt         DateTime           @default(now()) @map("created_at")
   updatedAt         DateTime           @updatedAt @map("updated_at")
+  notifications     Notification[]
   notificationLogs  NotificationLog[]
   appointmentEvents AppointmentEvent[]
   waitlistOffers    WaitlistOffer[]
@@ -246,6 +249,31 @@ model WaitlistOffer {
 
   @@index([status, expiresAt])
   @@map("waitlist_offers")
+}
+
+model Notification {
+  id            String             @id @default(uuid()) @db.Uuid
+  businessId    String             @map("business_id") @db.Uuid
+  business      Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  appointmentId String?            @map("appointment_id") @db.Uuid
+  appointment   Appointment?       @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  customerId    String             @map("customer_id") @db.Uuid
+  customer      Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  channel       String             @default("mock")
+  email         String
+  template      String
+  status        NotificationStatus @default(PENDING)
+  dueAt         DateTime           @map("due_at") @db.Timestamptz(3)
+  attempts      Int                @default(0)
+  lastError     String?            @map("last_error")
+  sentAt        DateTime?          @map("sent_at") @db.Timestamptz(3)
+  payload       Json
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
+
+  @@index([businessId, status, dueAt])
+  @@index([appointmentId])
+  @@map("notifications")
 }
 
 model NotificationLog {
