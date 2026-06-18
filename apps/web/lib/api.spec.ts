@@ -11,10 +11,10 @@ describe("formatMoney", () => {
 describe("requestJson", () => {
   it("uses the HTTP status when an error response has no JSON body", async () => {
     const previousFetch = globalThis.fetch;
-    globalThis.fetch = async () =>
-      new Response("", {
+    globalThis.fetch = () =>
+      Promise.resolve(new Response("", {
         status: 404
-      });
+      }));
 
     try {
       await expect(requestJson("/missing")).rejects.toThrow("Request failed with status 404");
@@ -25,10 +25,10 @@ describe("requestJson", () => {
 
   it("returns null for successful empty responses", async () => {
     const previousFetch = globalThis.fetch;
-    globalThis.fetch = async () =>
-      new Response(null, {
+    globalThis.fetch = () =>
+      Promise.resolve(new Response(null, {
         status: 204
-      });
+      }));
 
     try {
       await expect(requestJson<null>("/empty")).resolves.toBeNull();

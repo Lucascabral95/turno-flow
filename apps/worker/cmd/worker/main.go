@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os/signal"
 	"syscall"
@@ -18,8 +19,10 @@ import (
 )
 
 const (
-	eventsExchange = "turnoflow.events"
-	workerQueue    = "worker.appointments"
+	eventsExchange       = "turnoflow.events"
+	startupRetryAttempts = 30
+	startupRetryDelay    = 2 * time.Second
+	workerQueue          = "worker.appointments"
 )
 
 var eventBindingKeys = []string{"appointment.booked", "appointment.cancelled", "appointment.marked_no_show"}
@@ -29,7 +32,7 @@ func main() {
 	defer stop()
 
 	cfg := config.Load()
-	repository, err := postgres.NewRepository(ctx, cfg.DatabaseURL)
+	repository, err := connectPostgres(ctx, cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("postgres: %v", err)
 	}
@@ -38,7 +41,7 @@ func main() {
 	sender := email.NewJSONSender(cfg.EmailFrom)
 	service := worker.NewService(repository, sender, cfg.AppBaseURL, cfg.EmailFrom)
 
-	connection, err := amqp.Dial(cfg.RabbitMQURL)
+	connection, err := connectRabbitMQ(ctx, cfg.RabbitMQURL)
 	if err != nil {
 		log.Fatalf("rabbitmq dial: %v", err)
 	}
@@ -70,6 +73,54 @@ func main() {
 			handleDelivery(ctx, service, delivery)
 		}
 	}
+}
+
+func connectPostgres(ctx context.Context, databaseURL string) (*postgres.Repository, error) {
+	var repository *postgres.Repository
+	err := retryStartup(ctx, "postgres", func() error {
+		var err error
+		repository, err = postgres.NewRepository(ctx, databaseURL)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return repository, nil
+}
+
+func connectRabbitMQ(ctx context.Context, rabbitMQURL string) (*amqp.Connection, error) {
+	var connection *amqp.Connection
+	err := retryStartup(ctx, "rabbitmq", func() error {
+		var err error
+		connection, err = amqp.Dial(rabbitMQURL)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return connection, nil
+}
+
+func retryStartup(ctx context.Context, label string, fn func() error) error {
+	var lastErr error
+	for attempt := 1; attempt <= startupRetryAttempts; attempt++ {
+		if err := fn(); err != nil {
+			lastErr = err
+			log.Printf("%s not ready attempt=%d/%d error=%v", label, attempt, startupRetryAttempts, err)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(startupRetryDelay):
+				continue
+			}
+		}
+
+		return nil
+	}
+
+	return fmt.Errorf("%s not ready after %d attempts: %w", label, startupRetryAttempts, lastErr)
 }
 
 func consumeEvents(channel *amqp.Channel) (<-chan amqp.Delivery, error) {

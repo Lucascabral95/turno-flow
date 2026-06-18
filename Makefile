@@ -1,4 +1,4 @@
-.PHONY: up down logs test lint typecheck build db-migrate db-seed worker-test
+.PHONY: up up-logs down logs test lint typecheck build db-migrate db-seed worker-test
 
 up:
 	docker compose up --build -d
