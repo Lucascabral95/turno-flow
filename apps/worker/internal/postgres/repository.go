@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -79,7 +80,19 @@ func (repository *Repository) RunOnce(
 }
 
 func (repository *Repository) CreateNotificationLog(ctx context.Context, input worker.NotificationLog) error {
-	_, err := repository.pool.Exec(ctx, notificationLogSQL(), input.BusinessID, input.AppointmentID, input.WaitlistEntryID, input.Email, input.Template, string(input.Status), input.LastError)
+	_, err := repository.pool.Exec(
+		ctx,
+		notificationLogSQL(),
+		input.BusinessID,
+		input.NotificationID,
+		input.AppointmentID,
+		input.WaitlistEntryID,
+		input.Email,
+		input.Template,
+		string(input.Status),
+		notificationLogAttempts(input.Attempts),
+		input.LastError,
+	)
 	if err != nil {
 		return fmt.Errorf("create notification log: %w", err)
 	}
@@ -106,61 +119,178 @@ func (repository *Repository) ExpireWaitlistOffers(ctx context.Context, now time
 	return nil
 }
 
-func (repository *Repository) FindDueReminderAppointments(ctx context.Context, from time.Time, until time.Time) ([]domain.ReminderAppointment, error) {
-	rows, err := repository.pool.Query(ctx, `
-		SELECT
-			a.id,
-			a.business_id,
-			a.cancellation_token,
-			c.email,
-			c.name,
-			s.name,
-			a.starts_at
-		FROM appointments a
-		JOIN customers c ON c.id = a.customer_id
-		JOIN services s ON s.id = a.service_id
-		WHERE a.status = 'confirmed'
-			AND a.starts_at >= $1
-			AND a.starts_at < $2
-			AND NOT EXISTS (
-				SELECT 1
-				FROM notification_logs n
-				WHERE n.appointment_id = a.id
-					AND n.template = 'appointment_reminder_24h'
-					AND n.status = 'sent'
-			)
-		ORDER BY a.starts_at ASC
-	`, from, until)
+func (repository *Repository) ClaimDueNotifications(ctx context.Context, now time.Time, limit int, maxAttempts int) ([]worker.DueNotification, error) {
+	tx, err := repository.pool.Begin(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("query due reminder appointments: %w", err)
+		return nil, fmt.Errorf("begin due notification claim: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	rows, err := tx.Query(ctx, `
+		WITH due AS (
+			SELECT id
+			FROM notifications
+			WHERE status IN ('pending', 'failed')
+				AND next_attempt_at <= $1
+				AND attempts < $2
+			ORDER BY next_attempt_at ASC, created_at ASC
+			LIMIT $3
+			FOR UPDATE SKIP LOCKED
+		)
+		UPDATE notifications n
+		SET
+			attempts = n.attempts + 1,
+			next_attempt_at = $1 + INTERVAL '5 minutes',
+			updated_at = CURRENT_TIMESTAMP
+		FROM due
+		WHERE n.id = due.id
+		RETURNING
+			n.id,
+			n.business_id,
+			n.appointment_id,
+			n.channel,
+			n.email,
+			n.template,
+			n.due_at,
+			n.attempts,
+			n.payload
+	`, now, maxAttempts, limit)
+	if err != nil {
+		return nil, fmt.Errorf("claim due notifications: %w", err)
 	}
 	defer rows.Close()
 
-	appointments := make([]domain.ReminderAppointment, 0)
+	notifications := make([]worker.DueNotification, 0)
 	for rows.Next() {
-		var appointment domain.ReminderAppointment
+		var notification worker.DueNotification
 		if err := rows.Scan(
-			&appointment.AppointmentID,
-			&appointment.BusinessID,
-			&appointment.CancellationToken,
-			&appointment.CustomerEmail,
-			&appointment.CustomerName,
-			&appointment.ServiceName,
-			&appointment.StartsAt,
+			&notification.ID,
+			&notification.BusinessID,
+			&notification.AppointmentID,
+			&notification.Channel,
+			&notification.Email,
+			&notification.Template,
+			&notification.DueAt,
+			&notification.Attempts,
+			&notification.Payload,
 		); err != nil {
-			return nil, fmt.Errorf("scan due reminder appointment: %w", err)
+			return nil, fmt.Errorf("scan due notification: %w", err)
 		}
-		appointments = append(appointments, appointment)
+		notifications = append(notifications, notification)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate due reminder appointments: %w", err)
+		return nil, fmt.Errorf("iterate due notifications: %w", err)
 	}
 
-	return appointments, nil
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit due notification claim: %w", err)
+	}
+
+	return notifications, nil
+}
+
+func (repository *Repository) MarkNotificationSent(ctx context.Context, notification worker.DueNotification, sentAt time.Time) error {
+	payload, err := notificationEventPayload(notification, nil)
+	if err != nil {
+		return err
+	}
+
+	return repository.recordNotificationResult(ctx, notification, worker.NotificationSent, nil, &sentAt, nil, worker.OutboxEventInput{
+		AggregateID: notification.ID,
+		BusinessID:  notification.BusinessID,
+		Payload:     payload,
+		RoutingKey:  "reminder.sent",
+		Type:        domain.EventReminderSent,
+		Version:     1,
+	})
+}
+
+func (repository *Repository) MarkNotificationFailed(ctx context.Context, notification worker.DueNotification, lastError string, nextAttemptAt *time.Time) error {
+	payload, err := notificationEventPayload(notification, &lastError)
+	if err != nil {
+		return err
+	}
+
+	return repository.recordNotificationResult(ctx, notification, worker.NotificationFailed, &lastError, nil, nextAttemptAt, worker.OutboxEventInput{
+		AggregateID: notification.ID,
+		BusinessID:  notification.BusinessID,
+		Payload:     payload,
+		RoutingKey:  "reminder.failed",
+		Type:        domain.EventReminderFailed,
+		Version:     1,
+	})
+}
+
+func (repository *Repository) recordNotificationResult(
+	ctx context.Context,
+	notification worker.DueNotification,
+	status worker.NotificationStatus,
+	lastError *string,
+	sentAt *time.Time,
+	nextAttemptAt *time.Time,
+	outbox worker.OutboxEventInput,
+) error {
+	tx, err := repository.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin notification result transaction: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	if _, err := tx.Exec(ctx, `
+		UPDATE notifications
+		SET
+			status = $2,
+			last_error = $3,
+			sent_at = $4,
+			next_attempt_at = $5,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE id = $1
+	`, notification.ID, string(status), lastError, sentAt, nextAttemptAt); err != nil {
+		return fmt.Errorf("update notification result: %w", err)
+	}
+
+	txRepo := txRepository{tx: tx}
+	if err := txRepo.CreateNotificationLog(ctx, worker.NotificationLog{
+		AppointmentID:  notification.AppointmentID,
+		Attempts:       notification.Attempts,
+		BusinessID:     notification.BusinessID,
+		Email:          notification.Email,
+		LastError:      lastError,
+		NotificationID: &notification.ID,
+		Status:         status,
+		Template:       notification.Template,
+	}); err != nil {
+		return err
+	}
+	if err := txRepo.CreateOutboxEvent(ctx, outbox); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit notification result transaction: %w", err)
+	}
+
+	return nil
 }
 
 func (repository *txRepository) CreateNotificationLog(ctx context.Context, input worker.NotificationLog) error {
-	_, err := repository.tx.Exec(ctx, notificationLogSQL(), input.BusinessID, input.AppointmentID, input.WaitlistEntryID, input.Email, input.Template, string(input.Status), input.LastError)
+	_, err := repository.tx.Exec(
+		ctx,
+		notificationLogSQL(),
+		input.BusinessID,
+		input.NotificationID,
+		input.AppointmentID,
+		input.WaitlistEntryID,
+		input.Email,
+		input.Template,
+		string(input.Status),
+		notificationLogAttempts(input.Attempts),
+		input.LastError,
+	)
 	if err != nil {
 		return fmt.Errorf("create notification log: %w", err)
 	}
@@ -199,9 +329,10 @@ func (repository *txRepository) CreateScheduledNotification(ctx context.Context,
 			template,
 			status,
 			due_at,
+			next_attempt_at,
 			payload
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8::jsonb)
+		VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $7, $8::jsonb)
 		ON CONFLICT (appointment_id, template) WHERE appointment_id IS NOT NULL
 		DO UPDATE SET updated_at = CURRENT_TIMESTAMP
 		RETURNING id
@@ -223,6 +354,28 @@ func (repository *txRepository) CreateWaitlistOffer(ctx context.Context, input w
 	}
 
 	return nil
+}
+
+func (repository *txRepository) GetReminderSettings(ctx context.Context, businessID string) (worker.ReminderSettings, error) {
+	settings := worker.ReminderSettings{
+		Channel:       "mock",
+		Enabled:       true,
+		OffsetMinutes: 1440,
+		Template:      "appointment_reminder_24h",
+	}
+	err := repository.tx.QueryRow(ctx, `
+		SELECT enabled, offset_minutes, channel, template
+		FROM business_reminder_settings
+		WHERE business_id = $1
+	`, businessID).Scan(&settings.Enabled, &settings.OffsetMinutes, &settings.Channel, &settings.Template)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return settings, nil
+	}
+	if err != nil {
+		return settings, fmt.Errorf("query reminder settings: %w", err)
+	}
+
+	return settings, nil
 }
 
 func (repository *txRepository) FindWaitlistCandidate(ctx context.Context, appointment domain.AppointmentPayload) (*domain.WaitlistCandidate, error) {
@@ -277,6 +430,7 @@ func notificationLogSQL() string {
 	return `
 		INSERT INTO notification_logs (
 			business_id,
+			notification_id,
 			appointment_id,
 			waitlist_entry_id,
 			email,
@@ -286,6 +440,37 @@ func notificationLogSQL() string {
 			last_error,
 			sent_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, 1, $7, CASE WHEN $6 = 'sent' THEN CURRENT_TIMESTAMP ELSE NULL END)
+		VALUES ($1, $2, $3, $4, $5, $6, $7::notification_status, $8, $9, CASE WHEN $7::notification_status = 'sent' THEN CURRENT_TIMESTAMP ELSE NULL END)
 	`
+}
+
+func notificationLogAttempts(value int) int {
+	if value > 0 {
+		return value
+	}
+
+	return 1
+}
+
+func notificationEventPayload(notification worker.DueNotification, lastError *string) ([]byte, error) {
+	payload := map[string]any{
+		"appointmentId":  notification.AppointmentID,
+		"attempts":       notification.Attempts,
+		"businessId":     notification.BusinessID,
+		"channel":        notification.Channel,
+		"customerEmail":  notification.Email,
+		"dueAt":          notification.DueAt.Format(time.RFC3339),
+		"notificationId": notification.ID,
+		"template":       notification.Template,
+	}
+	if lastError != nil {
+		payload["lastError"] = *lastError
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("encode notification event payload: %w", err)
+	}
+
+	return body, nil
 }

@@ -13,7 +13,8 @@ import (
 )
 
 const (
-	mockNotificationChannel     = "mock"
+	dueNotificationBatchSize    = 25
+	maxNotificationAttempts     = 3
 	reminderScheduledRoutingKey = "reminder.scheduled"
 	reminderTemplate24Hours     = "appointment_reminder_24h"
 )
@@ -52,42 +53,22 @@ func (service *Service) HandleEvent(ctx context.Context, event domain.Event) err
 }
 
 func (service *Service) SendDueReminders(ctx context.Context, now time.Time) error {
-	from := now.Add(23*time.Hour + 55*time.Minute)
-	until := now.Add(24*time.Hour + 5*time.Minute)
-	appointments, err := service.repository.FindDueReminderAppointments(ctx, from, until)
+	notifications, err := service.repository.ClaimDueNotifications(ctx, now, dueNotificationBatchSize, maxNotificationAttempts)
 	if err != nil {
-		return fmt.Errorf("find due reminder appointments: %w", err)
+		return fmt.Errorf("claim due reminders: %w", err)
 	}
 
-	for _, appointment := range appointments {
-		cancelURL := fmt.Sprintf("%s/cancel/%s?token=%s", service.appBaseURL, appointment.AppointmentID, appointment.CancellationToken)
-		message := email.Message{
-			From:    service.emailFrom,
-			To:      appointment.CustomerEmail,
-			Subject: fmt.Sprintf("Recordatorio de turno: %s", appointment.ServiceName),
-			Text: fmt.Sprintf(
-				"Hola %s, te recordamos tu turno para %s el %s. Si no podes asistir, cancelalo desde %s",
-				appointment.CustomerName,
-				appointment.ServiceName,
-				appointment.StartsAt.Format(time.RFC1123),
-				cancelURL,
-			),
+	for _, notification := range notifications {
+		message := service.notificationMessage(notification)
+		if err := service.sender.Send(ctx, message); err != nil {
+			nextAttemptAt := service.nextNotificationAttempt(notification, now)
+			if recordErr := service.repository.MarkNotificationFailed(ctx, notification, err.Error(), nextAttemptAt); recordErr != nil {
+				return recordErr
+			}
+			continue
 		}
 
-		sendErr := service.sender.Send(ctx, message)
-		logInput := NotificationLog{
-			AppointmentID: &appointment.AppointmentID,
-			BusinessID:    appointment.BusinessID,
-			Email:         appointment.CustomerEmail,
-			Status:        NotificationSent,
-			Template:      reminderTemplate24Hours,
-		}
-		if sendErr != nil {
-			errorMessage := sendErr.Error()
-			logInput.LastError = &errorMessage
-			logInput.Status = NotificationFailed
-		}
-		if err := service.repository.CreateNotificationLog(ctx, logInput); err != nil {
+		if err := service.repository.MarkNotificationSent(ctx, notification, now); err != nil {
 			return err
 		}
 	}
@@ -99,14 +80,41 @@ func (service *Service) ExpireWaitlistOffers(ctx context.Context, now time.Time)
 	return service.repository.ExpireWaitlistOffers(ctx, now)
 }
 
+func (service *Service) notificationMessage(notification DueNotification) email.Message {
+	return email.Message{
+		From:    service.emailFrom,
+		To:      notification.Email,
+		Subject: "Recordatorio de turno",
+		Text:    fmt.Sprintf("Tenes un recordatorio pendiente de TurnoFlow. Template: %s", notification.Template),
+	}
+}
+
+func (service *Service) nextNotificationAttempt(notification DueNotification, now time.Time) *time.Time {
+	if notification.Attempts >= maxNotificationAttempts {
+		return nil
+	}
+
+	backoff := time.Duration(notification.Attempts*notification.Attempts) * time.Minute
+	nextAttemptAt := now.Add(backoff)
+	return &nextAttemptAt
+}
+
 func (service *Service) handleAppointmentBooked(ctx context.Context, tx Tx, payload json.RawMessage) error {
 	var appointment domain.AppointmentPayload
 	if err := json.Unmarshal(payload, &appointment); err != nil {
 		return fmt.Errorf("decode appointment booking payload: %w", err)
 	}
 
+	settings, err := tx.GetReminderSettings(ctx, appointment.BusinessID)
+	if err != nil {
+		return fmt.Errorf("get reminder settings: %w", err)
+	}
+	if !settings.Enabled {
+		return nil
+	}
+
 	cancelURL := fmt.Sprintf("%s/cancel/%s?token=%s", service.appBaseURL, appointment.AppointmentID, appointment.CancellationToken)
-	dueAt := appointment.StartsAt.Add(-24 * time.Hour)
+	dueAt := appointment.StartsAt.Add(-time.Duration(settings.OffsetMinutes) * time.Minute)
 	notificationPayload, err := json.Marshal(map[string]any{
 		"appointmentId": appointment.AppointmentID,
 		"cancelUrl":     cancelURL,
@@ -123,12 +131,12 @@ func (service *Service) handleAppointmentBooked(ctx context.Context, tx Tx, payl
 	notificationID, err := tx.CreateScheduledNotification(ctx, ScheduledNotificationInput{
 		AppointmentID: appointment.AppointmentID,
 		BusinessID:    appointment.BusinessID,
-		Channel:       mockNotificationChannel,
+		Channel:       settings.Channel,
 		CustomerID:    appointment.Customer.ID,
 		DueAt:         dueAt,
 		Email:         appointment.Customer.Email,
 		Payload:       notificationPayload,
-		Template:      reminderTemplate24Hours,
+		Template:      settings.Template,
 	})
 	if err != nil {
 		return fmt.Errorf("create scheduled reminder: %w", err)
@@ -137,12 +145,12 @@ func (service *Service) handleAppointmentBooked(ctx context.Context, tx Tx, payl
 	eventPayload, err := json.Marshal(map[string]any{
 		"appointmentId":  appointment.AppointmentID,
 		"businessId":     appointment.BusinessID,
-		"channel":        mockNotificationChannel,
+		"channel":        settings.Channel,
 		"customerEmail":  appointment.Customer.Email,
 		"customerId":     appointment.Customer.ID,
 		"dueAt":          dueAt.Format(time.RFC3339),
 		"notificationId": notificationID,
-		"template":       reminderTemplate24Hours,
+		"template":       settings.Template,
 	})
 	if err != nil {
 		return fmt.Errorf("encode reminder scheduled event payload: %w", err)

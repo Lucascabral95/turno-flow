@@ -9,7 +9,9 @@ const (
 	EventAppointmentBooked       = "AppointmentBooked"
 	EventAppointmentCancelled    = "AppointmentCancelled"
 	EventAppointmentMarkedNoShow = "AppointmentMarkedNoShow"
+	EventReminderFailed          = "ReminderFailed"
 	EventReminderScheduled       = "ReminderScheduled"
+	EventReminderSent            = "ReminderSent"
 	EventWaitlistOfferCreated    = "WaitlistOfferCreated"
 )
 
@@ -61,14 +63,4 @@ type WaitlistCandidate struct {
 	CustomerName  string
 	EntryID       string
 	NoShowCount   int
-}
-
-type ReminderAppointment struct {
-	AppointmentID     string
-	BusinessID        string
-	CancellationToken string
-	CustomerEmail     string
-	CustomerName      string
-	ServiceName       string
-	StartsAt          time.Time
 }

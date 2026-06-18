@@ -23,7 +23,9 @@ const QUEUE_BINDINGS = [
       "appointment.booked",
       "appointment.cancelled",
       "appointment.reminder_due",
+      "reminder.failed",
       "reminder.scheduled",
+      "reminder.sent",
       "waitlist.offer_created"
     ]
   },

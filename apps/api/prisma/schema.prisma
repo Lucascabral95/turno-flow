@@ -92,6 +92,7 @@ model Business {
   notificationLogs  NotificationLog[]
   appointmentEvents AppointmentEvent[]
   eventOutbox       EventOutbox[]
+  reminderSettings  BusinessReminderSettings?
 
   @@map("businesses")
 }
@@ -251,6 +252,19 @@ model WaitlistOffer {
   @@map("waitlist_offers")
 }
 
+model BusinessReminderSettings {
+  businessId    String   @id @map("business_id") @db.Uuid
+  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  enabled       Boolean  @default(true)
+  offsetMinutes Int      @default(1440) @map("offset_minutes")
+  channel       String   @default("mock")
+  template      String   @default("appointment_reminder_24h")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("business_reminder_settings")
+}
+
 model Notification {
   id            String             @id @default(uuid()) @db.Uuid
   businessId    String             @map("business_id") @db.Uuid
@@ -266,12 +280,15 @@ model Notification {
   dueAt         DateTime           @map("due_at") @db.Timestamptz(3)
   attempts      Int                @default(0)
   lastError     String?            @map("last_error")
+  nextAttemptAt DateTime?          @map("next_attempt_at") @db.Timestamptz(3)
   sentAt        DateTime?          @map("sent_at") @db.Timestamptz(3)
   payload       Json
   createdAt     DateTime           @default(now()) @map("created_at")
   updatedAt     DateTime           @updatedAt @map("updated_at")
+  logs          NotificationLog[]
 
   @@index([businessId, status, dueAt])
+  @@index([status, nextAttemptAt])
   @@index([appointmentId])
   @@map("notifications")
 }
@@ -280,6 +297,8 @@ model NotificationLog {
   id              String             @id @default(uuid()) @db.Uuid
   businessId      String             @map("business_id") @db.Uuid
   business        Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  notificationId  String?            @map("notification_id") @db.Uuid
+  notification    Notification?      @relation(fields: [notificationId], references: [id], onDelete: SetNull)
   appointmentId   String?            @map("appointment_id") @db.Uuid
   appointment     Appointment?       @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
   waitlistEntryId String?            @map("waitlist_entry_id") @db.Uuid
@@ -294,6 +313,7 @@ model NotificationLog {
   updatedAt       DateTime           @updatedAt @map("updated_at")
 
   @@index([businessId, status])
+  @@index([notificationId])
   @@map("notification_logs")
 }
 
