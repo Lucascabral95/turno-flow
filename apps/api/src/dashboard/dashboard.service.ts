@@ -4,6 +4,7 @@ import { AppointmentStatus } from "@prisma/client";
 import type { AuthenticatedUser } from "../common/authenticated-user";
 import { BusinessesService } from "../businesses/businesses.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { fromPrismaAppointmentStatus } from "../appointments/status";
 
 @Injectable()
 export class DashboardService {
@@ -48,5 +49,48 @@ export class DashboardService {
       riskyCustomers,
       totalAppointments: appointments.length
     };
+  }
+
+  async getNotifications(user: AuthenticatedUser) {
+    const business = await this.businesses.requireCurrentBusiness(user);
+    const logs = await this.prisma.notificationLog.findMany({
+      include: {
+        appointment: {
+          include: {
+            customer: true,
+            service: true
+          }
+        }
+      },
+      orderBy: [{ createdAt: "desc" }],
+      take: 25,
+      where: { businessId: business.id }
+    });
+
+    return logs.map((log) => ({
+      appointment: log.appointment
+        ? {
+            id: log.appointment.id,
+            startsAt: log.appointment.startsAt.toISOString(),
+            status: fromPrismaAppointmentStatus(log.appointment.status),
+            customer: {
+              id: log.appointment.customer.id,
+              name: log.appointment.customer.name
+            },
+            service: {
+              id: log.appointment.service.id,
+              name: log.appointment.service.name
+            }
+          }
+        : null,
+      attempts: log.attempts,
+      createdAt: log.createdAt.toISOString(),
+      email: log.email,
+      id: log.id,
+      lastError: log.lastError,
+      sentAt: log.sentAt?.toISOString() ?? null,
+      status: log.status.toLowerCase(),
+      template: log.template
+    }));
   }
 }
