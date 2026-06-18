@@ -10,6 +10,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import type { CreateAvailabilityExceptionDto, UpdateAvailabilityExceptionDto } from "./dto/availability-exception.dto";
 import type { CreateAvailabilityRuleDto, UpdateAvailabilityRuleDto } from "./dto/availability-rule.dto";
 import type { CreateBusinessDto, UpdateBusinessDto } from "./dto/business.dto";
+import type { UpdateReminderSettingsDto } from "./dto/reminder-settings.dto";
 import type { CreateServiceDto, UpdateServiceDto } from "./dto/service.dto";
 import type { CreateStaffMemberDto, UpdateStaffMemberDto } from "./dto/staff-member.dto";
 
@@ -46,6 +47,9 @@ export class BusinessesService {
         email: input.email,
         name: input.name,
         ownerId: user.id,
+        reminderSettings: {
+          create: {}
+        },
         slug,
         timezone: input.timezone ?? "America/Argentina/Buenos_Aires"
       }
@@ -58,6 +62,29 @@ export class BusinessesService {
     return this.prisma.business.update({
       data: input,
       where: { id: business.id }
+    });
+  }
+
+  async getReminderSettings(user: AuthenticatedUser) {
+    const business = await this.requireCurrentBusiness(user);
+
+    return this.prisma.businessReminderSettings.upsert({
+      create: { businessId: business.id },
+      update: {},
+      where: { businessId: business.id }
+    });
+  }
+
+  async updateReminderSettings(user: AuthenticatedUser, input: UpdateReminderSettingsDto) {
+    const business = await this.requireCurrentBusiness(user);
+
+    return this.prisma.businessReminderSettings.upsert({
+      create: {
+        businessId: business.id,
+        ...input
+      },
+      update: input,
+      where: { businessId: business.id }
     });
   }
 

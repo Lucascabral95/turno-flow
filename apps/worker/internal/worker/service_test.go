@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -38,6 +39,12 @@ func TestHandleEventCreatesWaitlistOfferOnlyOnce(t *testing.T) {
 func TestHandleEventSchedulesReminderOnlyOnceForAppointmentBooked(t *testing.T) {
 	ctx := context.Background()
 	repository := newFakeRepository()
+	repository.reminderSettings = ReminderSettings{
+		Channel:       "mock",
+		Enabled:       true,
+		OffsetMinutes: 60,
+		Template:      "custom_reminder",
+	}
 	sender := &fakeSender{}
 	service := NewService(repository, sender, "http://localhost:3000", "noreply@example.test")
 	event := bookedEvent(t)
@@ -53,10 +60,10 @@ func TestHandleEventSchedulesReminderOnlyOnceForAppointmentBooked(t *testing.T) 
 		t.Fatalf("expected one scheduled notification, got %d", len(repository.scheduledNotifications))
 	}
 	notification := repository.scheduledNotifications[0]
-	if notification.Template != reminderTemplate24Hours {
+	if notification.Template != "custom_reminder" {
 		t.Fatalf("unexpected template %q", notification.Template)
 	}
-	expectedDueAt := time.Date(2026, 6, 16, 10, 0, 0, 0, time.UTC)
+	expectedDueAt := time.Date(2026, 6, 17, 9, 0, 0, 0, time.UTC)
 	if !notification.DueAt.Equal(expectedDueAt) {
 		t.Fatalf("expected due at %s, got %s", expectedDueAt, notification.DueAt)
 	}
@@ -75,18 +82,38 @@ func TestHandleEventSchedulesReminderOnlyOnceForAppointmentBooked(t *testing.T) 
 	}
 }
 
-func TestSendDueRemindersLogsSentNotifications(t *testing.T) {
+func TestHandleEventSkipsReminderWhenSettingsAreDisabled(t *testing.T) {
 	ctx := context.Background()
 	repository := newFakeRepository()
-	repository.reminders = []domain.ReminderAppointment{
+	repository.reminderSettings.Enabled = false
+	sender := &fakeSender{}
+	service := NewService(repository, sender, "http://localhost:3000", "noreply@example.test")
+
+	if err := service.HandleEvent(ctx, bookedEvent(t)); err != nil {
+		t.Fatalf("handle event: %v", err)
+	}
+
+	if len(repository.scheduledNotifications) != 0 {
+		t.Fatalf("expected no scheduled notifications, got %d", len(repository.scheduledNotifications))
+	}
+	if len(repository.outboxEvents) != 0 {
+		t.Fatalf("expected no outbox events, got %d", len(repository.outboxEvents))
+	}
+}
+
+func TestSendDueRemindersMarksNotificationSentAndLogsAttempt(t *testing.T) {
+	ctx := context.Background()
+	repository := newFakeRepository()
+	repository.dueNotifications = []DueNotification{
 		{
-			AppointmentID:     "appointment-1",
-			BusinessID:        "business-1",
-			CancellationToken: "cancel-token",
-			CustomerEmail:     "cliente@example.test",
-			CustomerName:      "Cliente",
-			ServiceName:       "Corte",
-			StartsAt:          time.Date(2026, 6, 17, 10, 0, 0, 0, time.UTC),
+			AppointmentID: stringPointer("appointment-1"),
+			Attempts:      1,
+			BusinessID:    "business-1",
+			Channel:       "mock",
+			DueAt:         time.Date(2026, 6, 16, 10, 0, 0, 0, time.UTC),
+			Email:         "cliente@example.test",
+			ID:            "notification-1",
+			Template:      reminderTemplate24Hours,
 		},
 	}
 	sender := &fakeSender{}
@@ -99,22 +126,64 @@ func TestSendDueRemindersLogsSentNotifications(t *testing.T) {
 	if len(sender.messages) != 1 {
 		t.Fatalf("expected one reminder email, got %d", len(sender.messages))
 	}
+	if len(repository.sentNotifications) != 1 {
+		t.Fatalf("expected one sent notification, got %d", len(repository.sentNotifications))
+	}
 	if len(repository.notificationLogs) != 1 {
 		t.Fatalf("expected one reminder log, got %d", len(repository.notificationLogs))
 	}
-	if repository.notificationLogs[0].Template != "appointment_reminder_24h" {
+	if repository.notificationLogs[0].Template != reminderTemplate24Hours {
 		t.Fatalf("unexpected template %q", repository.notificationLogs[0].Template)
+	}
+}
+
+func TestSendDueRemindersMarksNotificationFailedWithRetry(t *testing.T) {
+	ctx := context.Background()
+	repository := newFakeRepository()
+	repository.dueNotifications = []DueNotification{
+		{
+			AppointmentID: stringPointer("appointment-1"),
+			Attempts:      1,
+			BusinessID:    "business-1",
+			Channel:       "mock",
+			DueAt:         time.Date(2026, 6, 16, 10, 0, 0, 0, time.UTC),
+			Email:         "cliente@example.test",
+			ID:            "notification-1",
+			Template:      reminderTemplate24Hours,
+		},
+	}
+	sender := &fakeSender{err: assertError("mock send failed")}
+	service := NewService(repository, sender, "http://localhost:3000", "noreply@example.test")
+
+	if err := service.SendDueReminders(ctx, time.Date(2026, 6, 16, 10, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("send due reminders: %v", err)
+	}
+
+	if len(repository.failedNotifications) != 1 {
+		t.Fatalf("expected one failed notification, got %d", len(repository.failedNotifications))
+	}
+	if repository.failedNotifications[0].nextAttemptAt == nil {
+		t.Fatal("expected retry timestamp for first failed attempt")
 	}
 }
 
 type fakeRepository struct {
 	candidate              *domain.WaitlistCandidate
+	dueNotifications       []DueNotification
+	failedNotifications    []failedNotification
 	notificationLogs       []NotificationLog
 	offerCount             int
 	outboxEvents           []OutboxEventInput
 	processed              map[string]bool
-	reminders              []domain.ReminderAppointment
+	reminderSettings       ReminderSettings
+	sentNotifications      []DueNotification
 	scheduledNotifications []ScheduledNotificationInput
+}
+
+type failedNotification struct {
+	lastError     string
+	nextAttemptAt *time.Time
+	notification  DueNotification
 }
 
 func newFakeRepository() *fakeRepository {
@@ -125,6 +194,12 @@ func newFakeRepository() *fakeRepository {
 			EntryID:       "waitlist-entry-1",
 		},
 		processed: map[string]bool{},
+		reminderSettings: ReminderSettings{
+			Channel:       "mock",
+			Enabled:       true,
+			OffsetMinutes: 1440,
+			Template:      reminderTemplate24Hours,
+		},
 	}
 }
 
@@ -146,6 +221,10 @@ func (repository *fakeRepository) CreateNotificationLog(_ context.Context, input
 	return nil
 }
 
+func (repository *fakeRepository) ClaimDueNotifications(_ context.Context, _ time.Time, _ int, _ int) ([]DueNotification, error) {
+	return repository.dueNotifications, nil
+}
+
 func (repository *fakeRepository) CreateOutboxEvent(_ context.Context, input OutboxEventInput) error {
 	repository.outboxEvents = append(repository.outboxEvents, input)
 	return nil
@@ -160,8 +239,37 @@ func (repository *fakeRepository) ExpireWaitlistOffers(_ context.Context, _ time
 	return nil
 }
 
-func (repository *fakeRepository) FindDueReminderAppointments(_ context.Context, _ time.Time, _ time.Time) ([]domain.ReminderAppointment, error) {
-	return repository.reminders, nil
+func (repository *fakeRepository) MarkNotificationFailed(_ context.Context, notification DueNotification, lastError string, nextAttemptAt *time.Time) error {
+	repository.failedNotifications = append(repository.failedNotifications, failedNotification{
+		lastError:     lastError,
+		nextAttemptAt: nextAttemptAt,
+		notification:  notification,
+	})
+	repository.notificationLogs = append(repository.notificationLogs, NotificationLog{
+		AppointmentID:  notification.AppointmentID,
+		Attempts:       notification.Attempts,
+		BusinessID:     notification.BusinessID,
+		Email:          notification.Email,
+		LastError:      &lastError,
+		NotificationID: &notification.ID,
+		Status:         NotificationFailed,
+		Template:       notification.Template,
+	})
+	return nil
+}
+
+func (repository *fakeRepository) MarkNotificationSent(_ context.Context, notification DueNotification, _ time.Time) error {
+	repository.sentNotifications = append(repository.sentNotifications, notification)
+	repository.notificationLogs = append(repository.notificationLogs, NotificationLog{
+		AppointmentID:  notification.AppointmentID,
+		Attempts:       notification.Attempts,
+		BusinessID:     notification.BusinessID,
+		Email:          notification.Email,
+		NotificationID: &notification.ID,
+		Status:         NotificationSent,
+		Template:       notification.Template,
+	})
+	return nil
 }
 
 func (repository *fakeRepository) CreateWaitlistOffer(_ context.Context, _ WaitlistOfferInput) error {
@@ -173,17 +281,22 @@ func (repository *fakeRepository) FindWaitlistCandidate(_ context.Context, _ dom
 	return repository.candidate, nil
 }
 
+func (repository *fakeRepository) GetReminderSettings(_ context.Context, _ string) (ReminderSettings, error) {
+	return repository.reminderSettings, nil
+}
+
 func (repository *fakeRepository) MarkWaitlistEntryOffered(_ context.Context, _ string) error {
 	return nil
 }
 
 type fakeSender struct {
+	err      error
 	messages []email.Message
 }
 
 func (sender *fakeSender) Send(_ context.Context, message email.Message) error {
 	sender.messages = append(sender.messages, message)
-	return nil
+	return sender.err
 }
 
 func cancellationEvent(t *testing.T) domain.Event {
@@ -251,4 +364,12 @@ func appointmentPayload() domain.AppointmentPayload {
 	}
 
 	return payload
+}
+
+func stringPointer(value string) *string {
+	return &value
+}
+
+func assertError(message string) error {
+	return errors.New(message)
 }

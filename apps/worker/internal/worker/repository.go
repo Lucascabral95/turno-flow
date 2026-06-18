@@ -27,11 +27,32 @@ type ScheduledNotificationInput struct {
 	Template      string
 }
 
+type ReminderSettings struct {
+	Channel       string
+	Enabled       bool
+	OffsetMinutes int
+	Template      string
+}
+
+type DueNotification struct {
+	AppointmentID *string
+	Attempts      int
+	BusinessID    string
+	Channel       string
+	DueAt         time.Time
+	Email         string
+	ID            string
+	Payload       json.RawMessage
+	Template      string
+}
+
 type NotificationLog struct {
 	AppointmentID   *string
+	Attempts        int
 	BusinessID      string
 	Email           string
 	LastError       *string
+	NotificationID  *string
 	Status          NotificationStatus
 	Template        string
 	WaitlistEntryID *string
@@ -56,8 +77,10 @@ type OutboxEventInput struct {
 type Repository interface {
 	RunOnce(ctx context.Context, eventID string, eventType string, fn func(context.Context, Tx) error) (bool, error)
 	CreateNotificationLog(ctx context.Context, input NotificationLog) error
+	ClaimDueNotifications(ctx context.Context, now time.Time, limit int, maxAttempts int) ([]DueNotification, error)
 	ExpireWaitlistOffers(ctx context.Context, now time.Time) error
-	FindDueReminderAppointments(ctx context.Context, from time.Time, until time.Time) ([]domain.ReminderAppointment, error)
+	MarkNotificationFailed(ctx context.Context, notification DueNotification, lastError string, nextAttemptAt *time.Time) error
+	MarkNotificationSent(ctx context.Context, notification DueNotification, sentAt time.Time) error
 }
 
 type Tx interface {
@@ -66,5 +89,6 @@ type Tx interface {
 	CreateScheduledNotification(ctx context.Context, input ScheduledNotificationInput) (string, error)
 	CreateWaitlistOffer(ctx context.Context, input WaitlistOfferInput) error
 	FindWaitlistCandidate(ctx context.Context, appointment domain.AppointmentPayload) (*domain.WaitlistCandidate, error)
+	GetReminderSettings(ctx context.Context, businessID string) (ReminderSettings, error)
 	MarkWaitlistEntryOffered(ctx context.Context, entryID string) error
 }

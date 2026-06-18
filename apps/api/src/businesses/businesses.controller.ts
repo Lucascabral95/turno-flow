@@ -7,6 +7,7 @@ import { BusinessesService } from "./businesses.service";
 import { CreateAvailabilityExceptionDto, UpdateAvailabilityExceptionDto } from "./dto/availability-exception.dto";
 import { CreateAvailabilityRuleDto, UpdateAvailabilityRuleDto } from "./dto/availability-rule.dto";
 import { CreateBusinessDto, UpdateBusinessDto } from "./dto/business.dto";
+import { UpdateReminderSettingsDto } from "./dto/reminder-settings.dto";
 import { CreateServiceDto, UpdateServiceDto } from "./dto/service.dto";
 import { CreateStaffMemberDto, UpdateStaffMemberDto } from "./dto/staff-member.dto";
 
@@ -28,6 +29,16 @@ export class BusinessesController {
   @Patch("businesses/current")
   updateCurrent(@CurrentUser() user: AuthenticatedUser, @Body() input: UpdateBusinessDto) {
     return this.businesses.updateCurrent(user, input);
+  }
+
+  @Get("businesses/current/reminder-settings")
+  getReminderSettings(@CurrentUser() user: AuthenticatedUser) {
+    return this.businesses.getReminderSettings(user);
+  }
+
+  @Patch("businesses/current/reminder-settings")
+  updateReminderSettings(@CurrentUser() user: AuthenticatedUser, @Body() input: UpdateReminderSettingsDto) {
+    return this.businesses.updateReminderSettings(user, input);
   }
 
   @Get("services")
