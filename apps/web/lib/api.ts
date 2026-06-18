@@ -31,6 +31,16 @@ export type AvailabilityRule = {
   weekday: number;
 };
 
+export type AvailabilityException = {
+  date: string;
+  endTime: string;
+  id: string;
+  reason: string | null;
+  staffMemberId: string | null;
+  startTime: string;
+  type: "BLOCKED" | "EXTRA_OPENING";
+};
+
 export type AvailabilitySlot = {
   endsAt: string;
   staffMemberId: string;
@@ -71,6 +81,7 @@ export type DashboardMetrics = {
 };
 
 export type CurrentBusiness = Business & {
+  availabilityExceptions: AvailabilityException[];
   availabilityRules: AvailabilityRule[];
   services: Service[];
   staffMembers: StaffMember[];
@@ -89,13 +100,31 @@ export async function requestJson<T>(path: string, options: RequestInit = {}): P
       ...(options.headers ?? {})
     }
   });
+  const responseText = await response.text();
+  const body = parseJsonBody(responseText);
 
   if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { message?: string } | null;
-    throw new Error(body?.message ?? `Request failed with status ${response.status}`);
+    throw new Error(errorMessageFromBody(body) ?? `Request failed with status ${response.status}`);
   }
 
-  return response.json() as Promise<T>;
+  return body as T;
+}
+
+function parseJsonBody(value: string): { message?: string } | unknown {
+  if (value.trim() === "") {
+    return null;
+  }
+
+  return JSON.parse(value) as unknown;
+}
+
+function errorMessageFromBody(value: unknown): string | undefined {
+  if (!value || typeof value !== "object" || !("message" in value)) {
+    return undefined;
+  }
+
+  const message = (value as { message: unknown }).message;
+  return typeof message === "string" ? message : undefined;
 }
 
 export function formatMoney(cents: number): string {

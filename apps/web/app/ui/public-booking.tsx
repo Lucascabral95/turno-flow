@@ -1,12 +1,98 @@
 "use client";
 
 import { CalendarClock, CheckCircle2, Clock, Mail, Scissors, UserPlus } from "lucide-react";
+import Link from "next/link";
 import type { FormEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 
 import type { Appointment, AvailabilitySlot, Business, Service } from "../../lib/api";
 import { formatDateTime, formatMoney, requestJson } from "../../lib/api";
 import { formString } from "../../lib/form";
+
+export function PublicBusinessLanding({ businessSlug }: { businessSlug: string }) {
+  const [business, setBusiness] = useState<Business | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [services, setServices] = useState<Service[]>([]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadBusiness() {
+      setLoading(true);
+      setError(null);
+      try {
+        const [businessResponse, serviceResponse] = await Promise.all([
+          requestJson<Business>(`/public/businesses/${businessSlug}`),
+          requestJson<Service[]>(`/public/businesses/${businessSlug}/services`)
+        ]);
+
+        if (!active) {
+          return;
+        }
+
+        setBusiness(businessResponse);
+        setServices(serviceResponse);
+      } catch (loadError) {
+        setError(loadError instanceof Error ? loadError.message : "No se pudo cargar la pagina publica");
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadBusiness();
+
+    return () => {
+      active = false;
+    };
+  }, [businessSlug]);
+
+  if (loading) {
+    return (
+      <main className="booking-shell">
+        <div className="panel">Cargando negocio...</div>
+      </main>
+    );
+  }
+
+  return (
+    <main className="booking-shell">
+      <header className="topbar">
+        <div className="brand">
+          <h1>{business?.name ?? "TurnoFlow"}</h1>
+          <span>{business?.timezone ?? "Agenda online"}</span>
+        </div>
+        <Link className="button-link button-primary" href={`/${businessSlug}/book`}>
+          <CalendarClock size={18} />
+          Reservar turno
+        </Link>
+      </header>
+
+      {error ? <div className="error">{error}</div> : null}
+
+      <section className="panel stack">
+        <h2 className="inline">
+          <Scissors size={20} />
+          Servicios
+        </h2>
+        {services.length === 0 ? <div className="message">Todavia no hay servicios publicados.</div> : null}
+        <div className="list">
+          {services.map((service) => (
+            <article className="list-item" key={service.id}>
+              <header>
+                <strong>{service.name}</strong>
+                <span className="badge">{formatMoney(service.priceCents)}</span>
+              </header>
+              <span>{service.durationMinutes} min</span>
+            </article>
+          ))}
+        </div>
+      </section>
+    </main>
+  );
+}
 
 export function PublicBooking({ businessSlug }: { businessSlug: string }) {
   const [business, setBusiness] = useState<Business | null>(null);

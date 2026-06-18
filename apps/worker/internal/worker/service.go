@@ -33,7 +33,7 @@ func (service *Service) HandleEvent(ctx context.Context, event domain.Event) err
 		switch event.Type {
 		case domain.EventAppointmentCancelled:
 			return service.handleAppointmentCancelled(ctx, tx, event.Payload)
-		case domain.EventAppointmentCreated, domain.EventAppointmentMarkedNoShow, domain.EventWaitlistOfferCreated:
+		case domain.EventAppointmentBooked, domain.EventAppointmentMarkedNoShow, domain.EventWaitlistOfferCreated:
 			return nil
 		default:
 			return nil

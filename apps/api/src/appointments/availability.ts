@@ -14,6 +14,13 @@ export type BusySlotInput = {
   endsAt: Date;
 };
 
+export type AvailabilityExceptionInput = {
+  staffMemberId: string | null;
+  startTime: string;
+  endTime: string;
+  type: "BLOCKED" | "EXTRA_OPENING";
+};
+
 export type AvailabilitySlot = {
   staffMemberId: string;
   startsAt: Date;
@@ -25,34 +32,70 @@ export function calculateAvailability(input: {
   durationMinutes: number;
   bufferMinutes: number;
   rules: AvailabilityRuleInput[];
+  exceptions: AvailabilityExceptionInput[];
   busySlots: BusySlotInput[];
+  activeStaffMemberIds: string[];
 }): AvailabilitySlot[] {
   const requiredMinutes = input.durationMinutes + input.bufferMinutes;
-  const slots: AvailabilitySlot[] = [];
+  const slots = new Map<string, AvailabilitySlot>();
+  const windows = [
+    ...input.rules.map((rule) => ({
+      staffMemberId: rule.staffMemberId,
+      startTime: rule.startTime,
+      endTime: rule.endTime
+    })),
+    ...input.exceptions
+      .filter((exception) => exception.type === "EXTRA_OPENING")
+      .flatMap((exception) => {
+        const staffMemberIds = exception.staffMemberId ? [exception.staffMemberId] : input.activeStaffMemberIds;
 
-  for (const rule of input.rules) {
-    const ruleStart = minutesSinceMidnight(rule.startTime);
-    const ruleEnd = minutesSinceMidnight(rule.endTime);
+        return staffMemberIds.map((staffMemberId) => ({
+          endTime: exception.endTime,
+          staffMemberId,
+          startTime: exception.startTime
+        }));
+      })
+  ];
+  const blockedWindows = input.exceptions.filter((exception) => exception.type === "BLOCKED");
 
-    for (let start = ruleStart; start + requiredMinutes <= ruleEnd; start += SLOT_STEP_MINUTES) {
+  for (const window of windows) {
+    const windowStart = minutesSinceMidnight(window.startTime);
+    const windowEnd = minutesSinceMidnight(window.endTime);
+
+    for (let start = windowStart; start + requiredMinutes <= windowEnd; start += SLOT_STEP_MINUTES) {
       const startsAt = dateAtUtcMinutes(input.date, start);
       const endsAt = dateAtUtcMinutes(input.date, start + requiredMinutes);
 
       const overlaps = input.busySlots.some((busySlot) => {
         return (
-          busySlot.staffMemberId === rule.staffMemberId &&
+          busySlot.staffMemberId === window.staffMemberId &&
           startsAt < busySlot.endsAt &&
           endsAt > busySlot.startsAt
         );
       });
+      const blocked = blockedWindows.some((blockedWindow) => {
+        const appliesToStaff = !blockedWindow.staffMemberId || blockedWindow.staffMemberId === window.staffMemberId;
+        if (!appliesToStaff) {
+          return false;
+        }
 
-      if (!overlaps) {
-        slots.push({ endsAt, staffMemberId: rule.staffMemberId, startsAt });
+        const blockedStart = dateAtUtcMinutes(input.date, minutesSinceMidnight(blockedWindow.startTime));
+        const blockedEnd = dateAtUtcMinutes(input.date, minutesSinceMidnight(blockedWindow.endTime));
+
+        return startsAt < blockedEnd && endsAt > blockedStart;
+      });
+
+      if (!overlaps && !blocked) {
+        slots.set(`${window.staffMemberId}-${startsAt.toISOString()}-${endsAt.toISOString()}`, {
+          endsAt,
+          staffMemberId: window.staffMemberId,
+          startsAt
+        });
       }
     }
   }
 
-  return slots.sort((left, right) => {
+  return [...slots.values()].sort((left, right) => {
     if (left.startsAt.getTime() !== right.startsAt.getTime()) {
       return left.startsAt.getTime() - right.startsAt.getTime();
     }

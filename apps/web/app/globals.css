@@ -145,6 +145,27 @@ label {
   gap: 10px;
 }
 
+.tabbar {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+}
+
+.tab-button {
+  background: transparent;
+  color: var(--muted);
+}
+
+.tab-button[aria-pressed="true"] {
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+}
+
 .grid-2 {
   display: grid;
   gap: 12px;
@@ -284,6 +305,17 @@ label {
 .slot-button[aria-pressed="true"] {
   background: var(--primary);
   color: #ffffff;
+}
+
+.slot-chip {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: inline-flex;
+  gap: 8px;
+  min-height: 40px;
+  padding: 9px 13px;
 }
 
 @media (max-width: 860px) {

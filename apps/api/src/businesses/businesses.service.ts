@@ -1,9 +1,13 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { type AvailabilityException, type AvailabilityRule, type Service } from "@prisma/client";
 
 import type { AuthenticatedUser } from "../common/authenticated-user";
 import { toSlug } from "../common/slug";
-import { minutesSinceMidnight } from "../common/time";
+import { minutesSinceMidnight, parseDateOnly } from "../common/time";
+import { EventRoutingKeys, EventTypes } from "../events/event-types";
+import { OutboxService } from "../events/outbox.service";
 import { PrismaService } from "../prisma/prisma.service";
+import type { CreateAvailabilityExceptionDto, UpdateAvailabilityExceptionDto } from "./dto/availability-exception.dto";
 import type { CreateAvailabilityRuleDto, UpdateAvailabilityRuleDto } from "./dto/availability-rule.dto";
 import type { CreateBusinessDto, UpdateBusinessDto } from "./dto/business.dto";
 import type { CreateServiceDto, UpdateServiceDto } from "./dto/service.dto";
@@ -11,11 +15,15 @@ import type { CreateStaffMemberDto, UpdateStaffMemberDto } from "./dto/staff-mem
 
 @Injectable()
 export class BusinessesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly outbox: OutboxService,
+    private readonly prisma: PrismaService
+  ) {}
 
   async getCurrent(user: AuthenticatedUser) {
     return this.prisma.business.findFirst({
       include: {
+        availabilityExceptions: { orderBy: [{ date: "asc" }, { startTime: "asc" }] },
         availabilityRules: { orderBy: [{ weekday: "asc" }, { startTime: "asc" }] },
         services: { orderBy: { createdAt: "asc" } },
         staffMembers: { orderBy: { createdAt: "asc" } }
@@ -65,8 +73,21 @@ export class BusinessesService {
   async createService(user: AuthenticatedUser, input: CreateServiceDto) {
     const business = await this.requireCurrentBusiness(user);
 
-    return this.prisma.service.create({
-      data: { ...input, businessId: business.id }
+    return this.prisma.$transaction(async (tx) => {
+      const service = await tx.service.create({
+        data: { ...input, businessId: business.id }
+      });
+
+      await this.outbox.create(tx, {
+        aggregateId: service.id,
+        businessId: business.id,
+        payload: this.servicePayload(service),
+        routingKey: EventRoutingKeys.ServiceCreated,
+        type: EventTypes.ServiceCreated,
+        version: 1
+      });
+
+      return service;
     });
   }
 
@@ -129,8 +150,21 @@ export class BusinessesService {
     await this.requireStaffMember(business.id, input.staffMemberId);
     this.assertTimeRange(input.startTime, input.endTime);
 
-    return this.prisma.availabilityRule.create({
-      data: { ...input, businessId: business.id }
+    return this.prisma.$transaction(async (tx) => {
+      const rule = await tx.availabilityRule.create({
+        data: { ...input, businessId: business.id }
+      });
+
+      await this.outbox.create(tx, {
+        aggregateId: rule.id,
+        businessId: business.id,
+        payload: this.availabilityRulePayload(rule),
+        routingKey: EventRoutingKeys.AvailabilityRuleCreated,
+        type: EventTypes.AvailabilityRuleCreated,
+        version: 1
+      });
+
+      return rule;
     });
   }
 
@@ -154,6 +188,84 @@ export class BusinessesService {
 
   async deactivateAvailabilityRule(user: AuthenticatedUser, ruleId: string) {
     return this.updateAvailabilityRule(user, ruleId, { active: false });
+  }
+
+  async listAvailabilityExceptions(user: AuthenticatedUser) {
+    const business = await this.requireCurrentBusiness(user);
+
+    return this.prisma.availabilityException.findMany({
+      orderBy: [{ date: "asc" }, { startTime: "asc" }],
+      where: { businessId: business.id }
+    });
+  }
+
+  async createAvailabilityException(user: AuthenticatedUser, input: CreateAvailabilityExceptionDto) {
+    const business = await this.requireCurrentBusiness(user);
+    if (input.staffMemberId) {
+      await this.requireStaffMember(business.id, input.staffMemberId);
+    }
+    this.assertTimeRange(input.startTime, input.endTime);
+
+    return this.prisma.$transaction(async (tx) => {
+      const exception = await tx.availabilityException.create({
+        data: {
+          businessId: business.id,
+          date: parseDateOnly(input.date),
+          endTime: input.endTime,
+          reason: input.reason,
+          staffMemberId: input.staffMemberId,
+          startTime: input.startTime,
+          type: input.type
+        }
+      });
+
+      await this.outbox.create(tx, {
+        aggregateId: exception.id,
+        businessId: business.id,
+        payload: this.availabilityExceptionPayload(exception),
+        routingKey: EventRoutingKeys.AvailabilityExceptionCreated,
+        type: EventTypes.AvailabilityExceptionCreated,
+        version: 1
+      });
+
+      return exception;
+    });
+  }
+
+  async updateAvailabilityException(
+    user: AuthenticatedUser,
+    exceptionId: string,
+    input: UpdateAvailabilityExceptionDto
+  ) {
+    const business = await this.requireCurrentBusiness(user);
+    const exception = await this.requireAvailabilityException(business.id, exceptionId);
+
+    if (input.staffMemberId) {
+      await this.requireStaffMember(business.id, input.staffMemberId);
+    }
+
+    this.assertTimeRange(input.startTime ?? exception.startTime, input.endTime ?? exception.endTime);
+
+    return this.prisma.availabilityException.update({
+      data: {
+        date: input.date ? parseDateOnly(input.date) : undefined,
+        endTime: input.endTime,
+        reason: input.reason,
+        staffMemberId: input.staffMemberId,
+        startTime: input.startTime,
+        type: input.type
+      },
+      where: { id: exceptionId }
+    });
+  }
+
+  async deleteAvailabilityException(user: AuthenticatedUser, exceptionId: string) {
+    const business = await this.requireCurrentBusiness(user);
+    await this.requireAvailabilityException(business.id, exceptionId);
+
+    return this.prisma.availabilityException.delete({
+      where: { id: exceptionId }
+    });
   }
 
   async requireCurrentBusiness(user: AuthenticatedUser) {
@@ -188,6 +300,21 @@ export class BusinessesService {
     }
   }
 
+  private async requireAvailabilityException(
+    businessId: string,
+    exceptionId: string
+  ): Promise<AvailabilityException> {
+    const exception = await this.prisma.availabilityException.findFirst({
+      where: { businessId, id: exceptionId }
+    });
+
+    if (!exception) {
+      throw new NotFoundException("Availability exception not found");
+    }
+
+    return exception;
+  }
+
   private async createAvailableSlug(value: string): Promise<string> {
     const baseSlug = toSlug(value);
 
@@ -213,5 +340,41 @@ export class BusinessesService {
     if (minutesSinceMidnight(startTime) >= minutesSinceMidnight(endTime)) {
       throw new ConflictException("Availability start time must be before end time");
     }
+  }
+
+  private servicePayload(service: Service) {
+    return {
+      active: service.active,
+      bufferMinutes: service.bufferMinutes,
+      businessId: service.businessId,
+      durationMinutes: service.durationMinutes,
+      name: service.name,
+      priceCents: service.priceCents,
+      serviceId: service.id
+    };
+  }
+
+  private availabilityRulePayload(rule: AvailabilityRule) {
+    return {
+      businessId: rule.businessId,
+      endTime: rule.endTime,
+      ruleId: rule.id,
+      staffMemberId: rule.staffMemberId,
+      startTime: rule.startTime,
+      weekday: rule.weekday
+    };
+  }
+
+  private availabilityExceptionPayload(exception: AvailabilityException) {
+    return {
+      businessId: exception.businessId,
+      date: exception.date.toISOString().slice(0, 10),
+      endTime: exception.endTime,
+      exceptionId: exception.id,
+      reason: exception.reason,
+      staffMemberId: exception.staffMemberId,
+      startTime: exception.startTime,
+      type: exception.type
+    };
   }
 }
