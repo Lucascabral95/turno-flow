@@ -19,7 +19,13 @@ const QUEUE_BINDINGS = [
   },
   {
     name: "worker.notifications",
-    routingKeys: ["appointment.booked", "appointment.cancelled", "appointment.reminder_due", "waitlist.offer_created"]
+    routingKeys: [
+      "appointment.booked",
+      "appointment.cancelled",
+      "appointment.reminder_due",
+      "reminder.scheduled",
+      "waitlist.offer_created"
+    ]
   },
   {
     name: "worker.metrics",
