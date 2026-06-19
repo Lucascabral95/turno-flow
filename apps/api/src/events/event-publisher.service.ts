@@ -11,11 +11,22 @@ const PUBLISH_INTERVAL_MS = 5_000;
 const QUEUE_BINDINGS = [
   {
     name: "worker.appointments",
-    routingKeys: ["appointment.booked", "appointment.cancelled", "appointment.marked_no_show"]
+    routingKeys: [
+      "appointment.booked",
+      "appointment.cancelled",
+      "appointment.marked_no_show",
+      "waitlist.offer_expired",
+      "waitlist.offer_rejected"
+    ]
   },
   {
     name: "worker.waitlist",
-    routingKeys: ["appointment.cancelled", "waitlist.entry_created", "waitlist.offer_expired"]
+    routingKeys: [
+      "appointment.cancelled",
+      "waitlist.entry_created",
+      "waitlist.offer_expired",
+      "waitlist.offer_rejected"
+    ]
   },
   {
     name: "worker.notifications",
@@ -31,7 +42,14 @@ const QUEUE_BINDINGS = [
   },
   {
     name: "worker.metrics",
-    routingKeys: ["appointment.booked", "appointment.cancelled", "appointment.marked_no_show", "metrics.recalculate"]
+    routingKeys: [
+      "appointment.booked",
+      "appointment.cancelled",
+      "appointment.marked_no_show",
+      "metrics.recalculate",
+      "waitlist.offer_accepted",
+      "waitlist.offer_rejected"
+    ]
   }
 ] as const;
 

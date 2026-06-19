@@ -13,7 +13,13 @@ func TestRabbitMQContracts(t *testing.T) {
 		t.Fatalf("unexpected worker queue %q", workerQueue)
 	}
 
-	expectedBindings := []string{"appointment.booked", "appointment.cancelled", "appointment.marked_no_show"}
+	expectedBindings := []string{
+		"appointment.booked",
+		"appointment.cancelled",
+		"appointment.marked_no_show",
+		"waitlist.offer_expired",
+		"waitlist.offer_rejected",
+	}
 	if !reflect.DeepEqual(eventBindingKeys, expectedBindings) {
 		t.Fatalf("unexpected binding keys %#v", eventBindingKeys)
 	}

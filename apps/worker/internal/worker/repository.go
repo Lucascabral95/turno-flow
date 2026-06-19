@@ -87,7 +87,7 @@ type Tx interface {
 	CreateNotificationLog(ctx context.Context, input NotificationLog) error
 	CreateOutboxEvent(ctx context.Context, input OutboxEventInput) error
 	CreateScheduledNotification(ctx context.Context, input ScheduledNotificationInput) (string, error)
-	CreateWaitlistOffer(ctx context.Context, input WaitlistOfferInput) error
+	CreateWaitlistOffer(ctx context.Context, input WaitlistOfferInput) (string, error)
 	FindWaitlistCandidate(ctx context.Context, appointment domain.AppointmentPayload) (*domain.WaitlistCandidate, error)
 	GetReminderSettings(ctx context.Context, businessID string) (ReminderSettings, error)
 	MarkWaitlistEntryOffered(ctx context.Context, entryID string) error

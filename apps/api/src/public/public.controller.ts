@@ -41,4 +41,9 @@ export class PublicController {
   acceptWaitlistOffer(@Param("token") token: string) {
     return this.appointments.acceptWaitlistOffer(token);
   }
+
+  @Post("waitlist-offers/:token/reject")
+  rejectWaitlistOffer(@Param("token") token: string) {
+    return this.appointments.rejectWaitlistOffer(token);
+  }
 }

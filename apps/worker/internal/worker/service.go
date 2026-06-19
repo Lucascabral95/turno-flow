@@ -13,10 +13,12 @@ import (
 )
 
 const (
-	dueNotificationBatchSize    = 25
-	maxNotificationAttempts     = 3
-	reminderScheduledRoutingKey = "reminder.scheduled"
-	reminderTemplate24Hours     = "appointment_reminder_24h"
+	dueNotificationBatchSize       = 25
+	maxNotificationAttempts        = 3
+	reminderScheduledRoutingKey    = "reminder.scheduled"
+	reminderTemplate24Hours        = "appointment_reminder_24h"
+	waitlistOfferCreatedRoutingKey = "waitlist.offer_created"
+	waitlistOfferTTL               = 15 * time.Minute
 )
 
 type Service struct {
@@ -40,9 +42,9 @@ func (service *Service) HandleEvent(ctx context.Context, event domain.Event) err
 		switch event.Type {
 		case domain.EventAppointmentBooked:
 			return service.handleAppointmentBooked(ctx, tx, event.Payload)
-		case domain.EventAppointmentCancelled:
-			return service.handleAppointmentCancelled(ctx, tx, event.Payload)
-		case domain.EventAppointmentMarkedNoShow, domain.EventWaitlistOfferCreated:
+		case domain.EventAppointmentCancelled, domain.EventWaitlistOfferExpired, domain.EventWaitlistOfferRejected:
+			return service.handleWaitlistOpportunity(ctx, tx, event.Payload, eventOccurredAt(event))
+		case domain.EventAppointmentMarkedNoShow, domain.EventWaitlistOfferAccepted, domain.EventWaitlistOfferCreated:
 			return nil
 		default:
 			return nil
@@ -170,10 +172,10 @@ func (service *Service) handleAppointmentBooked(ctx context.Context, tx Tx, payl
 	return nil
 }
 
-func (service *Service) handleAppointmentCancelled(ctx context.Context, tx Tx, payload json.RawMessage) error {
+func (service *Service) handleWaitlistOpportunity(ctx context.Context, tx Tx, payload json.RawMessage, now time.Time) error {
 	var appointment domain.AppointmentPayload
 	if err := json.Unmarshal(payload, &appointment); err != nil {
-		return fmt.Errorf("decode appointment cancellation payload: %w", err)
+		return fmt.Errorf("decode waitlist opportunity payload: %w", err)
 	}
 
 	candidate, err := tx.FindWaitlistCandidate(ctx, appointment)
@@ -189,13 +191,14 @@ func (service *Service) handleAppointmentCancelled(ctx context.Context, tx Tx, p
 		return err
 	}
 
-	expiresAt := time.Now().UTC().Add(15 * time.Minute)
-	if err := tx.CreateWaitlistOffer(ctx, WaitlistOfferInput{
+	expiresAt := now.UTC().Add(waitlistOfferTTL)
+	offerID, err := tx.CreateWaitlistOffer(ctx, WaitlistOfferInput{
 		AppointmentID:   appointment.AppointmentID,
 		ExpiresAt:       expiresAt,
 		Token:           token,
 		WaitlistEntryID: candidate.EntryID,
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("create waitlist offer: %w", err)
 	}
 	if err := tx.MarkWaitlistEntryOffered(ctx, candidate.EntryID); err != nil {
@@ -203,16 +206,33 @@ func (service *Service) handleAppointmentCancelled(ctx context.Context, tx Tx, p
 	}
 
 	acceptURL := fmt.Sprintf("%s/waitlist-offers/%s/accept", service.appBaseURL, token)
+	rejectURL := fmt.Sprintf("%s/waitlist-offers/%s/reject", service.appBaseURL, token)
+	eventPayload, err := waitlistOfferCreatedPayload(appointment, candidate, offerID, token, acceptURL, rejectURL, expiresAt)
+	if err != nil {
+		return err
+	}
+	if err := tx.CreateOutboxEvent(ctx, OutboxEventInput{
+		AggregateID: offerID,
+		BusinessID:  appointment.BusinessID,
+		Payload:     eventPayload,
+		RoutingKey:  waitlistOfferCreatedRoutingKey,
+		Type:        domain.EventWaitlistOfferCreated,
+		Version:     1,
+	}); err != nil {
+		return fmt.Errorf("create waitlist offer outbox event: %w", err)
+	}
+
 	sendErr := service.sender.Send(ctx, email.Message{
 		From:    service.emailFrom,
 		To:      candidate.CustomerEmail,
 		Subject: fmt.Sprintf("Se libero un turno para %s", appointment.Service.Name),
 		Text: fmt.Sprintf(
-			"Hola %s, se libero un turno para %s el %s. Podes aceptarlo desde %s. La oferta vence a las %s.",
+			"Hola %s, se libero un turno para %s el %s. Podes aceptarlo desde %s o rechazarlo desde %s. La oferta vence a las %s.",
 			candidate.CustomerName,
 			appointment.Service.Name,
 			appointment.StartsAt.Format(time.RFC1123),
 			acceptURL,
+			rejectURL,
 			expiresAt.Format(time.RFC1123),
 		),
 	})
@@ -232,6 +252,47 @@ func (service *Service) handleAppointmentCancelled(ctx context.Context, tx Tx, p
 	}
 
 	return tx.CreateNotificationLog(ctx, logInput)
+}
+
+func eventOccurredAt(event domain.Event) time.Time {
+	if event.OccurredAt.IsZero() {
+		return time.Now().UTC()
+	}
+
+	return event.OccurredAt.UTC()
+}
+
+func waitlistOfferCreatedPayload(
+	appointment domain.AppointmentPayload,
+	candidate *domain.WaitlistCandidate,
+	offerID string,
+	token string,
+	acceptURL string,
+	rejectURL string,
+	expiresAt time.Time,
+) ([]byte, error) {
+	payload := map[string]any{
+		"acceptUrl":       acceptURL,
+		"appointmentId":   appointment.AppointmentID,
+		"businessId":      appointment.BusinessID,
+		"customerEmail":   candidate.CustomerEmail,
+		"customerName":    candidate.CustomerName,
+		"expiresAt":       expiresAt.Format(time.RFC3339),
+		"rejectUrl":       rejectURL,
+		"serviceId":       appointment.Service.ID,
+		"serviceName":     appointment.Service.Name,
+		"startsAt":        appointment.StartsAt.Format(time.RFC3339),
+		"token":           token,
+		"waitlistEntryId": candidate.EntryID,
+		"waitlistOfferId": offerID,
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("encode waitlist offer created event payload: %w", err)
+	}
+
+	return body, nil
 }
 
 func createToken() (string, error) {
