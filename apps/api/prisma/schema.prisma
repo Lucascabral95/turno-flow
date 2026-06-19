@@ -60,6 +60,14 @@ enum AvailabilityExceptionType {
   @@map("availability_exception_type")
 }
 
+enum CustomerRiskLevel {
+  LOW    @map("low")
+  MEDIUM @map("medium")
+  HIGH   @map("high")
+
+  @@map("customer_risk_level")
+}
+
 model User {
   id           String     @id @default(uuid()) @db.Uuid
   email        String     @unique
@@ -177,7 +185,12 @@ model Customer {
   email             String
   phone             String?
   noShowCount       Int              @default(0) @map("no_show_count")
+  completedAppointments Int         @default(0) @map("completed_appointments")
   totalAppointments Int              @default(0) @map("total_appointments")
+  riskLevel         CustomerRiskLevel @default(LOW) @map("risk_level")
+  riskScore         Int              @default(0) @map("risk_score")
+  requiresDeposit   Boolean          @default(false) @map("requires_deposit")
+  lastRiskCalculatedAt DateTime?     @map("last_risk_calculated_at") @db.Timestamptz(3)
   createdAt         DateTime         @default(now()) @map("created_at")
   updatedAt         DateTime         @updatedAt @map("updated_at")
   appointments      Appointment[]
@@ -185,6 +198,7 @@ model Customer {
   notifications     Notification[]
 
   @@unique([businessId, email])
+  @@index([businessId, riskLevel, riskScore])
   @@map("customers")
 }
 
@@ -202,6 +216,7 @@ model Appointment {
   endsAt            DateTime           @map("ends_at") @db.Timestamptz(3)
   status            AppointmentStatus  @default(CONFIRMED)
   cancellationToken String             @unique @map("cancellation_token")
+  attendanceAlertedAt DateTime?        @map("attendance_alerted_at") @db.Timestamptz(3)
   createdAt         DateTime           @default(now()) @map("created_at")
   updatedAt         DateTime           @updatedAt @map("updated_at")
   notifications     Notification[]
@@ -211,6 +226,7 @@ model Appointment {
 
   @@index([businessId, startsAt])
   @@index([staffMemberId, startsAt])
+  @@index([status, endsAt, attendanceAlertedAt])
   @@map("appointments")
 }
 

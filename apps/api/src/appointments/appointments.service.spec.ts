@@ -63,11 +63,16 @@ describe("AppointmentsService", () => {
         businessId: "00000000-0000-0000-0000-000000000001",
         cancellationToken: "cancel-token",
         customer: {
+          completedAppointments: 0,
           email: "customer@example.test",
           id: "00000000-0000-0000-0000-000000000005",
           name: "Customer",
           noShowCount: 0,
-          phone: null
+          phone: null,
+          requiresDeposit: false,
+          riskLevel: "LOW",
+          riskScore: 0,
+          totalAppointments: 1
         },
         endsAt: new Date("2026-06-19T10:30:00.000Z"),
         id: "00000000-0000-0000-0000-000000000002",
@@ -135,5 +140,133 @@ describe("AppointmentsService", () => {
     expect(outboxEvent?.data.routingKey).toBe(EventRoutingKeys.WaitlistOfferRejected);
     expect(outboxEvent?.data.type).toBe(EventTypes.WaitlistOfferRejected);
     expect(outboxEvent?.data.version).toBe(1);
+  });
+
+  it("rebalances customer attendance counters when a no-show is corrected to completed", async () => {
+    const business = { id: "business-1" };
+    const appointment = {
+      businessId: business.id,
+      customer: {
+        completedAppointments: 1,
+        email: "customer@example.test",
+        id: "customer-1",
+        name: "Customer",
+        noShowCount: 2,
+        phone: null,
+        requiresDeposit: false,
+        riskLevel: "MEDIUM",
+        riskScore: 38,
+        totalAppointments: 4
+      },
+      customerId: "customer-1",
+      endsAt: new Date("2026-06-19T10:30:00.000Z"),
+      id: "appointment-1",
+      service: {
+        active: true,
+        bufferMinutes: 0,
+        businessId: business.id,
+        createdAt: new Date("2026-06-18T10:00:00.000Z"),
+        durationMinutes: 30,
+        id: "service-1",
+        name: "Corte",
+        priceCents: 120000,
+        updatedAt: new Date("2026-06-18T10:00:00.000Z")
+      },
+      staffMember: {
+        active: true,
+        businessId: business.id,
+        createdAt: new Date("2026-06-18T10:00:00.000Z"),
+        email: null,
+        id: "staff-1",
+        name: "Lucas",
+        updatedAt: new Date("2026-06-18T10:00:00.000Z")
+      },
+      startsAt: new Date("2026-06-19T10:00:00.000Z"),
+      status: AppointmentStatus.NO_SHOW,
+      cancellationToken: "cancel-token"
+    };
+    const updatedAppointment = {
+      ...appointment,
+      customer: {
+        ...appointment.customer,
+        completedAppointments: 2,
+        noShowCount: 1,
+        requiresDeposit: false,
+        riskLevel: "MEDIUM",
+        riskScore: 32
+      },
+      status: AppointmentStatus.COMPLETED
+    };
+    const appointmentUpdate = vi.fn().mockResolvedValue(undefined);
+    const appointmentFindUniqueOrThrow = vi.fn().mockResolvedValue(updatedAppointment);
+    const customerUpdate = vi.fn().mockResolvedValue({});
+    const appointmentEventCreate = vi.fn().mockResolvedValue({});
+    const eventOutboxCreate = vi.fn().mockResolvedValue({});
+    const prisma = {
+      appointment: {
+        findFirst: vi.fn().mockResolvedValue(appointment)
+      },
+      $transaction: vi.fn(
+        async (
+          fn: (tx: {
+            appointment: {
+              update: typeof appointmentUpdate;
+              findUniqueOrThrow: typeof appointmentFindUniqueOrThrow;
+            };
+            appointmentEvent: { create: typeof appointmentEventCreate };
+            customer: { update: typeof customerUpdate };
+            eventOutbox: { create: typeof eventOutboxCreate };
+          }) => Promise<unknown>
+        ) =>
+          fn({
+            appointment: {
+              findUniqueOrThrow: appointmentFindUniqueOrThrow,
+              update: appointmentUpdate
+            },
+            appointmentEvent: { create: appointmentEventCreate },
+            customer: { update: customerUpdate },
+            eventOutbox: { create: eventOutboxCreate }
+          })
+      )
+    };
+    const service = new AppointmentsService(
+      { requireCurrentBusiness: vi.fn().mockResolvedValue(business) } as never,
+      new OutboxService(),
+      prisma as never
+    );
+
+    const result = await service.updatePrivateAppointmentStatus({ id: "user-1" } as never, appointment.id, {
+      status: "completed"
+    });
+
+    expect(customerUpdate).toHaveBeenCalledWith({
+      data: {
+        completedAppointments: 2,
+        noShowCount: 1
+      },
+      where: { id: appointment.customerId }
+    });
+    expect(appointmentEventCreate).toHaveBeenCalledWith({
+      data: {
+        appointmentId: appointment.id,
+        businessId: business.id,
+        eventType: EventTypes.AppointmentCompleted,
+        metadata: { status: "completed" }
+      }
+    });
+    const outboxCreateInput = eventOutboxCreate.mock.calls[0]?.[0] as EventOutboxCreateInput | undefined;
+    expect(outboxCreateInput?.data.aggregateId).toBe(appointment.id);
+    expect(outboxCreateInput?.data.businessId).toBe(business.id);
+    expect(outboxCreateInput?.data.routingKey).toBe(EventRoutingKeys.AppointmentCompleted);
+    expect(outboxCreateInput?.data.type).toBe(EventTypes.AppointmentCompleted);
+    expect(outboxCreateInput?.data.version).toBe(1);
+    expect(result.customer).toMatchObject({
+      completedAppointments: 2,
+      noShowCount: 1,
+      riskLevel: "medium",
+      riskScore: 32,
+      totalAppointments: 4
+    });
+    expect(result.status).toBe("completed");
   });
 });

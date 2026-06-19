@@ -6,16 +6,18 @@ import (
 )
 
 const (
-	EventAppointmentBooked       = "AppointmentBooked"
-	EventAppointmentCancelled    = "AppointmentCancelled"
-	EventAppointmentMarkedNoShow = "AppointmentMarkedNoShow"
-	EventReminderFailed          = "ReminderFailed"
-	EventReminderScheduled       = "ReminderScheduled"
-	EventReminderSent            = "ReminderSent"
-	EventWaitlistOfferAccepted   = "WaitlistOfferAccepted"
-	EventWaitlistOfferCreated    = "WaitlistOfferCreated"
-	EventWaitlistOfferExpired    = "WaitlistOfferExpired"
-	EventWaitlistOfferRejected   = "WaitlistOfferRejected"
+	EventAppointmentBooked        = "AppointmentBooked"
+	EventAppointmentCancelled     = "AppointmentCancelled"
+	EventAppointmentCompleted     = "AppointmentCompleted"
+	EventAppointmentMarkedNoShow  = "AppointmentMarkedNoShow"
+	EventCustomerRiskScoreUpdated = "CustomerRiskScoreUpdated"
+	EventReminderFailed           = "ReminderFailed"
+	EventReminderScheduled        = "ReminderScheduled"
+	EventReminderSent             = "ReminderSent"
+	EventWaitlistOfferAccepted    = "WaitlistOfferAccepted"
+	EventWaitlistOfferCreated     = "WaitlistOfferCreated"
+	EventWaitlistOfferExpired     = "WaitlistOfferExpired"
+	EventWaitlistOfferRejected    = "WaitlistOfferRejected"
 )
 
 type Event struct {
@@ -42,11 +44,16 @@ type AppointmentPayload struct {
 }
 
 type Customer struct {
-	Email       string  `json:"email"`
-	ID          string  `json:"id"`
-	Name        string  `json:"name"`
-	NoShowCount int     `json:"noShowCount"`
-	Phone       *string `json:"phone"`
+	CompletedAppointments int     `json:"completedAppointments"`
+	Email                 string  `json:"email"`
+	ID                    string  `json:"id"`
+	Name                  string  `json:"name"`
+	NoShowCount           int     `json:"noShowCount"`
+	Phone                 *string `json:"phone"`
+	RequiresDeposit       bool    `json:"requiresDeposit"`
+	RiskLevel             string  `json:"riskLevel"`
+	RiskScore             int     `json:"riskScore"`
+	TotalAppointments     int     `json:"totalAppointments"`
 }
 
 type Service struct {

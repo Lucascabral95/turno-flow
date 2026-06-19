@@ -28,6 +28,7 @@ const (
 var eventBindingKeys = []string{
 	"appointment.booked",
 	"appointment.cancelled",
+	"appointment.completed",
 	"appointment.marked_no_show",
 	"waitlist.offer_expired",
 	"waitlist.offer_rejected",
@@ -180,6 +181,9 @@ func runPeriodicJobs(ctx context.Context, service *worker.Service) {
 		case now := <-ticker.C:
 			if err := service.SendDueReminders(ctx, now.UTC()); err != nil {
 				log.Printf("send due reminders: %v", err)
+			}
+			if err := service.ProcessAttendanceAlerts(ctx, now.UTC()); err != nil {
+				log.Printf("process attendance alerts: %v", err)
 			}
 			if err := service.ExpireWaitlistOffers(ctx, now.UTC()); err != nil {
 				log.Printf("expire waitlist offers: %v", err)
