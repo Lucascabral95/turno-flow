@@ -55,7 +55,7 @@ describe("AppointmentsService", () => {
   it("rejects a pending waitlist offer and emits a reassignment event", async () => {
     const offer = {
       appointmentId: "00000000-0000-0000-0000-000000000002",
-      expiresAt: new Date("2026-06-19T12:00:00.000Z"),
+      expiresAt: new Date(Date.now() + 60_000),
       id: "00000000-0000-0000-0000-000000000003",
       status: WaitlistOfferStatus.PENDING,
       waitlistEntryId: "00000000-0000-0000-0000-000000000004",
