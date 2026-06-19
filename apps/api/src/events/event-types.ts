@@ -10,8 +10,10 @@ export const EventTypes = {
   AvailabilityRuleCreated: "AvailabilityRuleCreated",
   ServiceCreated: "ServiceCreated",
   WaitlistEntryCreated: "WaitlistEntryCreated",
+  WaitlistOfferAccepted: "WaitlistOfferAccepted",
   WaitlistOfferCreated: "WaitlistOfferCreated",
   WaitlistOfferExpired: "WaitlistOfferExpired",
+  WaitlistOfferRejected: "WaitlistOfferRejected",
   MetricsRecalculate: "MetricsRecalculate"
 } as const;
 
@@ -29,8 +31,10 @@ export const EventRoutingKeys = {
   AvailabilityRuleCreated: "availability.rule_created",
   ServiceCreated: "service.created",
   WaitlistEntryCreated: "waitlist.entry_created",
+  WaitlistOfferAccepted: "waitlist.offer_accepted",
   WaitlistOfferCreated: "waitlist.offer_created",
   WaitlistOfferExpired: "waitlist.offer_expired",
+  WaitlistOfferRejected: "waitlist.offer_rejected",
   MetricsRecalculate: "metrics.recalculate"
 } as const satisfies Record<keyof typeof EventTypes, string>;
 

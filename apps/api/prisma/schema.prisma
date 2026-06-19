@@ -32,6 +32,7 @@ enum WaitlistOfferStatus {
   PENDING  @map("pending")
   ACCEPTED @map("accepted")
   EXPIRED  @map("expired")
+  REJECTED @map("rejected")
 
   @@map("waitlist_offer_status")
 }

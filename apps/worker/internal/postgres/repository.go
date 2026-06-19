@@ -106,11 +106,66 @@ func (repository *Repository) ExpireWaitlistOffers(ctx context.Context, now time
 			UPDATE waitlist_offers
 			SET status = 'expired', updated_at = CURRENT_TIMESTAMP
 			WHERE status = 'pending' AND expires_at <= $1
-			RETURNING waitlist_entry_id
+			RETURNING id, waitlist_entry_id, appointment_id
+		),
+		reset_entries AS (
+			UPDATE waitlist_entries
+			SET status = 'waiting', updated_at = CURRENT_TIMESTAMP
+			WHERE status = 'offered' AND id IN (SELECT waitlist_entry_id FROM expired)
+			RETURNING id
+		),
+		expired_appointments AS (
+			SELECT DISTINCT ON (appointment_id) id, waitlist_entry_id, appointment_id
+			FROM expired
+			ORDER BY appointment_id, id
 		)
-		UPDATE waitlist_entries
-		SET status = 'waiting', updated_at = CURRENT_TIMESTAMP
-		WHERE status = 'offered' AND id IN (SELECT waitlist_entry_id FROM expired)
+		INSERT INTO outbox_events (
+			type,
+			version,
+			business_id,
+			aggregate_id,
+			routing_key,
+			payload
+		)
+		SELECT
+			'WaitlistOfferExpired',
+			1,
+			a.business_id,
+			a.id,
+			'waitlist.offer_expired',
+			jsonb_build_object(
+				'appointmentId', a.id,
+				'businessId', a.business_id,
+				'cancellationToken', a.cancellation_token,
+				'customer', jsonb_build_object(
+					'email', c.email,
+					'id', c.id,
+					'name', c.name,
+					'noShowCount', c.no_show_count,
+					'phone', c.phone
+				),
+				'endsAt', a.ends_at,
+				'service', jsonb_build_object(
+					'durationMinutes', s.duration_minutes,
+					'id', s.id,
+					'name', s.name,
+					'priceCents', s.price_cents
+				),
+				'staffMember', jsonb_build_object(
+					'id', sm.id,
+					'name', sm.name
+				),
+				'startsAt', a.starts_at,
+				'status', a.status::text,
+				'waitlistEntryId', expired_appointments.waitlist_entry_id,
+				'waitlistOfferId', expired_appointments.id,
+				'waitlistOfferStatus', 'expired'
+			)
+		FROM expired_appointments
+		JOIN appointments a ON a.id = expired_appointments.appointment_id
+		JOIN customers c ON c.id = a.customer_id
+		JOIN services s ON s.id = a.service_id
+		JOIN staff_members sm ON sm.id = a.staff_member_id
 	`, now)
 	if err != nil {
 		return fmt.Errorf("expire waitlist offers: %w", err)
@@ -344,16 +399,18 @@ func (repository *txRepository) CreateScheduledNotification(ctx context.Context,
 	return notificationID, nil
 }
 
-func (repository *txRepository) CreateWaitlistOffer(ctx context.Context, input worker.WaitlistOfferInput) error {
-	_, err := repository.tx.Exec(ctx, `
+func (repository *txRepository) CreateWaitlistOffer(ctx context.Context, input worker.WaitlistOfferInput) (string, error) {
+	var offerID string
+	err := repository.tx.QueryRow(ctx, `
 		INSERT INTO waitlist_offers (waitlist_entry_id, appointment_id, token, expires_at)
 		VALUES ($1, $2, $3, $4)
-	`, input.WaitlistEntryID, input.AppointmentID, input.Token, input.ExpiresAt)
+		RETURNING id
+	`, input.WaitlistEntryID, input.AppointmentID, input.Token, input.ExpiresAt).Scan(&offerID)
 	if err != nil {
-		return fmt.Errorf("insert waitlist offer: %w", err)
+		return "", fmt.Errorf("insert waitlist offer: %w", err)
 	}
 
-	return nil
+	return offerID, nil
 }
 
 func (repository *txRepository) GetReminderSettings(ctx context.Context, businessID string) (worker.ReminderSettings, error) {
@@ -395,9 +452,22 @@ func (repository *txRepository) FindWaitlistCandidate(ctx context.Context, appoi
 			AND we.preferred_date_end >= $3::date
 			AND (we.earliest_time IS NULL OR we.earliest_time <= $4)
 			AND (we.latest_time IS NULL OR we.latest_time >= $4)
+			AND NOT EXISTS (
+				SELECT 1
+				FROM waitlist_offers pending_offer
+				WHERE pending_offer.waitlist_entry_id = we.id
+					AND pending_offer.status = 'pending'
+			)
+			AND NOT EXISTS (
+				SELECT 1
+				FROM waitlist_offers prior_offer
+				WHERE prior_offer.waitlist_entry_id = we.id
+					AND prior_offer.appointment_id = $5
+			)
 		ORDER BY we.priority_score DESC, c.no_show_count ASC, we.created_at ASC
 		LIMIT 1
-	`, appointment.BusinessID, appointment.Service.ID, appointment.StartsAt.Format("2006-01-02"), appointment.StartsAt.Format("15:04")).Scan(
+		FOR UPDATE OF we SKIP LOCKED
+	`, appointment.BusinessID, appointment.Service.ID, appointment.StartsAt.Format("2006-01-02"), appointment.StartsAt.Format("15:04"), appointment.AppointmentID).Scan(
 		&candidate.EntryID,
 		&candidate.CustomerEmail,
 		&candidate.CustomerName,

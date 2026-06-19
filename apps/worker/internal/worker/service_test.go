@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,6 +34,39 @@ func TestHandleEventCreatesWaitlistOfferOnlyOnce(t *testing.T) {
 	}
 	if len(repository.notificationLogs) != 1 {
 		t.Fatalf("expected one notification log, got %d", len(repository.notificationLogs))
+	}
+	if len(repository.outboxEvents) != 1 {
+		t.Fatalf("expected one outbox event, got %d", len(repository.outboxEvents))
+	}
+	if repository.outboxEvents[0].Type != domain.EventWaitlistOfferCreated {
+		t.Fatalf("unexpected outbox event type %q", repository.outboxEvents[0].Type)
+	}
+	if repository.outboxEvents[0].RoutingKey != waitlistOfferCreatedRoutingKey {
+		t.Fatalf("unexpected routing key %q", repository.outboxEvents[0].RoutingKey)
+	}
+	if !strings.Contains(sender.messages[0].Text, "/reject") {
+		t.Fatalf("expected waitlist offer email to include reject link, got %q", sender.messages[0].Text)
+	}
+}
+
+func TestHandleEventCreatesNextOfferAfterWaitlistOfferRejected(t *testing.T) {
+	ctx := context.Background()
+	repository := newFakeRepository()
+	sender := &fakeSender{}
+	service := NewService(repository, sender, "http://localhost:3000", "noreply@example.test")
+	event := cancellationEvent(t)
+	event.EventID = "00000000-0000-0000-0000-000000000099"
+	event.Type = domain.EventWaitlistOfferRejected
+
+	if err := service.HandleEvent(ctx, event); err != nil {
+		t.Fatalf("handle rejected offer event: %v", err)
+	}
+
+	if repository.offerCount != 1 {
+		t.Fatalf("expected one next offer, got %d", repository.offerCount)
+	}
+	if len(sender.messages) != 1 {
+		t.Fatalf("expected one waitlist email, got %d", len(sender.messages))
 	}
 }
 
@@ -272,9 +306,9 @@ func (repository *fakeRepository) MarkNotificationSent(_ context.Context, notifi
 	return nil
 }
 
-func (repository *fakeRepository) CreateWaitlistOffer(_ context.Context, _ WaitlistOfferInput) error {
+func (repository *fakeRepository) CreateWaitlistOffer(_ context.Context, _ WaitlistOfferInput) (string, error) {
 	repository.offerCount++
-	return nil
+	return "waitlist-offer-1", nil
 }
 
 func (repository *fakeRepository) FindWaitlistCandidate(_ context.Context, _ domain.AppointmentPayload) (*domain.WaitlistCandidate, error) {

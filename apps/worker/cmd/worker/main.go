@@ -25,7 +25,13 @@ const (
 	workerQueue          = "worker.appointments"
 )
 
-var eventBindingKeys = []string{"appointment.booked", "appointment.cancelled", "appointment.marked_no_show"}
+var eventBindingKeys = []string{
+	"appointment.booked",
+	"appointment.cancelled",
+	"appointment.marked_no_show",
+	"waitlist.offer_expired",
+	"waitlist.offer_rejected",
+}
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

@@ -12,7 +12,10 @@ const (
 	EventReminderFailed          = "ReminderFailed"
 	EventReminderScheduled       = "ReminderScheduled"
 	EventReminderSent            = "ReminderSent"
+	EventWaitlistOfferAccepted   = "WaitlistOfferAccepted"
 	EventWaitlistOfferCreated    = "WaitlistOfferCreated"
+	EventWaitlistOfferExpired    = "WaitlistOfferExpired"
+	EventWaitlistOfferRejected   = "WaitlistOfferRejected"
 )
 
 type Event struct {

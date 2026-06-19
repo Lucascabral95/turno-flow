@@ -289,6 +289,59 @@ export class AppointmentsService {
     });
   }
 
+  async rejectWaitlistOffer(token: string) {
+    const offer = await this.prisma.waitlistOffer.findUnique({
+      include: {
+        appointment: {
+          include: { customer: true, service: true, staffMember: true }
+        }
+      },
+      where: { token }
+    });
+
+    if (!offer || offer.status !== WaitlistOfferStatus.PENDING || offer.expiresAt <= new Date()) {
+      throw new NotFoundException("Waitlist offer not found");
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const rejectedOffer = await tx.waitlistOffer.updateMany({
+        data: { status: WaitlistOfferStatus.REJECTED },
+        where: {
+          expiresAt: { gt: new Date() },
+          id: offer.id,
+          status: WaitlistOfferStatus.PENDING
+        }
+      });
+
+      if (rejectedOffer.count !== 1) {
+        throw new NotFoundException("Waitlist offer not found");
+      }
+
+      await tx.waitlistEntry.updateMany({
+        data: { status: WaitlistStatus.WAITING },
+        where: {
+          id: offer.waitlistEntryId,
+          status: WaitlistStatus.OFFERED
+        }
+      });
+
+      await this.outbox.create(tx, {
+        aggregateId: offer.appointmentId,
+        businessId: offer.appointment.businessId,
+        payload: this.waitlistOfferPayload(offer.appointment, {
+          status: "rejected",
+          waitlistEntryId: offer.waitlistEntryId,
+          waitlistOfferId: offer.id
+        }),
+        routingKey: EventRoutingKeys.WaitlistOfferRejected,
+        type: EventTypes.WaitlistOfferRejected,
+        version: 1
+      });
+    });
+
+    return { status: "rejected" };
+  }
+
   async listPrivateAppointments(user: AuthenticatedUser) {
     const business = await this.businesses.requireCurrentBusiness(user);
     const appointments = await this.prisma.appointment.findMany({
@@ -381,6 +434,21 @@ export class AppointmentsService {
   }) {
     try {
       const appointment = await this.prisma.$transaction(async (tx) => {
+        if (input.waitlistOfferId) {
+          const acceptedOffer = await tx.waitlistOffer.updateMany({
+            data: { status: WaitlistOfferStatus.ACCEPTED },
+            where: {
+              expiresAt: { gt: new Date() },
+              id: input.waitlistOfferId,
+              status: WaitlistOfferStatus.PENDING
+            }
+          });
+
+          if (acceptedOffer.count !== 1) {
+            throw new NotFoundException("Waitlist offer not found");
+          }
+        }
+
         const service = await tx.service.findFirst({
           where: { active: true, businessId: input.businessId, id: input.serviceId }
         });
@@ -419,10 +487,6 @@ export class AppointmentsService {
         });
 
         if (input.waitlistOfferId) {
-          await tx.waitlistOffer.update({
-            data: { status: WaitlistOfferStatus.ACCEPTED },
-            where: { id: input.waitlistOfferId }
-          });
           await tx.waitlistEntry.updateMany({
             data: { status: WaitlistStatus.BOOKED },
             where: { offers: { some: { id: input.waitlistOfferId } } }
@@ -446,6 +510,20 @@ export class AppointmentsService {
           type: EventTypes.AppointmentBooked,
           version: 1
         });
+
+        if (input.waitlistOfferId) {
+          await this.outbox.create(tx, {
+            aggregateId: input.waitlistOfferId,
+            businessId: input.businessId,
+            payload: this.waitlistOfferPayload(appointment, {
+              status: "accepted",
+              waitlistOfferId: input.waitlistOfferId
+            }),
+            routingKey: EventRoutingKeys.WaitlistOfferAccepted,
+            type: EventTypes.WaitlistOfferAccepted,
+            version: 1
+          });
+        }
 
         return appointment;
       });
@@ -634,6 +712,22 @@ export class AppointmentsService {
       },
       startsAt: appointment.startsAt.toISOString(),
       status: fromPrismaAppointmentStatus(appointment.status)
+    };
+  }
+
+  private waitlistOfferPayload(
+    appointment: AppointmentWithRelations,
+    input: {
+      status: "accepted" | "expired" | "rejected";
+      waitlistEntryId?: string;
+      waitlistOfferId: string;
+    }
+  ): Prisma.InputJsonObject {
+    return {
+      ...this.appointmentPayload(appointment),
+      waitlistEntryId: input.waitlistEntryId,
+      waitlistOfferId: input.waitlistOfferId,
+      waitlistOfferStatus: input.status
     };
   }
 
