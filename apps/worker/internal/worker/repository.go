@@ -46,6 +46,26 @@ type DueNotification struct {
 	Template      string
 }
 
+type CustomerAttendance struct {
+	BusinessID            string
+	CompletedAppointments int
+	CustomerID            string
+	NoShowCount           int
+	TotalAppointments     int
+}
+
+type CustomerRiskSnapshot struct {
+	BusinessID            string
+	CompletedAppointments int
+	CustomerID            string
+	LastCalculatedAt      time.Time
+	NoShowCount           int
+	RequiresDeposit       bool
+	RiskLevel             string
+	RiskScore             int
+	TotalAppointments     int
+}
+
 type NotificationLog struct {
 	AppointmentID   *string
 	Attempts        int
@@ -76,6 +96,7 @@ type OutboxEventInput struct {
 
 type Repository interface {
 	RunOnce(ctx context.Context, eventID string, eventType string, fn func(context.Context, Tx) error) (bool, error)
+	CreateAttendanceReviewAlerts(ctx context.Context, now time.Time, limit int) (int, error)
 	CreateNotificationLog(ctx context.Context, input NotificationLog) error
 	ClaimDueNotifications(ctx context.Context, now time.Time, limit int, maxAttempts int) ([]DueNotification, error)
 	ExpireWaitlistOffers(ctx context.Context, now time.Time) error
@@ -89,6 +110,8 @@ type Tx interface {
 	CreateScheduledNotification(ctx context.Context, input ScheduledNotificationInput) (string, error)
 	CreateWaitlistOffer(ctx context.Context, input WaitlistOfferInput) (string, error)
 	FindWaitlistCandidate(ctx context.Context, appointment domain.AppointmentPayload) (*domain.WaitlistCandidate, error)
+	GetCustomerAttendance(ctx context.Context, businessID string, customerID string) (CustomerAttendance, error)
 	GetReminderSettings(ctx context.Context, businessID string) (ReminderSettings, error)
 	MarkWaitlistEntryOffered(ctx context.Context, entryID string) error
+	UpdateCustomerRisk(ctx context.Context, risk CustomerRiskSnapshot) error
 }

@@ -16,6 +16,7 @@ func TestRabbitMQContracts(t *testing.T) {
 	expectedBindings := []string{
 		"appointment.booked",
 		"appointment.cancelled",
+		"appointment.completed",
 		"appointment.marked_no_show",
 		"waitlist.offer_expired",
 		"waitlist.offer_rejected",

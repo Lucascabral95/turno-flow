@@ -100,6 +100,55 @@ func (repository *Repository) CreateNotificationLog(ctx context.Context, input w
 	return nil
 }
 
+func (repository *Repository) CreateAttendanceReviewAlerts(ctx context.Context, now time.Time, limit int) (int, error) {
+	var createdCount int
+	err := repository.pool.QueryRow(ctx, `
+		WITH due AS (
+			SELECT id, business_id, status
+			FROM appointments
+			WHERE status IN ('pending', 'confirmed')
+				AND ends_at < $1
+				AND attendance_alerted_at IS NULL
+			ORDER BY ends_at ASC
+			LIMIT $2
+			FOR UPDATE SKIP LOCKED
+		),
+		alerted AS (
+			UPDATE appointments a
+			SET attendance_alerted_at = $1,
+				updated_at = CURRENT_TIMESTAMP
+			FROM due
+			WHERE a.id = due.id
+			RETURNING a.id, a.business_id, a.status
+		),
+		inserted AS (
+			INSERT INTO appointment_events (
+				business_id,
+				appointment_id,
+				event_type,
+				metadata
+			)
+			SELECT
+				business_id,
+				id,
+				'appointment.attendance_review_requested',
+				jsonb_build_object(
+					'alertedAt', $1,
+					'reason', 'appointment_past_due',
+					'status', status::text
+				)
+			FROM alerted
+			RETURNING id
+		)
+		SELECT COUNT(*) FROM inserted
+	`, now, limit).Scan(&createdCount)
+	if err != nil {
+		return 0, fmt.Errorf("create attendance review alerts: %w", err)
+	}
+
+	return createdCount, nil
+}
+
 func (repository *Repository) ExpireWaitlistOffers(ctx context.Context, now time.Time) error {
 	_, err := repository.pool.Exec(ctx, `
 		WITH expired AS (
@@ -435,6 +484,26 @@ func (repository *txRepository) GetReminderSettings(ctx context.Context, busines
 	return settings, nil
 }
 
+func (repository *txRepository) GetCustomerAttendance(ctx context.Context, businessID string, customerID string) (worker.CustomerAttendance, error) {
+	var attendance worker.CustomerAttendance
+	err := repository.tx.QueryRow(ctx, `
+		SELECT business_id, id, completed_appointments, no_show_count, total_appointments
+		FROM customers
+		WHERE business_id = $1 AND id = $2
+	`, businessID, customerID).Scan(
+		&attendance.BusinessID,
+		&attendance.CustomerID,
+		&attendance.CompletedAppointments,
+		&attendance.NoShowCount,
+		&attendance.TotalAppointments,
+	)
+	if err != nil {
+		return attendance, fmt.Errorf("query customer attendance: %w", err)
+	}
+
+	return attendance, nil
+}
+
 func (repository *txRepository) FindWaitlistCandidate(ctx context.Context, appointment domain.AppointmentPayload) (*domain.WaitlistCandidate, error) {
 	var candidate domain.WaitlistCandidate
 	err := repository.tx.QueryRow(ctx, `
@@ -491,6 +560,24 @@ func (repository *txRepository) MarkWaitlistEntryOffered(ctx context.Context, en
 	`, entryID)
 	if err != nil {
 		return fmt.Errorf("mark waitlist entry offered: %w", err)
+	}
+
+	return nil
+}
+
+func (repository *txRepository) UpdateCustomerRisk(ctx context.Context, risk worker.CustomerRiskSnapshot) error {
+	_, err := repository.tx.Exec(ctx, `
+		UPDATE customers
+		SET
+			risk_level = $3::customer_risk_level,
+			risk_score = $4,
+			requires_deposit = $5,
+			last_risk_calculated_at = $6,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE business_id = $1 AND id = $2
+	`, risk.BusinessID, risk.CustomerID, risk.RiskLevel, risk.RiskScore, risk.RequiresDeposit, risk.LastCalculatedAt)
+	if err != nil {
+		return fmt.Errorf("update customer risk: %w", err)
 	}
 
 	return nil

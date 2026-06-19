@@ -33,8 +33,20 @@ export class DashboardService {
     const riskyCustomers = appointments
       .map((appointment) => appointment.customer)
       .filter((customer, index, allCustomers) => allCustomers.findIndex((candidate) => candidate.id === customer.id) === index)
-      .filter((customer) => customer.noShowCount > 0)
-      .sort((left, right) => right.noShowCount - left.noShowCount)
+      .filter((customer) => customer.riskLevel !== "LOW" || customer.noShowCount > 0)
+      .sort((left, right) => right.riskScore - left.riskScore || right.noShowCount - left.noShowCount)
+      .map((customer) => ({
+        completedAppointments: customer.completedAppointments,
+        email: customer.email,
+        id: customer.id,
+        lastRiskCalculatedAt: customer.lastRiskCalculatedAt?.toISOString() ?? null,
+        name: customer.name,
+        noShowCount: customer.noShowCount,
+        requiresDeposit: customer.requiresDeposit,
+        riskLevel: customer.riskLevel.toLowerCase(),
+        riskScore: customer.riskScore,
+        totalAppointments: customer.totalAppointments
+      }))
       .slice(0, 5);
 
     return {

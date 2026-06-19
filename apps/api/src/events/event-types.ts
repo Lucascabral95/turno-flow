@@ -1,8 +1,10 @@
 export const EventTypes = {
   AppointmentBooked: "AppointmentBooked",
   AppointmentCancelled: "AppointmentCancelled",
+  AppointmentCompleted: "AppointmentCompleted",
   AppointmentMarkedNoShow: "AppointmentMarkedNoShow",
   AppointmentReminderDue: "AppointmentReminderDue",
+  CustomerRiskScoreUpdated: "CustomerRiskScoreUpdated",
   ReminderFailed: "ReminderFailed",
   ReminderScheduled: "ReminderScheduled",
   ReminderSent: "ReminderSent",
@@ -22,8 +24,10 @@ export type EventType = (typeof EventTypes)[keyof typeof EventTypes];
 export const EventRoutingKeys = {
   AppointmentBooked: "appointment.booked",
   AppointmentCancelled: "appointment.cancelled",
+  AppointmentCompleted: "appointment.completed",
   AppointmentMarkedNoShow: "appointment.marked_no_show",
   AppointmentReminderDue: "appointment.reminder_due",
+  CustomerRiskScoreUpdated: "customer.risk_score_updated",
   ReminderFailed: "reminder.failed",
   ReminderScheduled: "reminder.scheduled",
   ReminderSent: "reminder.sent",

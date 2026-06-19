@@ -14,6 +14,7 @@ const QUEUE_BINDINGS = [
     routingKeys: [
       "appointment.booked",
       "appointment.cancelled",
+      "appointment.completed",
       "appointment.marked_no_show",
       "waitlist.offer_expired",
       "waitlist.offer_rejected"
@@ -45,7 +46,9 @@ const QUEUE_BINDINGS = [
     routingKeys: [
       "appointment.booked",
       "appointment.cancelled",
+      "appointment.completed",
       "appointment.marked_no_show",
+      "customer.risk_score_updated",
       "metrics.recalculate",
       "waitlist.offer_accepted",
       "waitlist.offer_rejected"

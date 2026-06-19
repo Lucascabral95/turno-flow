@@ -367,32 +367,43 @@ export class AppointmentsService {
     }
 
     const updatedAppointment = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.appointment.update({
+      await tx.appointment.update({
         data: { status: nextStatus },
-        include: { customer: true, service: true, staffMember: true },
         where: { id: appointment.id }
       });
 
-      if (nextStatus === AppointmentStatus.NO_SHOW) {
+      const customerCounterUpdate = this.buildCustomerCounterUpdate(appointment.status, nextStatus, appointment.customer);
+      if (customerCounterUpdate) {
         await tx.customer.update({
-          data: { noShowCount: { increment: 1 } },
+          data: customerCounterUpdate,
           where: { id: appointment.customerId }
         });
       }
+
+      const updated = await tx.appointment.findUniqueOrThrow({
+        include: { customer: true, service: true, staffMember: true },
+        where: { id: appointment.id }
+      });
 
       await tx.appointmentEvent.create({
         data: {
           appointmentId: appointment.id,
           businessId: business.id,
-          eventType:
-            nextStatus === AppointmentStatus.NO_SHOW
-              ? EventTypes.AppointmentMarkedNoShow
-              : nextStatus === AppointmentStatus.CANCELLED_BY_BUSINESS
-                ? EventTypes.AppointmentCancelled
-                : `appointment.${input.status}.v1`,
+          eventType: this.appointmentStatusEventType(nextStatus, input.status),
           metadata: { status: input.status }
         }
       });
+
+      if (nextStatus === AppointmentStatus.COMPLETED) {
+        await this.outbox.create(tx, {
+          aggregateId: appointment.id,
+          businessId: business.id,
+          payload: this.appointmentPayload(updated),
+          routingKey: EventRoutingKeys.AppointmentCompleted,
+          type: EventTypes.AppointmentCompleted,
+          version: 1
+        });
+      }
 
       if (nextStatus === AppointmentStatus.NO_SHOW) {
         await this.outbox.create(tx, {
@@ -693,11 +704,16 @@ export class AppointmentsService {
       businessId: appointment.businessId,
       cancellationToken: appointment.cancellationToken,
       customer: {
+        completedAppointments: appointment.customer.completedAppointments,
         email: appointment.customer.email,
         id: appointment.customer.id,
         name: appointment.customer.name,
         noShowCount: appointment.customer.noShowCount,
-        phone: appointment.customer.phone
+        phone: appointment.customer.phone,
+        requiresDeposit: appointment.customer.requiresDeposit,
+        riskLevel: appointment.customer.riskLevel.toLowerCase(),
+        riskScore: appointment.customer.riskScore,
+        totalAppointments: appointment.customer.totalAppointments
       },
       endsAt: appointment.endsAt.toISOString(),
       service: {
@@ -735,11 +751,16 @@ export class AppointmentsService {
     return {
       cancellationToken: appointment.cancellationToken,
       customer: {
+        completedAppointments: appointment.customer.completedAppointments,
         email: appointment.customer.email,
         id: appointment.customer.id,
         name: appointment.customer.name,
         noShowCount: appointment.customer.noShowCount,
-        phone: appointment.customer.phone
+        phone: appointment.customer.phone,
+        requiresDeposit: appointment.customer.requiresDeposit,
+        riskLevel: appointment.customer.riskLevel.toLowerCase(),
+        riskScore: appointment.customer.riskScore,
+        totalAppointments: appointment.customer.totalAppointments
       },
       endsAt: appointment.endsAt,
       id: appointment.id,
@@ -748,5 +769,48 @@ export class AppointmentsService {
       startsAt: appointment.startsAt,
       status: fromPrismaAppointmentStatus(appointment.status)
     };
+  }
+
+  private appointmentStatusEventType(nextStatus: AppointmentStatus, publicStatus: UpdateAppointmentStatusDto["status"]) {
+    if (nextStatus === AppointmentStatus.COMPLETED) {
+      return EventTypes.AppointmentCompleted;
+    }
+    if (nextStatus === AppointmentStatus.NO_SHOW) {
+      return EventTypes.AppointmentMarkedNoShow;
+    }
+    if (nextStatus === AppointmentStatus.CANCELLED_BY_BUSINESS) {
+      return EventTypes.AppointmentCancelled;
+    }
+
+    return `appointment.${publicStatus}.v1`;
+  }
+
+  private buildCustomerCounterUpdate(
+    previousStatus: AppointmentStatus,
+    nextStatus: AppointmentStatus,
+    customer: AppointmentWithRelations["customer"]
+  ): Prisma.CustomerUpdateInput | undefined {
+    const noShowDelta = this.statusDelta(previousStatus, nextStatus, AppointmentStatus.NO_SHOW);
+    const completedDelta = this.statusDelta(previousStatus, nextStatus, AppointmentStatus.COMPLETED);
+
+    if (noShowDelta === 0 && completedDelta === 0) {
+      return undefined;
+    }
+
+    return {
+      completedAppointments: Math.max(0, customer.completedAppointments + completedDelta),
+      noShowCount: Math.max(0, customer.noShowCount + noShowDelta)
+    };
+  }
+
+  private statusDelta(previousStatus: AppointmentStatus, nextStatus: AppointmentStatus, trackedStatus: AppointmentStatus) {
+    if (previousStatus === trackedStatus && nextStatus !== trackedStatus) {
+      return -1;
+    }
+    if (previousStatus !== trackedStatus && nextStatus === trackedStatus) {
+      return 1;
+    }
+
+    return 0;
   }
 }

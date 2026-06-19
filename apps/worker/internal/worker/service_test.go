@@ -135,6 +135,71 @@ func TestHandleEventSkipsReminderWhenSettingsAreDisabled(t *testing.T) {
 	}
 }
 
+func TestHandleEventPublishesUpdatedCustomerRiskAfterNoShow(t *testing.T) {
+	ctx := context.Background()
+	repository := newFakeRepository()
+	repository.attendance = CustomerAttendance{
+		BusinessID:            "business-1",
+		CompletedAppointments: 1,
+		CustomerID:            "customer-1",
+		NoShowCount:           3,
+		TotalAppointments:     5,
+	}
+	service := NewService(repository, &fakeSender{}, "http://localhost:3000", "noreply@example.test")
+	event := bookedEvent(t)
+	event.EventID = "00000000-0000-0000-0000-000000000010"
+	event.Type = domain.EventAppointmentMarkedNoShow
+
+	if err := service.HandleEvent(ctx, event); err != nil {
+		t.Fatalf("handle customer risk event: %v", err)
+	}
+
+	if len(repository.customerRiskUpdates) != 1 {
+		t.Fatalf("expected one customer risk update, got %d", len(repository.customerRiskUpdates))
+	}
+	risk := repository.customerRiskUpdates[0]
+	if risk.RiskLevel != "high" {
+		t.Fatalf("expected high risk level, got %q", risk.RiskLevel)
+	}
+	if risk.RiskScore != 100 {
+		t.Fatalf("expected capped risk score 100, got %d", risk.RiskScore)
+	}
+	if !risk.RequiresDeposit {
+		t.Fatal("expected customer to require deposit")
+	}
+	if len(repository.outboxEvents) != 1 {
+		t.Fatalf("expected one outbox event, got %d", len(repository.outboxEvents))
+	}
+	if repository.outboxEvents[0].Type != domain.EventCustomerRiskScoreUpdated {
+		t.Fatalf("unexpected outbox event type %q", repository.outboxEvents[0].Type)
+	}
+	if repository.outboxEvents[0].RoutingKey != customerRiskUpdatedRoutingKey {
+		t.Fatalf("unexpected outbox event routing key %q", repository.outboxEvents[0].RoutingKey)
+	}
+}
+
+func TestProcessAttendanceAlertsRequestsBatchForOverdueAppointments(t *testing.T) {
+	ctx := context.Background()
+	repository := newFakeRepository()
+	service := NewService(repository, &fakeSender{}, "http://localhost:3000", "noreply@example.test")
+	now := time.Date(2026, 6, 19, 11, 0, 0, 0, time.UTC)
+
+	if err := service.ProcessAttendanceAlerts(ctx, now); err != nil {
+		t.Fatalf("process attendance alerts: %v", err)
+	}
+
+	if len(repository.attendanceAlertRuns) != 1 {
+		t.Fatalf("expected one attendance alert run, got %d", len(repository.attendanceAlertRuns))
+	}
+	run := repository.attendanceAlertRuns[0]
+	if !run.now.Equal(now) {
+		t.Fatalf("expected run time %s, got %s", now, run.now)
+	}
+	if run.limit != attendanceReviewBatchSize {
+		t.Fatalf("expected batch size %d, got %d", attendanceReviewBatchSize, run.limit)
+	}
+}
+
 func TestSendDueRemindersMarksNotificationSentAndLogsAttempt(t *testing.T) {
 	ctx := context.Background()
 	repository := newFakeRepository()
@@ -202,7 +267,10 @@ func TestSendDueRemindersMarksNotificationFailedWithRetry(t *testing.T) {
 }
 
 type fakeRepository struct {
+	attendance             CustomerAttendance
+	attendanceAlertRuns    []attendanceAlertRun
 	candidate              *domain.WaitlistCandidate
+	customerRiskUpdates    []CustomerRiskSnapshot
 	dueNotifications       []DueNotification
 	failedNotifications    []failedNotification
 	notificationLogs       []NotificationLog
@@ -220,8 +288,20 @@ type failedNotification struct {
 	notification  DueNotification
 }
 
+type attendanceAlertRun struct {
+	limit int
+	now   time.Time
+}
+
 func newFakeRepository() *fakeRepository {
 	return &fakeRepository{
+		attendance: CustomerAttendance{
+			BusinessID:            "business-1",
+			CompletedAppointments: 0,
+			CustomerID:            "customer-1",
+			NoShowCount:           0,
+			TotalAppointments:     1,
+		},
 		candidate: &domain.WaitlistCandidate{
 			CustomerEmail: "waitlist@example.test",
 			CustomerName:  "Waitlist Customer",
@@ -248,6 +328,14 @@ func (repository *fakeRepository) RunOnce(ctx context.Context, eventID string, _
 	}
 
 	return true, nil
+}
+
+func (repository *fakeRepository) CreateAttendanceReviewAlerts(_ context.Context, now time.Time, limit int) (int, error) {
+	repository.attendanceAlertRuns = append(repository.attendanceAlertRuns, attendanceAlertRun{
+		limit: limit,
+		now:   now,
+	})
+	return 1, nil
 }
 
 func (repository *fakeRepository) CreateNotificationLog(_ context.Context, input NotificationLog) error {
@@ -315,11 +403,20 @@ func (repository *fakeRepository) FindWaitlistCandidate(_ context.Context, _ dom
 	return repository.candidate, nil
 }
 
+func (repository *fakeRepository) GetCustomerAttendance(_ context.Context, _ string, _ string) (CustomerAttendance, error) {
+	return repository.attendance, nil
+}
+
 func (repository *fakeRepository) GetReminderSettings(_ context.Context, _ string) (ReminderSettings, error) {
 	return repository.reminderSettings, nil
 }
 
 func (repository *fakeRepository) MarkWaitlistEntryOffered(_ context.Context, _ string) error {
+	return nil
+}
+
+func (repository *fakeRepository) UpdateCustomerRisk(_ context.Context, risk CustomerRiskSnapshot) error {
+	repository.customerRiskUpdates = append(repository.customerRiskUpdates, risk)
 	return nil
 }
 
@@ -380,9 +477,15 @@ func appointmentPayload() domain.AppointmentPayload {
 		BusinessID:        "business-1",
 		CancellationToken: "cancel-token",
 		Customer: domain.Customer{
-			Email: "original@example.test",
-			ID:    "customer-1",
-			Name:  "Original Customer",
+			CompletedAppointments: 0,
+			Email:                 "original@example.test",
+			ID:                    "customer-1",
+			Name:                  "Original Customer",
+			NoShowCount:           0,
+			RequiresDeposit:       false,
+			RiskLevel:             "low",
+			RiskScore:             0,
+			TotalAppointments:     1,
 		},
 		EndsAt:   time.Date(2026, 6, 17, 10, 30, 0, 0, time.UTC),
 		StartsAt: time.Date(2026, 6, 17, 10, 0, 0, 0, time.UTC),

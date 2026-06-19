@@ -13,8 +13,10 @@ import (
 )
 
 const (
+	attendanceReviewBatchSize      = 25
 	dueNotificationBatchSize       = 25
 	maxNotificationAttempts        = 3
+	customerRiskUpdatedRoutingKey  = "customer.risk_score_updated"
 	reminderScheduledRoutingKey    = "reminder.scheduled"
 	reminderTemplate24Hours        = "appointment_reminder_24h"
 	waitlistOfferCreatedRoutingKey = "waitlist.offer_created"
@@ -42,9 +44,11 @@ func (service *Service) HandleEvent(ctx context.Context, event domain.Event) err
 		switch event.Type {
 		case domain.EventAppointmentBooked:
 			return service.handleAppointmentBooked(ctx, tx, event.Payload)
+		case domain.EventAppointmentCompleted, domain.EventAppointmentMarkedNoShow:
+			return service.handleCustomerRiskEvent(ctx, tx, event.Payload, eventOccurredAt(event))
 		case domain.EventAppointmentCancelled, domain.EventWaitlistOfferExpired, domain.EventWaitlistOfferRejected:
 			return service.handleWaitlistOpportunity(ctx, tx, event.Payload, eventOccurredAt(event))
-		case domain.EventAppointmentMarkedNoShow, domain.EventWaitlistOfferAccepted, domain.EventWaitlistOfferCreated:
+		case domain.EventWaitlistOfferAccepted, domain.EventWaitlistOfferCreated, domain.EventCustomerRiskScoreUpdated:
 			return nil
 		default:
 			return nil
@@ -80,6 +84,11 @@ func (service *Service) SendDueReminders(ctx context.Context, now time.Time) err
 
 func (service *Service) ExpireWaitlistOffers(ctx context.Context, now time.Time) error {
 	return service.repository.ExpireWaitlistOffers(ctx, now)
+}
+
+func (service *Service) ProcessAttendanceAlerts(ctx context.Context, now time.Time) error {
+	_, err := service.repository.CreateAttendanceReviewAlerts(ctx, now, attendanceReviewBatchSize)
+	return err
 }
 
 func (service *Service) notificationMessage(notification DueNotification) email.Message {
@@ -254,6 +263,51 @@ func (service *Service) handleWaitlistOpportunity(ctx context.Context, tx Tx, pa
 	return tx.CreateNotificationLog(ctx, logInput)
 }
 
+func (service *Service) handleCustomerRiskEvent(ctx context.Context, tx Tx, payload json.RawMessage, now time.Time) error {
+	var appointment domain.AppointmentPayload
+	if err := json.Unmarshal(payload, &appointment); err != nil {
+		return fmt.Errorf("decode customer risk payload: %w", err)
+	}
+
+	attendance, err := tx.GetCustomerAttendance(ctx, appointment.BusinessID, appointment.Customer.ID)
+	if err != nil {
+		return fmt.Errorf("get customer attendance: %w", err)
+	}
+
+	risk := calculateCustomerRisk(attendance, now)
+	if err := tx.UpdateCustomerRisk(ctx, risk); err != nil {
+		return fmt.Errorf("update customer risk: %w", err)
+	}
+
+	eventPayload, err := json.Marshal(map[string]any{
+		"businessId":            risk.BusinessID,
+		"completedAppointments": risk.CompletedAppointments,
+		"customerId":            risk.CustomerID,
+		"lastCalculatedAt":      risk.LastCalculatedAt.Format(time.RFC3339),
+		"noShowCount":           risk.NoShowCount,
+		"requiresDeposit":       risk.RequiresDeposit,
+		"riskLevel":             risk.RiskLevel,
+		"riskScore":             risk.RiskScore,
+		"totalAppointments":     risk.TotalAppointments,
+	})
+	if err != nil {
+		return fmt.Errorf("encode customer risk payload: %w", err)
+	}
+
+	if err := tx.CreateOutboxEvent(ctx, OutboxEventInput{
+		AggregateID: risk.CustomerID,
+		BusinessID:  risk.BusinessID,
+		Payload:     eventPayload,
+		RoutingKey:  customerRiskUpdatedRoutingKey,
+		Type:        domain.EventCustomerRiskScoreUpdated,
+		Version:     1,
+	}); err != nil {
+		return fmt.Errorf("create customer risk outbox event: %w", err)
+	}
+
+	return nil
+}
+
 func eventOccurredAt(event domain.Event) time.Time {
 	if event.OccurredAt.IsZero() {
 		return time.Now().UTC()
@@ -302,4 +356,38 @@ func createToken() (string, error) {
 	}
 
 	return base64.RawURLEncoding.EncodeToString(bytes), nil
+}
+
+func calculateCustomerRisk(attendance CustomerAttendance, now time.Time) CustomerRiskSnapshot {
+	terminalAppointments := attendance.CompletedAppointments + attendance.NoShowCount
+	absenceRate := 0.0
+	if terminalAppointments > 0 {
+		absenceRate = float64(attendance.NoShowCount) / float64(terminalAppointments)
+	}
+
+	riskScore := attendance.NoShowCount * 30
+	riskScore += int(absenceRate*40 + 0.5)
+	if riskScore > 100 {
+		riskScore = 100
+	}
+
+	riskLevel := "low"
+	switch {
+	case attendance.NoShowCount >= 3:
+		riskLevel = "high"
+	case attendance.NoShowCount >= 1:
+		riskLevel = "medium"
+	}
+
+	return CustomerRiskSnapshot{
+		BusinessID:            attendance.BusinessID,
+		CompletedAppointments: attendance.CompletedAppointments,
+		CustomerID:            attendance.CustomerID,
+		LastCalculatedAt:      now.UTC(),
+		NoShowCount:           attendance.NoShowCount,
+		RequiresDeposit:       terminalAppointments > 0 && absenceRate > 0.5,
+		RiskLevel:             riskLevel,
+		RiskScore:             riskScore,
+		TotalAppointments:     attendance.TotalAppointments,
+	}
 }
