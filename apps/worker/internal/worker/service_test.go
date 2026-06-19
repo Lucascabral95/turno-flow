@@ -35,17 +35,20 @@ func TestHandleEventCreatesWaitlistOfferOnlyOnce(t *testing.T) {
 	if len(repository.notificationLogs) != 1 {
 		t.Fatalf("expected one notification log, got %d", len(repository.notificationLogs))
 	}
-	if len(repository.outboxEvents) != 1 {
-		t.Fatalf("expected one outbox event, got %d", len(repository.outboxEvents))
+	if len(repository.outboxEvents) != 3 {
+		t.Fatalf("expected three outbox events, got %d", len(repository.outboxEvents))
 	}
 	if len(repository.metricsRecalculated) != 1 {
 		t.Fatalf("expected one metrics recalculation, got %d", len(repository.metricsRecalculated))
 	}
-	if repository.outboxEvents[0].Type != domain.EventWaitlistOfferCreated {
-		t.Fatalf("unexpected outbox event type %q", repository.outboxEvents[0].Type)
+	if !hasOutboxEvent(repository.outboxEvents, domain.EventWaitlistCandidateMatched, waitlistCandidateMatchedRoutingKey) {
+		t.Fatal("expected waitlist candidate matched outbox event")
 	}
-	if repository.outboxEvents[0].RoutingKey != waitlistOfferCreatedRoutingKey {
-		t.Fatalf("unexpected routing key %q", repository.outboxEvents[0].RoutingKey)
+	if !hasOutboxEvent(repository.outboxEvents, domain.EventWaitlistOfferCreated, waitlistOfferCreatedRoutingKey) {
+		t.Fatal("expected waitlist offer created outbox event")
+	}
+	if !hasOutboxEvent(repository.outboxEvents, domain.EventDailyMetricsCalculated, dailyMetricsCalculatedRoutingKey) {
+		t.Fatal("expected daily metrics calculated outbox event")
 	}
 	if !strings.Contains(sender.messages[0].Text, "/reject") {
 		t.Fatalf("expected waitlist offer email to include reject link, got %q", sender.messages[0].Text)
@@ -104,15 +107,14 @@ func TestHandleEventSchedulesReminderOnlyOnceForAppointmentBooked(t *testing.T) 
 	if !notification.DueAt.Equal(expectedDueAt) {
 		t.Fatalf("expected due at %s, got %s", expectedDueAt, notification.DueAt)
 	}
-	if len(repository.outboxEvents) != 1 {
-		t.Fatalf("expected one outbox event, got %d", len(repository.outboxEvents))
+	if len(repository.outboxEvents) != 2 {
+		t.Fatalf("expected two outbox events, got %d", len(repository.outboxEvents))
 	}
-	outboxEvent := repository.outboxEvents[0]
-	if outboxEvent.Type != domain.EventReminderScheduled {
-		t.Fatalf("unexpected outbox event type %q", outboxEvent.Type)
+	if !hasOutboxEvent(repository.outboxEvents, domain.EventReminderScheduled, reminderScheduledRoutingKey) {
+		t.Fatal("expected reminder scheduled outbox event")
 	}
-	if outboxEvent.RoutingKey != reminderScheduledRoutingKey {
-		t.Fatalf("unexpected routing key %q", outboxEvent.RoutingKey)
+	if !hasOutboxEvent(repository.outboxEvents, domain.EventDailyMetricsCalculated, dailyMetricsCalculatedRoutingKey) {
+		t.Fatal("expected daily metrics calculated outbox event")
 	}
 	if len(repository.metricsRecalculated) != 1 {
 		t.Fatalf("expected one metrics recalculation, got %d", len(repository.metricsRecalculated))
@@ -136,8 +138,11 @@ func TestHandleEventSkipsReminderWhenSettingsAreDisabled(t *testing.T) {
 	if len(repository.scheduledNotifications) != 0 {
 		t.Fatalf("expected no scheduled notifications, got %d", len(repository.scheduledNotifications))
 	}
-	if len(repository.outboxEvents) != 0 {
-		t.Fatalf("expected no outbox events, got %d", len(repository.outboxEvents))
+	if len(repository.outboxEvents) != 1 {
+		t.Fatalf("expected one metrics outbox event, got %d", len(repository.outboxEvents))
+	}
+	if !hasOutboxEvent(repository.outboxEvents, domain.EventDailyMetricsCalculated, dailyMetricsCalculatedRoutingKey) {
+		t.Fatal("expected daily metrics calculated outbox event")
 	}
 	if len(repository.metricsRecalculated) != 1 {
 		t.Fatalf("expected one metrics recalculation, got %d", len(repository.metricsRecalculated))
@@ -157,7 +162,7 @@ func TestHandleEventPublishesUpdatedCustomerRiskAfterNoShow(t *testing.T) {
 	service := NewService(repository, &fakeSender{}, "http://localhost:3000", "noreply@example.test")
 	event := bookedEvent(t)
 	event.EventID = "00000000-0000-0000-0000-000000000010"
-	event.Type = domain.EventAppointmentMarkedNoShow
+	event.Type = domain.EventAppointmentMarkedAsNoShow
 
 	if err := service.HandleEvent(ctx, event); err != nil {
 		t.Fatalf("handle customer risk event: %v", err)
@@ -176,17 +181,34 @@ func TestHandleEventPublishesUpdatedCustomerRiskAfterNoShow(t *testing.T) {
 	if !risk.RequiresDeposit {
 		t.Fatal("expected customer to require deposit")
 	}
-	if len(repository.outboxEvents) != 1 {
-		t.Fatalf("expected one outbox event, got %d", len(repository.outboxEvents))
+	if len(repository.outboxEvents) != 2 {
+		t.Fatalf("expected two outbox events, got %d", len(repository.outboxEvents))
 	}
-	if repository.outboxEvents[0].Type != domain.EventCustomerRiskScoreUpdated {
-		t.Fatalf("unexpected outbox event type %q", repository.outboxEvents[0].Type)
+	if !hasOutboxEvent(repository.outboxEvents, domain.EventCustomerRiskScoreUpdated, customerRiskUpdatedRoutingKey) {
+		t.Fatal("expected customer risk score updated outbox event")
 	}
-	if repository.outboxEvents[0].RoutingKey != customerRiskUpdatedRoutingKey {
-		t.Fatalf("unexpected outbox event routing key %q", repository.outboxEvents[0].RoutingKey)
+	if !hasOutboxEvent(repository.outboxEvents, domain.EventDailyMetricsCalculated, dailyMetricsCalculatedRoutingKey) {
+		t.Fatal("expected daily metrics calculated outbox event")
 	}
 	if len(repository.metricsRecalculated) != 1 {
 		t.Fatalf("expected one metrics recalculation, got %d", len(repository.metricsRecalculated))
+	}
+}
+
+func TestHandleEventStillAcceptsLegacyNoShowEvent(t *testing.T) {
+	ctx := context.Background()
+	repository := newFakeRepository()
+	service := NewService(repository, &fakeSender{}, "http://localhost:3000", "noreply@example.test")
+	event := bookedEvent(t)
+	event.EventID = "00000000-0000-0000-0000-000000000011"
+	event.Type = domain.EventAppointmentMarkedNoShow
+
+	if err := service.HandleEvent(ctx, event); err != nil {
+		t.Fatalf("handle legacy no-show event: %v", err)
+	}
+
+	if len(repository.customerRiskUpdates) != 1 {
+		t.Fatalf("expected one customer risk update, got %d", len(repository.customerRiskUpdates))
 	}
 }
 
@@ -553,4 +575,14 @@ func stringPointer(value string) *string {
 
 func assertError(message string) error {
 	return errors.New(message)
+}
+
+func hasOutboxEvent(events []OutboxEventInput, eventType string, routingKey string) bool {
+	for _, event := range events {
+		if event.Type == eventType && event.RoutingKey == routingKey {
+			return true
+		}
+	}
+
+	return false
 }

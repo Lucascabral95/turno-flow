@@ -59,6 +59,6 @@ export class CreateWaitlistEntryDto {
 }
 
 export class UpdateAppointmentStatusDto {
-  @IsIn(["completed", "no_show", "cancelled_by_business"])
-  status!: Extract<PublicAppointmentStatus, "completed" | "no_show" | "cancelled_by_business">;
+  @IsIn(["confirmed", "completed", "no_show", "cancelled_by_business"])
+  status!: Extract<PublicAppointmentStatus, "confirmed" | "completed" | "no_show" | "cancelled_by_business">;
 }

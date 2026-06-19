@@ -1,9 +1,11 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { type AvailabilityException, type AvailabilityRule, type Service } from "@prisma/client";
 
+import { activeAppointmentStatuses } from "../appointments/status";
+import { calculateAvailability, type AvailabilitySlot } from "../appointments/availability";
 import type { AuthenticatedUser } from "../common/authenticated-user";
 import { toSlug } from "../common/slug";
-import { minutesSinceMidnight, parseDateOnly } from "../common/time";
+import { minutesSinceMidnight, parseDateOnly, weekdayUtc } from "../common/time";
 import { EventRoutingKeys, EventTypes } from "../events/event-types";
 import { OutboxService } from "../events/outbox.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -42,27 +44,65 @@ export class BusinessesService {
 
     const slug = await this.createAvailableSlug(input.slug ?? input.name);
 
-    return this.prisma.business.create({
-      data: {
-        email: input.email,
-        name: input.name,
-        ownerId: user.id,
-        reminderSettings: {
-          create: {}
+    return this.prisma.$transaction(async (tx) => {
+      const business = await tx.business.create({
+        data: {
+          email: input.email,
+          name: input.name,
+          ownerId: user.id,
+          reminderSettings: {
+            create: {}
+          },
+          slug,
+          timezone: input.timezone ?? "America/Argentina/Buenos_Aires"
+        }
+      });
+
+      await this.outbox.create(tx, {
+        aggregateId: business.id,
+        businessId: business.id,
+        payload: {
+          businessId: business.id,
+          email: business.email,
+          name: business.name,
+          slug: business.slug,
+          timezone: business.timezone
         },
-        slug,
-        timezone: input.timezone ?? "America/Argentina/Buenos_Aires"
-      }
+        routingKey: EventRoutingKeys.BusinessCreated,
+        type: EventTypes.BusinessCreated,
+        version: 1
+      });
+
+      return business;
     });
   }
 
   async updateCurrent(user: AuthenticatedUser, input: UpdateBusinessDto) {
     const business = await this.requireCurrentBusiness(user);
 
+    return this.updateBusiness(user, business.id, input);
+  }
+
+  async updateBusiness(user: AuthenticatedUser, businessId: string, input: UpdateBusinessDto) {
+    const business = await this.requireBusinessForUser(user, businessId);
+
     return this.prisma.business.update({
       data: input,
       where: { id: business.id }
     });
+  }
+
+  async getService(user: AuthenticatedUser, serviceId: string) {
+    const business = await this.requireCurrentBusiness(user);
+    const service = await this.prisma.service.findFirst({
+      where: { businessId: business.id, id: serviceId }
+    });
+
+    if (!service) {
+      throw new NotFoundException("Service not found");
+    }
+
+    return service;
   }
 
   async getReminderSettings(user: AuthenticatedUser) {
@@ -169,6 +209,81 @@ export class BusinessesService {
     return this.prisma.availabilityRule.findMany({
       orderBy: [{ weekday: "asc" }, { startTime: "asc" }],
       where: { businessId: business.id }
+    });
+  }
+
+  async getAvailabilitySlots(user: AuthenticatedUser, serviceId: string, date: string): Promise<AvailabilitySlot[]> {
+    const business = await this.requireCurrentBusiness(user);
+    const service = await this.prisma.service.findFirst({
+      where: {
+        active: true,
+        businessId: business.id,
+        id: serviceId
+      }
+    });
+
+    if (!service) {
+      throw new NotFoundException("Service not found");
+    }
+
+    const requestedDate = parseDateOnly(date);
+    const nextDate = new Date(requestedDate);
+    nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+
+    const [activeStaffMembers, rules, exceptions, busySlots] = await Promise.all([
+      this.prisma.staffMember.findMany({
+        select: { id: true },
+        where: { active: true, businessId: business.id }
+      }),
+      this.prisma.availabilityRule.findMany({
+        select: {
+          endTime: true,
+          staffMemberId: true,
+          startTime: true
+        },
+        where: {
+          active: true,
+          businessId: business.id,
+          staffMember: { active: true },
+          weekday: weekdayUtc(requestedDate)
+        }
+      }),
+      this.prisma.availabilityException.findMany({
+        select: {
+          endTime: true,
+          staffMemberId: true,
+          startTime: true,
+          type: true
+        },
+        where: {
+          businessId: business.id,
+          date: requestedDate,
+          OR: [{ staffMemberId: null }, { staffMember: { active: true } }]
+        }
+      }),
+      this.prisma.appointment.findMany({
+        select: {
+          endsAt: true,
+          staffMemberId: true,
+          startsAt: true
+        },
+        where: {
+          businessId: business.id,
+          endsAt: { gt: requestedDate },
+          startsAt: { lt: nextDate },
+          status: { in: activeAppointmentStatuses }
+        }
+      })
+    ]);
+
+    return calculateAvailability({
+      activeStaffMemberIds: activeStaffMembers.map((staffMember) => staffMember.id),
+      bufferMinutes: service.bufferMinutes,
+      busySlots,
+      date,
+      durationMinutes: service.durationMinutes,
+      exceptions,
+      rules
     });
   }
 
@@ -302,6 +417,18 @@ export class BusinessesService {
 
     if (!business) {
       throw new NotFoundException("Current business is not configured");
+    }
+
+    return business;
+  }
+
+  private async requireBusinessForUser(user: AuthenticatedUser, businessId: string) {
+    const business = await this.prisma.business.findFirst({
+      where: { id: businessId, ownerId: user.id }
+    });
+
+    if (!business) {
+      throw new NotFoundException("Business not found");
     }
 
     return business;

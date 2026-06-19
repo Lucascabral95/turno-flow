@@ -1,11 +1,11 @@
 import { Module } from "@nestjs/common";
 
 import { BusinessesModule } from "../businesses/businesses.module";
-import { DashboardController } from "./dashboard.controller";
+import { DashboardController, MetricsController } from "./dashboard.controller";
 import { DashboardService } from "./dashboard.service";
 
 @Module({
-  controllers: [DashboardController],
+  controllers: [DashboardController, MetricsController],
   imports: [BusinessesModule],
   providers: [DashboardService]
 })

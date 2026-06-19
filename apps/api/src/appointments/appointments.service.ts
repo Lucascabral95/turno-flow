@@ -11,6 +11,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { activeAppointmentStatuses, fromPrismaAppointmentStatus, toPrismaAppointmentStatus } from "./status";
 import { calculateAvailability } from "./availability";
 import type { AvailabilitySlot } from "./availability";
+import type { PublicAppointmentStatus } from "./status";
 import type {
   CancelAppointmentDto,
   CreatePublicAppointmentDto,
@@ -23,6 +24,26 @@ type AppointmentWithRelations = Prisma.AppointmentGetPayload<{
     customer: true;
     service: true;
     staffMember: true;
+  };
+}>;
+
+type WaitlistEntryWithRelations = Prisma.WaitlistEntryGetPayload<{
+  include: {
+    customer: true;
+    offers: true;
+    service: true;
+  };
+}>;
+
+type WaitlistOfferForRejection = Prisma.WaitlistOfferGetPayload<{
+  include: {
+    appointment: {
+      include: {
+        customer: true;
+        service: true;
+        staffMember: true;
+      };
+    };
   };
 }>;
 
@@ -198,6 +219,15 @@ export class AppointmentsService {
         version: 1
       });
 
+      await this.outbox.create(tx, {
+        aggregateId: appointment.id,
+        businessId: appointment.businessId,
+        payload: this.appointmentPayload(updatedAppointment),
+        routingKey: EventRoutingKeys.SlotReleased,
+        type: EventTypes.SlotReleased,
+        version: 1
+      });
+
       return updatedAppointment;
     });
 
@@ -206,58 +236,7 @@ export class AppointmentsService {
 
   async createWaitlistEntry(slug: string, input: CreateWaitlistEntryDto) {
     const business = await this.getPublicBusiness(slug);
-    const service = await this.prisma.service.findFirst({
-      where: { active: true, businessId: business.id, id: input.serviceId }
-    });
-
-    if (!service) {
-      throw new NotFoundException("Service not found");
-    }
-
-    const preferredDateStart = parseDateOnly(input.preferredDateStart);
-    const preferredDateEnd = parseDateOnly(input.preferredDateEnd);
-
-    if (preferredDateStart > preferredDateEnd) {
-      throw new ConflictException("Preferred date range is invalid");
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      const customer = await this.upsertCustomer(tx, {
-        businessId: business.id,
-        email: input.customerEmail,
-        name: input.customerName,
-        phone: input.customerPhone
-      });
-
-      const entry = await tx.waitlistEntry.create({
-        data: {
-          businessId: business.id,
-          customerId: customer.id,
-          earliestTime: input.earliestTime,
-          latestTime: input.latestTime,
-          preferredDateEnd,
-          preferredDateStart,
-          priorityScore: Math.max(0, 10 - customer.noShowCount * 2),
-          serviceId: service.id
-        }
-      });
-
-      await this.outbox.create(tx, {
-        aggregateId: entry.id,
-        businessId: business.id,
-        payload: {
-          businessId: business.id,
-          customerId: customer.id,
-          serviceId: service.id,
-          waitlistEntryId: entry.id
-        },
-        routingKey: EventRoutingKeys.WaitlistEntryCreated,
-        type: EventTypes.WaitlistEntryCreated,
-        version: 1
-      });
-
-      return entry;
-    });
+    return this.createWaitlistEntryForBusiness(business.id, input);
   }
 
   async acceptWaitlistOffer(token: string) {
@@ -303,6 +282,213 @@ export class AppointmentsService {
       throw new NotFoundException("Waitlist offer not found");
     }
 
+    await this.rejectWaitlistOfferRecord(offer);
+
+    return { status: "rejected" };
+  }
+
+  async listPrivateAppointments(user: AuthenticatedUser) {
+    const business = await this.businesses.requireCurrentBusiness(user);
+    const appointments = await this.prisma.appointment.findMany({
+      include: { customer: true, service: true, staffMember: true },
+      orderBy: { startsAt: "asc" },
+      where: { businessId: business.id }
+    });
+
+    return appointments.map((appointment) => this.serializeAppointment(appointment));
+  }
+
+  async getPrivateAppointment(user: AuthenticatedUser, appointmentId: string) {
+    const business = await this.businesses.requireCurrentBusiness(user);
+    const appointment = await this.prisma.appointment.findFirst({
+      include: { customer: true, service: true, staffMember: true },
+      where: { businessId: business.id, id: appointmentId }
+    });
+
+    if (!appointment) {
+      throw new NotFoundException("Appointment not found");
+    }
+
+    return this.serializeAppointment(appointment);
+  }
+
+  confirmPrivateAppointment(user: AuthenticatedUser, appointmentId: string) {
+    return this.updatePrivateAppointmentStatusValue(user, appointmentId, "confirmed");
+  }
+
+  cancelPrivateAppointment(user: AuthenticatedUser, appointmentId: string) {
+    return this.updatePrivateAppointmentStatusValue(user, appointmentId, "cancelled_by_business");
+  }
+
+  completePrivateAppointment(user: AuthenticatedUser, appointmentId: string) {
+    return this.updatePrivateAppointmentStatusValue(user, appointmentId, "completed");
+  }
+
+  markPrivateAppointmentNoShow(user: AuthenticatedUser, appointmentId: string) {
+    return this.updatePrivateAppointmentStatusValue(user, appointmentId, "no_show");
+  }
+
+  async updatePrivateAppointmentStatus(user: AuthenticatedUser, appointmentId: string, input: UpdateAppointmentStatusDto) {
+    return this.updatePrivateAppointmentStatusValue(user, appointmentId, input.status);
+  }
+
+  async listPrivateWaitlistEntries(user: AuthenticatedUser) {
+    const business = await this.businesses.requireCurrentBusiness(user);
+    const entries = await this.prisma.waitlistEntry.findMany({
+      include: {
+        customer: true,
+        offers: {
+          orderBy: { createdAt: "desc" },
+          take: 3
+        },
+        service: true
+      },
+      orderBy: { createdAt: "desc" },
+      where: { businessId: business.id }
+    });
+
+    return entries.map((entry) => this.serializeWaitlistEntry(entry));
+  }
+
+  async createPrivateWaitlistEntry(user: AuthenticatedUser, input: CreateWaitlistEntryDto) {
+    const business = await this.businesses.requireCurrentBusiness(user);
+    return this.createWaitlistEntryForBusiness(business.id, input);
+  }
+
+  async cancelPrivateWaitlistEntry(user: AuthenticatedUser, entryId: string) {
+    const business = await this.businesses.requireCurrentBusiness(user);
+    const updated = await this.prisma.waitlistEntry.updateMany({
+      data: { status: WaitlistStatus.CANCELLED },
+      where: {
+        businessId: business.id,
+        id: entryId,
+        status: { in: [WaitlistStatus.WAITING, WaitlistStatus.OFFERED] }
+      }
+    });
+
+    if (updated.count !== 1) {
+      throw new NotFoundException("Waitlist entry not found");
+    }
+
+    return { status: "cancelled" };
+  }
+
+  async acceptPrivateWaitlistOffer(user: AuthenticatedUser, offerId: string) {
+    const business = await this.businesses.requireCurrentBusiness(user);
+    const offer = await this.prisma.waitlistOffer.findFirst({
+      include: {
+        appointment: true,
+        waitlistEntry: {
+          include: {
+            customer: true
+          }
+        }
+      },
+      where: {
+        id: offerId,
+        waitlistEntry: {
+          businessId: business.id
+        }
+      }
+    });
+
+    if (!offer || offer.status !== WaitlistOfferStatus.PENDING || offer.expiresAt <= new Date()) {
+      throw new NotFoundException("Waitlist offer not found");
+    }
+
+    return this.createAppointmentInTransaction({
+      businessId: offer.appointment.businessId,
+      customerEmail: offer.waitlistEntry.customer.email,
+      customerName: offer.waitlistEntry.customer.name,
+      customerPhone: offer.waitlistEntry.customer.phone ?? undefined,
+      serviceId: offer.appointment.serviceId,
+      staffMemberId: offer.appointment.staffMemberId,
+      startsAt: offer.appointment.startsAt,
+      waitlistOfferId: offer.id
+    });
+  }
+
+  async rejectPrivateWaitlistOffer(user: AuthenticatedUser, offerId: string) {
+    const business = await this.businesses.requireCurrentBusiness(user);
+    const offer = await this.prisma.waitlistOffer.findFirst({
+      include: {
+        appointment: {
+          include: { customer: true, service: true, staffMember: true }
+        }
+      },
+      where: {
+        id: offerId,
+        waitlistEntry: {
+          businessId: business.id
+        }
+      }
+    });
+
+    if (!offer || offer.status !== WaitlistOfferStatus.PENDING || offer.expiresAt <= new Date()) {
+      throw new NotFoundException("Waitlist offer not found");
+    }
+
+    await this.rejectWaitlistOfferRecord(offer);
+
+    return { status: "rejected" };
+  }
+
+  private async createWaitlistEntryForBusiness(businessId: string, input: CreateWaitlistEntryDto) {
+    const service = await this.prisma.service.findFirst({
+      where: { active: true, businessId, id: input.serviceId }
+    });
+
+    if (!service) {
+      throw new NotFoundException("Service not found");
+    }
+
+    const preferredDateStart = parseDateOnly(input.preferredDateStart);
+    const preferredDateEnd = parseDateOnly(input.preferredDateEnd);
+
+    if (preferredDateStart > preferredDateEnd) {
+      throw new ConflictException("Preferred date range is invalid");
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const customer = await this.upsertCustomer(tx, {
+        businessId,
+        email: input.customerEmail,
+        name: input.customerName,
+        phone: input.customerPhone
+      });
+
+      const entry = await tx.waitlistEntry.create({
+        data: {
+          businessId,
+          customerId: customer.id,
+          earliestTime: input.earliestTime,
+          latestTime: input.latestTime,
+          preferredDateEnd,
+          preferredDateStart,
+          priorityScore: Math.max(0, 10 - customer.noShowCount * 2),
+          serviceId: service.id
+        }
+      });
+
+      await this.outbox.create(tx, {
+        aggregateId: entry.id,
+        businessId,
+        payload: {
+          businessId,
+          customerId: customer.id,
+          serviceId: service.id,
+          waitlistEntryId: entry.id
+        },
+        routingKey: EventRoutingKeys.WaitlistEntryCreated,
+        type: EventTypes.WaitlistEntryCreated,
+        version: 1
+      });
+
+      return entry;
+    });
+  }
+
+  private async rejectWaitlistOfferRecord(offer: WaitlistOfferForRejection) {
     await this.prisma.$transaction(async (tx) => {
       const rejectedOffer = await tx.waitlistOffer.updateMany({
         data: { status: WaitlistOfferStatus.REJECTED },
@@ -338,24 +524,15 @@ export class AppointmentsService {
         version: 1
       });
     });
-
-    return { status: "rejected" };
   }
 
-  async listPrivateAppointments(user: AuthenticatedUser) {
+  private async updatePrivateAppointmentStatusValue(
+    user: AuthenticatedUser,
+    appointmentId: string,
+    status: Extract<PublicAppointmentStatus, "confirmed" | "completed" | "no_show" | "cancelled_by_business">
+  ) {
     const business = await this.businesses.requireCurrentBusiness(user);
-    const appointments = await this.prisma.appointment.findMany({
-      include: { customer: true, service: true, staffMember: true },
-      orderBy: { startsAt: "asc" },
-      where: { businessId: business.id }
-    });
-
-    return appointments.map((appointment) => this.serializeAppointment(appointment));
-  }
-
-  async updatePrivateAppointmentStatus(user: AuthenticatedUser, appointmentId: string, input: UpdateAppointmentStatusDto) {
-    const business = await this.businesses.requireCurrentBusiness(user);
-    const nextStatus = toPrismaAppointmentStatus(input.status);
+    const nextStatus = toPrismaAppointmentStatus(status);
 
     const appointment = await this.prisma.appointment.findFirst({
       include: { customer: true, service: true, staffMember: true },
@@ -389,10 +566,21 @@ export class AppointmentsService {
         data: {
           appointmentId: appointment.id,
           businessId: business.id,
-          eventType: this.appointmentStatusEventType(nextStatus, input.status),
-          metadata: { status: input.status }
+          eventType: this.appointmentStatusEventType(nextStatus, status),
+          metadata: { status }
         }
       });
+
+      if (nextStatus === AppointmentStatus.CONFIRMED) {
+        await this.outbox.create(tx, {
+          aggregateId: appointment.id,
+          businessId: business.id,
+          payload: this.appointmentPayload(updated),
+          routingKey: EventRoutingKeys.AppointmentConfirmed,
+          type: EventTypes.AppointmentConfirmed,
+          version: 1
+        });
+      }
 
       if (nextStatus === AppointmentStatus.COMPLETED) {
         await this.outbox.create(tx, {
@@ -410,8 +598,8 @@ export class AppointmentsService {
           aggregateId: appointment.id,
           businessId: business.id,
           payload: this.appointmentPayload(updated),
-          routingKey: EventRoutingKeys.AppointmentMarkedNoShow,
-          type: EventTypes.AppointmentMarkedNoShow,
+          routingKey: EventRoutingKeys.AppointmentMarkedAsNoShow,
+          type: EventTypes.AppointmentMarkedAsNoShow,
           version: 1
         });
       }
@@ -423,6 +611,15 @@ export class AppointmentsService {
           payload: this.appointmentPayload(updated),
           routingKey: EventRoutingKeys.AppointmentCancelled,
           type: EventTypes.AppointmentCancelled,
+          version: 1
+        });
+
+        await this.outbox.create(tx, {
+          aggregateId: appointment.id,
+          businessId: business.id,
+          payload: this.appointmentPayload(updated),
+          routingKey: EventRoutingKeys.SlotReleased,
+          type: EventTypes.SlotReleased,
           version: 1
         });
       }
@@ -532,6 +729,18 @@ export class AppointmentsService {
             }),
             routingKey: EventRoutingKeys.WaitlistOfferAccepted,
             type: EventTypes.WaitlistOfferAccepted,
+            version: 1
+          });
+
+          await this.outbox.create(tx, {
+            aggregateId: appointment.id,
+            businessId: input.businessId,
+            payload: this.waitlistOfferPayload(appointment, {
+              status: "accepted",
+              waitlistOfferId: input.waitlistOfferId
+            }),
+            routingKey: EventRoutingKeys.SlotReassigned,
+            type: EventTypes.SlotReassigned,
             version: 1
           });
         }
@@ -771,12 +980,45 @@ export class AppointmentsService {
     };
   }
 
-  private appointmentStatusEventType(nextStatus: AppointmentStatus, publicStatus: UpdateAppointmentStatusDto["status"]) {
+  private serializeWaitlistEntry(entry: WaitlistEntryWithRelations) {
+    return {
+      customer: {
+        email: entry.customer.email,
+        id: entry.customer.id,
+        name: entry.customer.name,
+        phone: entry.customer.phone,
+        riskLevel: entry.customer.riskLevel.toLowerCase(),
+        riskScore: entry.customer.riskScore
+      },
+      earliestTime: entry.earliestTime,
+      id: entry.id,
+      latestTime: entry.latestTime,
+      offers: entry.offers.map((offer) => ({
+        appointmentId: offer.appointmentId,
+        expiresAt: offer.expiresAt,
+        id: offer.id,
+        status: offer.status.toLowerCase()
+      })),
+      preferredDateEnd: entry.preferredDateEnd,
+      preferredDateStart: entry.preferredDateStart,
+      priorityScore: entry.priorityScore,
+      service: entry.service,
+      status: entry.status.toLowerCase()
+    };
+  }
+
+  private appointmentStatusEventType(
+    nextStatus: AppointmentStatus,
+    publicStatus: Extract<PublicAppointmentStatus, "confirmed" | "completed" | "no_show" | "cancelled_by_business">
+  ) {
+    if (nextStatus === AppointmentStatus.CONFIRMED) {
+      return EventTypes.AppointmentConfirmed;
+    }
     if (nextStatus === AppointmentStatus.COMPLETED) {
       return EventTypes.AppointmentCompleted;
     }
     if (nextStatus === AppointmentStatus.NO_SHOW) {
-      return EventTypes.AppointmentMarkedNoShow;
+      return EventTypes.AppointmentMarkedAsNoShow;
     }
     if (nextStatus === AppointmentStatus.CANCELLED_BY_BUSINESS) {
       return EventTypes.AppointmentCancelled;

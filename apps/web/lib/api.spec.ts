@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatMoney, requestJson } from "./api";
+import { formatMoney, formatPercent, requestJson } from "./api";
 
 describe("formatMoney", () => {
   it("formats cents as Argentine pesos", () => {
@@ -35,5 +35,12 @@ describe("requestJson", () => {
     } finally {
       globalThis.fetch = previousFetch;
     }
+  });
+});
+
+describe("formatPercent", () => {
+  it("formats ratios as percentages", () => {
+    expect(formatPercent(0.125)).toBe("12,5");
+    expect(formatPercent(0)).toBe("0");
   });
 });

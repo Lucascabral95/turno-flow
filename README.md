@@ -1,25 +1,42 @@
 # TurnoFlow
 
-TurnoFlow is an MVP scheduling platform for small professional businesses. It supports public booking pages, service and staff management, email reminders, no-show tracking, waitlist offers, and event-driven worker processing.
+TurnoFlow is an MVP scheduling platform for small professional businesses. It supports public booking pages, service and staff management, email reminders, no-show tracking, waitlist offers, customer risk scoring, and event-driven worker processing.
 
 ## Current MVP Status
 
-Phases 1-4 are implemented and stabilized for local development:
+Phases 1-12 are implemented for local development:
 
 - Multi-tenant base with business registration, auth, services, staff, availability rules, and availability exceptions.
 - Public business pages with booking, cancellation, and waitlist entry.
 - PostgreSQL-backed appointment creation with transactional validation and outbox events.
 - RabbitMQ exchange, durable queues, and a Go worker connected to the event stream.
+- Mock reminder scheduling and delivery with retry tracking.
+- Waitlist offers with accept, reject, expire, and automatic reassignment.
+- Manual completed/no-show marking plus persisted customer risk scoring.
+- Daily business metrics aggregation with dashboard analytics for activity, revenue, top services, recurring customers, and risky customers.
+- Formal API aliases for auth, business, availability, appointments, waitlist, and metrics endpoints.
+- Canonical domain events and RabbitMQ routing keys with legacy bindings kept during the transition.
 
 ## Architecture
 
 - `apps/web`: Next.js App Router frontend for public booking and the private dashboard.
 - `apps/api`: NestJS API, PostgreSQL ownership, domain transactions, auth, and RabbitMQ outbox publishing.
-- `apps/worker`: Go worker for reminders, waitlist offers, idempotent event processing, and async email delivery.
-- `docker-compose.yml`: local PostgreSQL, RabbitMQ, API, web, and worker.
+- `apps/worker`: Go worker for reminders, waitlist offers, customer risk recalculation, and daily metrics aggregation.
+- `docker-compose.yml`: local PostgreSQL, RabbitMQ, Redis, API, web, and worker.
 - `Makefile`: common local commands.
 
 PostgreSQL is the source of truth. RabbitMQ transports versioned events only. The API writes events to an outbox table inside the same transaction as domain changes, then publishes pending events to RabbitMQ.
+
+## Dashboard Analytics
+
+The private dashboard now includes:
+
+- summary cards for monthly appointments, cancellations, no-shows, and revenue
+- weekly activity chart based on persisted daily aggregates
+- rankings for top booked services and recurring customers
+- risky customer table backed by persisted risk scores
+
+Daily metrics are stored in `business_metrics_daily` and refreshed by the Go worker when appointment lifecycle events are processed.
 
 ## Local Setup
 
@@ -33,7 +50,7 @@ Useful local URLs:
 
 - Web app: `http://localhost:3000`
 - API: `http://localhost:3001`
-- RabbitMQ management: `http://localhost:15672` with `guest` / `guest`
+- RabbitMQ management: `http://localhost:15672` with `turnoflow` / `turnoflow`
 - Demo public booking page: `http://localhost:3000/barberia-lucas`
 
 Demo login after `make db-seed`:
@@ -74,13 +91,24 @@ The local `.env.example` is configured for Docker Compose defaults:
 
 - PostgreSQL runs on `localhost:5432`.
 - RabbitMQ runs on `localhost:5672`.
+- Redis runs on `localhost:6379` and is available for future cache/rate limit work.
 - API runs on `localhost:3001`.
 - Web runs on `localhost:3000`.
 - `DATABASE_URL` is used by local Prisma commands.
 - Docker services override internal service URLs where needed, for example `postgres:5432`, `rabbitmq:5672`, and `api:3001`.
+- If an old RabbitMQ volume was created with `guest` credentials, recreate the stack volume before switching to `turnoflow` credentials.
+
+## API Contract
+
+Core private endpoints include `/auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/me`, `/businesses/me`, `/services`, `/availability/rules`, `/availability/exceptions`, `/availability/slots`, `/appointments`, `/waitlist`, `/waitlist-offers`, and `/metrics/dashboard`.
+
+Public booking endpoints include `/public/businesses/:slug`, `/public/businesses/:slug/services`, `/public/businesses/:slug/slots`, `/public/businesses/:slug/appointments`, `/public/businesses/:slug/waitlist`, and public waitlist offer token actions.
+
+Canonical events include `BusinessCreated`, `AppointmentBooked`, `AppointmentConfirmed`, `AppointmentCancelled`, `AppointmentCompleted`, `AppointmentMarkedAsNoShow`, `WaitlistEntryCreated`, `WaitlistCandidateMatched`, `WaitlistOfferCreated`, `WaitlistOfferAccepted`, `SlotReleased`, `SlotReassigned`, `ReminderScheduled`, `ReminderSent`, `CustomerRiskScoreUpdated`, and `DailyMetricsCalculated`.
 
 ## MVP Boundaries
 
 - Email is the first notification channel.
 - WhatsApp, payments, subscriptions, marketplace discovery, and complex resource booking are intentionally outside the MVP.
 - No-show risk is rule based, not machine learning.
+- Production hardening items such as audit logs, rate limit strategy, correlation ids, and deeper e2e coverage are still pending.

@@ -68,16 +68,44 @@ export type DashboardMetrics = {
   activeAppointments: number;
   cancelledAppointments: number;
   completedAppointments: number;
+  estimatedRevenueCents: number;
   lostRevenueCents: number;
   noShowAppointments: number;
   noShowRate: number;
+  recurringCustomers: Array<{
+    appointments: number;
+    customerId: string;
+    email: string;
+    name: string;
+  }>;
   riskyCustomers: Array<{
+    completedAppointments: number;
     email: string;
     id: string;
+    lastRiskCalculatedAt: string | null;
     name: string;
     noShowCount: number;
+    requiresDeposit: boolean;
+    riskLevel: "low" | "medium" | "high";
+    riskScore: number;
+    totalAppointments: number;
+  }>;
+  topServices: Array<{
+    bookings: number;
+    name: string;
+    serviceId: string;
   }>;
   totalAppointments: number;
+  weeklyBreakdown: Array<{
+    activeAppointments: number;
+    cancelledAppointments: number;
+    completedAppointments: number;
+    date: string;
+    estimatedRevenueCents: number;
+    lostRevenueCents: number;
+    noShowAppointments: number;
+    totalAppointments: number;
+  }>;
 };
 
 export type ReminderSettings = {
@@ -176,4 +204,11 @@ export function formatDateTime(value: string): string {
     dateStyle: "medium",
     timeStyle: "short"
   }).format(new Date(value));
+}
+
+export function formatPercent(value: number): string {
+  return new Intl.NumberFormat("es-AR", {
+    maximumFractionDigits: 1,
+    minimumFractionDigits: value === 0 ? 0 : 1
+  }).format(value * 100);
 }
