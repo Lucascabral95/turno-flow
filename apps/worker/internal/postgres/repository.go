@@ -484,6 +484,102 @@ func (repository *txRepository) GetReminderSettings(ctx context.Context, busines
 	return settings, nil
 }
 
+func (repository *txRepository) RecalculateBusinessMetricsDaily(
+	ctx context.Context,
+	businessID string,
+	metricDate time.Time,
+) (worker.BusinessMetricsDailySnapshot, error) {
+	startDate, endDate := businessMetricsDayBounds(metricDate)
+
+	if _, err := repository.tx.Exec(ctx, `
+		DELETE FROM business_metrics_daily
+		WHERE business_id = $1 AND date = $2::date
+	`, businessID, startDate); err != nil {
+		return worker.BusinessMetricsDailySnapshot{}, fmt.Errorf("delete existing business metrics: %w", err)
+	}
+
+	var snapshot worker.BusinessMetricsDailySnapshot
+	err := repository.tx.QueryRow(ctx, `
+		WITH source AS (
+			SELECT
+				a.business_id,
+				$2::date AS date,
+				COUNT(*)::int AS total_appointments,
+				COUNT(*) FILTER (WHERE a.status IN ('pending', 'confirmed'))::int AS active_appointments,
+				COUNT(*) FILTER (WHERE a.status = 'completed')::int AS completed_appointments,
+				COUNT(*) FILTER (WHERE a.status IN ('cancelled_by_customer', 'cancelled_by_business'))::int AS cancelled_appointments,
+				COUNT(*) FILTER (WHERE a.status = 'no_show')::int AS no_show_appointments,
+				COALESCE(SUM(CASE
+					WHEN a.status NOT IN ('cancelled_by_customer', 'cancelled_by_business') THEN s.price_cents
+					ELSE 0
+				END), 0)::int AS estimated_revenue_cents,
+				COALESCE(SUM(CASE
+					WHEN a.status = 'no_show' THEN s.price_cents
+					ELSE 0
+				END), 0)::int AS lost_revenue_cents
+			FROM appointments a
+			JOIN services s ON s.id = a.service_id
+			WHERE a.business_id = $1
+				AND a.starts_at >= $2
+				AND a.starts_at < $3
+			GROUP BY a.business_id
+		)
+		INSERT INTO business_metrics_daily (
+			business_id,
+			date,
+			total_appointments,
+			active_appointments,
+			completed_appointments,
+			cancelled_appointments,
+			no_show_appointments,
+			estimated_revenue_cents,
+			lost_revenue_cents
+		)
+		SELECT
+			business_id,
+			date,
+			total_appointments,
+			active_appointments,
+			completed_appointments,
+			cancelled_appointments,
+			no_show_appointments,
+			estimated_revenue_cents,
+			lost_revenue_cents
+		FROM source
+		RETURNING
+			business_id,
+			date,
+			total_appointments,
+			active_appointments,
+			completed_appointments,
+			cancelled_appointments,
+			no_show_appointments,
+			estimated_revenue_cents,
+			lost_revenue_cents
+	`, businessID, startDate, endDate).Scan(
+		&snapshot.BusinessID,
+		&snapshot.Date,
+		&snapshot.TotalAppointments,
+		&snapshot.ActiveAppointments,
+		&snapshot.CompletedAppointments,
+		&snapshot.CancelledAppointments,
+		&snapshot.NoShowAppointments,
+		&snapshot.EstimatedRevenueCents,
+		&snapshot.LostRevenueCents,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return worker.BusinessMetricsDailySnapshot{
+			BusinessID: businessID,
+			Date:       startDate,
+		}, nil
+	}
+	if err != nil {
+		return worker.BusinessMetricsDailySnapshot{}, fmt.Errorf("recalculate business metrics daily: %w", err)
+	}
+
+	return snapshot, nil
+}
+
 func (repository *txRepository) GetCustomerAttendance(ctx context.Context, businessID string, customerID string) (worker.CustomerAttendance, error) {
 	var attendance worker.CustomerAttendance
 	err := repository.tx.QueryRow(ctx, `
@@ -563,6 +659,13 @@ func (repository *txRepository) MarkWaitlistEntryOffered(ctx context.Context, en
 	}
 
 	return nil
+}
+
+func businessMetricsDayBounds(metricDate time.Time) (time.Time, time.Time) {
+	startDate := time.Date(metricDate.UTC().Year(), metricDate.UTC().Month(), metricDate.UTC().Day(), 0, 0, 0, 0, time.UTC)
+	endDate := startDate.Add(24 * time.Hour)
+
+	return startDate, endDate
 }
 
 func (repository *txRepository) UpdateCustomerRisk(ctx context.Context, risk worker.CustomerRiskSnapshot) error {

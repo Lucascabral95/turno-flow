@@ -121,7 +121,7 @@ func (service *Service) handleAppointmentBooked(ctx context.Context, tx Tx, payl
 		return fmt.Errorf("get reminder settings: %w", err)
 	}
 	if !settings.Enabled {
-		return nil
+		return service.recalculateBusinessMetrics(ctx, tx, appointment)
 	}
 
 	cancelURL := fmt.Sprintf("%s/cancel/%s?token=%s", service.appBaseURL, appointment.AppointmentID, appointment.CancellationToken)
@@ -178,7 +178,7 @@ func (service *Service) handleAppointmentBooked(ctx context.Context, tx Tx, payl
 		return fmt.Errorf("create reminder scheduled outbox event: %w", err)
 	}
 
-	return nil
+	return service.recalculateBusinessMetrics(ctx, tx, appointment)
 }
 
 func (service *Service) handleWaitlistOpportunity(ctx context.Context, tx Tx, payload json.RawMessage, now time.Time) error {
@@ -192,7 +192,7 @@ func (service *Service) handleWaitlistOpportunity(ctx context.Context, tx Tx, pa
 		return fmt.Errorf("find waitlist candidate: %w", err)
 	}
 	if candidate == nil {
-		return nil
+		return service.recalculateBusinessMetrics(ctx, tx, appointment)
 	}
 
 	token, err := createToken()
@@ -260,7 +260,11 @@ func (service *Service) handleWaitlistOpportunity(ctx context.Context, tx Tx, pa
 		logInput.Status = NotificationFailed
 	}
 
-	return tx.CreateNotificationLog(ctx, logInput)
+	if err := tx.CreateNotificationLog(ctx, logInput); err != nil {
+		return err
+	}
+
+	return service.recalculateBusinessMetrics(ctx, tx, appointment)
 }
 
 func (service *Service) handleCustomerRiskEvent(ctx context.Context, tx Tx, payload json.RawMessage, now time.Time) error {
@@ -305,7 +309,7 @@ func (service *Service) handleCustomerRiskEvent(ctx context.Context, tx Tx, payl
 		return fmt.Errorf("create customer risk outbox event: %w", err)
 	}
 
-	return nil
+	return service.recalculateBusinessMetrics(ctx, tx, appointment)
 }
 
 func eventOccurredAt(event domain.Event) time.Time {
@@ -390,4 +394,12 @@ func calculateCustomerRisk(attendance CustomerAttendance, now time.Time) Custome
 		RiskScore:             riskScore,
 		TotalAppointments:     attendance.TotalAppointments,
 	}
+}
+
+func (service *Service) recalculateBusinessMetrics(ctx context.Context, tx Tx, appointment domain.AppointmentPayload) error {
+	if _, err := tx.RecalculateBusinessMetricsDaily(ctx, appointment.BusinessID, appointment.StartsAt); err != nil {
+		return fmt.Errorf("recalculate business metrics: %w", err)
+	}
+
+	return nil
 }
