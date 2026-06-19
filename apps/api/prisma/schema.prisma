@@ -102,6 +102,7 @@ model Business {
   appointmentEvents AppointmentEvent[]
   eventOutbox       EventOutbox[]
   reminderSettings  BusinessReminderSettings?
+  metricsDaily      BusinessMetricsDaily[]
 
   @@map("businesses")
 }
@@ -366,6 +367,25 @@ model EventOutbox {
 
   @@index([status, createdAt])
   @@map("outbox_events")
+}
+
+model BusinessMetricsDaily {
+  businessId             String   @map("business_id") @db.Uuid
+  business               Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  date                   DateTime @db.Date
+  totalAppointments      Int      @default(0) @map("total_appointments")
+  activeAppointments     Int      @default(0) @map("active_appointments")
+  completedAppointments  Int      @default(0) @map("completed_appointments")
+  cancelledAppointments  Int      @default(0) @map("cancelled_appointments")
+  noShowAppointments     Int      @default(0) @map("no_show_appointments")
+  estimatedRevenueCents  Int      @default(0) @map("estimated_revenue_cents")
+  lostRevenueCents       Int      @default(0) @map("lost_revenue_cents")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  @@id([businessId, date])
+  @@index([businessId, date])
+  @@map("business_metrics_daily")
 }
 
 model ProcessedEvent {

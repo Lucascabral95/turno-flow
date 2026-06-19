@@ -66,6 +66,18 @@ type CustomerRiskSnapshot struct {
 	TotalAppointments     int
 }
 
+type BusinessMetricsDailySnapshot struct {
+	ActiveAppointments    int
+	BusinessID            string
+	CancelledAppointments int
+	CompletedAppointments int
+	Date                  time.Time
+	EstimatedRevenueCents int
+	LostRevenueCents      int
+	NoShowAppointments    int
+	TotalAppointments     int
+}
+
 type NotificationLog struct {
 	AppointmentID   *string
 	Attempts        int
@@ -113,5 +125,6 @@ type Tx interface {
 	GetCustomerAttendance(ctx context.Context, businessID string, customerID string) (CustomerAttendance, error)
 	GetReminderSettings(ctx context.Context, businessID string) (ReminderSettings, error)
 	MarkWaitlistEntryOffered(ctx context.Context, entryID string) error
+	RecalculateBusinessMetricsDaily(ctx context.Context, businessID string, metricDate time.Time) (BusinessMetricsDailySnapshot, error)
 	UpdateCustomerRisk(ctx context.Context, risk CustomerRiskSnapshot) error
 }

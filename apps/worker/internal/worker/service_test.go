@@ -38,6 +38,9 @@ func TestHandleEventCreatesWaitlistOfferOnlyOnce(t *testing.T) {
 	if len(repository.outboxEvents) != 1 {
 		t.Fatalf("expected one outbox event, got %d", len(repository.outboxEvents))
 	}
+	if len(repository.metricsRecalculated) != 1 {
+		t.Fatalf("expected one metrics recalculation, got %d", len(repository.metricsRecalculated))
+	}
 	if repository.outboxEvents[0].Type != domain.EventWaitlistOfferCreated {
 		t.Fatalf("unexpected outbox event type %q", repository.outboxEvents[0].Type)
 	}
@@ -111,6 +114,9 @@ func TestHandleEventSchedulesReminderOnlyOnceForAppointmentBooked(t *testing.T) 
 	if outboxEvent.RoutingKey != reminderScheduledRoutingKey {
 		t.Fatalf("unexpected routing key %q", outboxEvent.RoutingKey)
 	}
+	if len(repository.metricsRecalculated) != 1 {
+		t.Fatalf("expected one metrics recalculation, got %d", len(repository.metricsRecalculated))
+	}
 	if len(sender.messages) != 0 {
 		t.Fatalf("expected no immediate email sends, got %d", len(sender.messages))
 	}
@@ -132,6 +138,9 @@ func TestHandleEventSkipsReminderWhenSettingsAreDisabled(t *testing.T) {
 	}
 	if len(repository.outboxEvents) != 0 {
 		t.Fatalf("expected no outbox events, got %d", len(repository.outboxEvents))
+	}
+	if len(repository.metricsRecalculated) != 1 {
+		t.Fatalf("expected one metrics recalculation, got %d", len(repository.metricsRecalculated))
 	}
 }
 
@@ -175,6 +184,27 @@ func TestHandleEventPublishesUpdatedCustomerRiskAfterNoShow(t *testing.T) {
 	}
 	if repository.outboxEvents[0].RoutingKey != customerRiskUpdatedRoutingKey {
 		t.Fatalf("unexpected outbox event routing key %q", repository.outboxEvents[0].RoutingKey)
+	}
+	if len(repository.metricsRecalculated) != 1 {
+		t.Fatalf("expected one metrics recalculation, got %d", len(repository.metricsRecalculated))
+	}
+}
+
+func TestHandleEventRecalculatesMetricsAfterCancellation(t *testing.T) {
+	ctx := context.Background()
+	repository := newFakeRepository()
+	sender := &fakeSender{}
+	service := NewService(repository, sender, "http://localhost:3000", "noreply@example.test")
+
+	if err := service.HandleEvent(ctx, cancellationEvent(t)); err != nil {
+		t.Fatalf("handle cancellation event: %v", err)
+	}
+
+	if len(repository.metricsRecalculated) != 1 {
+		t.Fatalf("expected one metrics recalculation, got %d", len(repository.metricsRecalculated))
+	}
+	if repository.metricsRecalculated[0].BusinessID != "business-1" {
+		t.Fatalf("unexpected metrics business id %q", repository.metricsRecalculated[0].BusinessID)
 	}
 }
 
@@ -273,6 +303,7 @@ type fakeRepository struct {
 	customerRiskUpdates    []CustomerRiskSnapshot
 	dueNotifications       []DueNotification
 	failedNotifications    []failedNotification
+	metricsRecalculated    []BusinessMetricsDailySnapshot
 	notificationLogs       []NotificationLog
 	offerCount             int
 	outboxEvents           []OutboxEventInput
@@ -413,6 +444,19 @@ func (repository *fakeRepository) GetReminderSettings(_ context.Context, _ strin
 
 func (repository *fakeRepository) MarkWaitlistEntryOffered(_ context.Context, _ string) error {
 	return nil
+}
+
+func (repository *fakeRepository) RecalculateBusinessMetricsDaily(
+	_ context.Context,
+	businessID string,
+	metricDate time.Time,
+) (BusinessMetricsDailySnapshot, error) {
+	snapshot := BusinessMetricsDailySnapshot{
+		BusinessID: businessID,
+		Date:       metricDate,
+	}
+	repository.metricsRecalculated = append(repository.metricsRecalculated, snapshot)
+	return snapshot, nil
 }
 
 func (repository *fakeRepository) UpdateCustomerRisk(_ context.Context, risk CustomerRiskSnapshot) error {
