@@ -22,6 +22,11 @@ export class PublicController {
     return this.appointments.getAvailability(slug, serviceId, date);
   }
 
+  @Get("businesses/:slug/slots")
+  getSlots(@Param("slug") slug: string, @Query("serviceId", ParseUUIDPipe) serviceId: string, @Query("date") date: string) {
+    return this.appointments.getAvailability(slug, serviceId, date);
+  }
+
   @Post("businesses/:slug/appointments")
   createAppointment(@Param("slug") slug: string, @Body() input: CreatePublicAppointmentDto) {
     return this.appointments.createPublicAppointment(slug, input);

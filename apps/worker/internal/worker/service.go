@@ -13,14 +13,16 @@ import (
 )
 
 const (
-	attendanceReviewBatchSize      = 25
-	dueNotificationBatchSize       = 25
-	maxNotificationAttempts        = 3
-	customerRiskUpdatedRoutingKey  = "customer.risk_score_updated"
-	reminderScheduledRoutingKey    = "reminder.scheduled"
-	reminderTemplate24Hours        = "appointment_reminder_24h"
-	waitlistOfferCreatedRoutingKey = "waitlist.offer_created"
-	waitlistOfferTTL               = 15 * time.Minute
+	attendanceReviewBatchSize          = 25
+	dueNotificationBatchSize           = 25
+	maxNotificationAttempts            = 3
+	customerRiskUpdatedRoutingKey      = "customer.risk_score_updated"
+	dailyMetricsCalculatedRoutingKey   = "metrics.daily_calculated"
+	reminderScheduledRoutingKey        = "reminder.scheduled"
+	reminderTemplate24Hours            = "appointment_reminder_24h"
+	waitlistCandidateMatchedRoutingKey = "waitlist.candidate_matched"
+	waitlistOfferCreatedRoutingKey     = "waitlist.offer_created"
+	waitlistOfferTTL                   = 15 * time.Minute
 )
 
 type Service struct {
@@ -44,7 +46,7 @@ func (service *Service) HandleEvent(ctx context.Context, event domain.Event) err
 		switch event.Type {
 		case domain.EventAppointmentBooked:
 			return service.handleAppointmentBooked(ctx, tx, event.Payload)
-		case domain.EventAppointmentCompleted, domain.EventAppointmentMarkedNoShow:
+		case domain.EventAppointmentCompleted, domain.EventAppointmentMarkedAsNoShow, domain.EventAppointmentMarkedNoShow:
 			return service.handleCustomerRiskEvent(ctx, tx, event.Payload, eventOccurredAt(event))
 		case domain.EventAppointmentCancelled, domain.EventWaitlistOfferExpired, domain.EventWaitlistOfferRejected:
 			return service.handleWaitlistOpportunity(ctx, tx, event.Payload, eventOccurredAt(event))
@@ -219,6 +221,16 @@ func (service *Service) handleWaitlistOpportunity(ctx context.Context, tx Tx, pa
 	eventPayload, err := waitlistOfferCreatedPayload(appointment, candidate, offerID, token, acceptURL, rejectURL, expiresAt)
 	if err != nil {
 		return err
+	}
+	if err := tx.CreateOutboxEvent(ctx, OutboxEventInput{
+		AggregateID: candidate.EntryID,
+		BusinessID:  appointment.BusinessID,
+		Payload:     eventPayload,
+		RoutingKey:  waitlistCandidateMatchedRoutingKey,
+		Type:        domain.EventWaitlistCandidateMatched,
+		Version:     1,
+	}); err != nil {
+		return fmt.Errorf("create waitlist candidate matched outbox event: %w", err)
 	}
 	if err := tx.CreateOutboxEvent(ctx, OutboxEventInput{
 		AggregateID: offerID,
@@ -397,8 +409,35 @@ func calculateCustomerRisk(attendance CustomerAttendance, now time.Time) Custome
 }
 
 func (service *Service) recalculateBusinessMetrics(ctx context.Context, tx Tx, appointment domain.AppointmentPayload) error {
-	if _, err := tx.RecalculateBusinessMetricsDaily(ctx, appointment.BusinessID, appointment.StartsAt); err != nil {
+	snapshot, err := tx.RecalculateBusinessMetricsDaily(ctx, appointment.BusinessID, appointment.StartsAt)
+	if err != nil {
 		return fmt.Errorf("recalculate business metrics: %w", err)
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"activeAppointments":    snapshot.ActiveAppointments,
+		"businessId":            snapshot.BusinessID,
+		"cancelledAppointments": snapshot.CancelledAppointments,
+		"completedAppointments": snapshot.CompletedAppointments,
+		"date":                  snapshot.Date.Format("2006-01-02"),
+		"estimatedRevenueCents": snapshot.EstimatedRevenueCents,
+		"lostRevenueCents":      snapshot.LostRevenueCents,
+		"noShowAppointments":    snapshot.NoShowAppointments,
+		"totalAppointments":     snapshot.TotalAppointments,
+	})
+	if err != nil {
+		return fmt.Errorf("encode daily metrics payload: %w", err)
+	}
+
+	if err := tx.CreateOutboxEvent(ctx, OutboxEventInput{
+		AggregateID: appointment.BusinessID,
+		BusinessID:  appointment.BusinessID,
+		Payload:     payload,
+		RoutingKey:  dailyMetricsCalculatedRoutingKey,
+		Type:        domain.EventDailyMetricsCalculated,
+		Version:     1,
+	}); err != nil {
+		return fmt.Errorf("create daily metrics outbox event: %w", err)
 	}
 
 	return nil

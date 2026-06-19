@@ -6,18 +6,24 @@ import (
 )
 
 const (
-	EventAppointmentBooked        = "AppointmentBooked"
-	EventAppointmentCancelled     = "AppointmentCancelled"
-	EventAppointmentCompleted     = "AppointmentCompleted"
-	EventAppointmentMarkedNoShow  = "AppointmentMarkedNoShow"
-	EventCustomerRiskScoreUpdated = "CustomerRiskScoreUpdated"
-	EventReminderFailed           = "ReminderFailed"
-	EventReminderScheduled        = "ReminderScheduled"
-	EventReminderSent             = "ReminderSent"
-	EventWaitlistOfferAccepted    = "WaitlistOfferAccepted"
-	EventWaitlistOfferCreated     = "WaitlistOfferCreated"
-	EventWaitlistOfferExpired     = "WaitlistOfferExpired"
-	EventWaitlistOfferRejected    = "WaitlistOfferRejected"
+	EventAppointmentBooked         = "AppointmentBooked"
+	EventAppointmentConfirmed      = "AppointmentConfirmed"
+	EventAppointmentCancelled      = "AppointmentCancelled"
+	EventAppointmentCompleted      = "AppointmentCompleted"
+	EventAppointmentMarkedAsNoShow = "AppointmentMarkedAsNoShow"
+	EventAppointmentMarkedNoShow   = "AppointmentMarkedNoShow"
+	EventCustomerRiskScoreUpdated  = "CustomerRiskScoreUpdated"
+	EventDailyMetricsCalculated    = "DailyMetricsCalculated"
+	EventReminderFailed            = "ReminderFailed"
+	EventReminderScheduled         = "ReminderScheduled"
+	EventReminderSent              = "ReminderSent"
+	EventSlotReassigned            = "SlotReassigned"
+	EventSlotReleased              = "SlotReleased"
+	EventWaitlistCandidateMatched  = "WaitlistCandidateMatched"
+	EventWaitlistOfferAccepted     = "WaitlistOfferAccepted"
+	EventWaitlistOfferCreated      = "WaitlistOfferCreated"
+	EventWaitlistOfferExpired      = "WaitlistOfferExpired"
+	EventWaitlistOfferRejected     = "WaitlistOfferRejected"
 )
 
 type Event struct {

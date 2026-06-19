@@ -27,9 +27,15 @@ const (
 
 var eventBindingKeys = []string{
 	"appointment.booked",
+	"appointment.confirmed",
 	"appointment.cancelled",
 	"appointment.completed",
+	"appointment.no_show",
 	"appointment.marked_no_show",
+	"appointment.reminder_due",
+	"notification.reminder_due",
+	"slot.reassigned",
+	"slot.released",
 	"waitlist.offer_expired",
 	"waitlist.offer_rejected",
 }

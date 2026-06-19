@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
 
 import type { AuthenticatedUser } from "../common/authenticated-user";
 import { CurrentUser } from "../common/current-user.decorator";
@@ -21,14 +21,33 @@ export class BusinessesController {
     return this.businesses.getCurrent(user);
   }
 
+  @Get("businesses/me")
+  getMe(@CurrentUser() user: AuthenticatedUser) {
+    return this.businesses.getCurrent(user);
+  }
+
   @Post("businesses/current")
   createCurrent(@CurrentUser() user: AuthenticatedUser, @Body() input: CreateBusinessDto) {
+    return this.businesses.createCurrent(user, input);
+  }
+
+  @Post("businesses")
+  createBusiness(@CurrentUser() user: AuthenticatedUser, @Body() input: CreateBusinessDto) {
     return this.businesses.createCurrent(user, input);
   }
 
   @Patch("businesses/current")
   updateCurrent(@CurrentUser() user: AuthenticatedUser, @Body() input: UpdateBusinessDto) {
     return this.businesses.updateCurrent(user, input);
+  }
+
+  @Patch("businesses/:id")
+  updateBusiness(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() input: UpdateBusinessDto
+  ) {
+    return this.businesses.updateBusiness(user, id, input);
   }
 
   @Get("businesses/current/reminder-settings")
@@ -44,6 +63,11 @@ export class BusinessesController {
   @Get("services")
   listServices(@CurrentUser() user: AuthenticatedUser) {
     return this.businesses.listServices(user);
+  }
+
+  @Get("services/:id")
+  getService(@CurrentUser() user: AuthenticatedUser, @Param("id", ParseUUIDPipe) id: string) {
+    return this.businesses.getService(user, id);
   }
 
   @Post("services")
@@ -94,8 +118,18 @@ export class BusinessesController {
     return this.businesses.listAvailabilityRules(user);
   }
 
+  @Get("availability/rules")
+  listAvailabilityRulesAlias(@CurrentUser() user: AuthenticatedUser) {
+    return this.businesses.listAvailabilityRules(user);
+  }
+
   @Post("availability-rules")
   createAvailabilityRule(@CurrentUser() user: AuthenticatedUser, @Body() input: CreateAvailabilityRuleDto) {
+    return this.businesses.createAvailabilityRule(user, input);
+  }
+
+  @Post("availability/rules")
+  createAvailabilityRuleAlias(@CurrentUser() user: AuthenticatedUser, @Body() input: CreateAvailabilityRuleDto) {
     return this.businesses.createAvailabilityRule(user, input);
   }
 
@@ -118,9 +152,28 @@ export class BusinessesController {
     return this.businesses.listAvailabilityExceptions(user);
   }
 
+  @Get("availability/exceptions")
+  listAvailabilityExceptionsAlias(@CurrentUser() user: AuthenticatedUser) {
+    return this.businesses.listAvailabilityExceptions(user);
+  }
+
   @Post("availability-exceptions")
   createAvailabilityException(@CurrentUser() user: AuthenticatedUser, @Body() input: CreateAvailabilityExceptionDto) {
     return this.businesses.createAvailabilityException(user, input);
+  }
+
+  @Post("availability/exceptions")
+  createAvailabilityExceptionAlias(@CurrentUser() user: AuthenticatedUser, @Body() input: CreateAvailabilityExceptionDto) {
+    return this.businesses.createAvailabilityException(user, input);
+  }
+
+  @Get("availability/slots")
+  getAvailabilitySlots(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query("serviceId", ParseUUIDPipe) serviceId: string,
+    @Query("date") date: string
+  ) {
+    return this.businesses.getAvailabilitySlots(user, serviceId, date);
   }
 
   @Patch("availability-exceptions/:id")

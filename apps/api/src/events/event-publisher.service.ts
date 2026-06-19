@@ -13,9 +13,13 @@ const QUEUE_BINDINGS = [
     name: "worker.appointments",
     routingKeys: [
       "appointment.booked",
+      "appointment.confirmed",
       "appointment.cancelled",
       "appointment.completed",
+      "appointment.no_show",
       "appointment.marked_no_show",
+      "slot.released",
+      "slot.reassigned",
       "waitlist.offer_expired",
       "waitlist.offer_rejected"
     ]
@@ -24,6 +28,9 @@ const QUEUE_BINDINGS = [
     name: "worker.waitlist",
     routingKeys: [
       "appointment.cancelled",
+      "slot.released",
+      "slot.reassigned",
+      "waitlist.candidate_matched",
       "waitlist.entry_created",
       "waitlist.offer_expired",
       "waitlist.offer_rejected"
@@ -35,6 +42,7 @@ const QUEUE_BINDINGS = [
       "appointment.booked",
       "appointment.cancelled",
       "appointment.reminder_due",
+      "notification.reminder_due",
       "reminder.failed",
       "reminder.scheduled",
       "reminder.sent",
@@ -47,10 +55,14 @@ const QUEUE_BINDINGS = [
       "appointment.booked",
       "appointment.cancelled",
       "appointment.completed",
+      "appointment.no_show",
       "appointment.marked_no_show",
       "customer.risk_score_updated",
+      "metrics.daily_calculated",
       "metrics.recalculate",
+      "waitlist.offer_created",
       "waitlist.offer_accepted",
+      "waitlist.offer_expired",
       "waitlist.offer_rejected"
     ]
   }

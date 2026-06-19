@@ -135,6 +135,35 @@ export class DashboardService {
     }));
   }
 
+  async getNoShowMetrics(user: AuthenticatedUser) {
+    const metrics = await this.getMetrics(user);
+
+    return {
+      noShowAppointments: metrics.noShowAppointments,
+      noShowRate: metrics.noShowRate,
+      riskyCustomers: metrics.riskyCustomers
+    };
+  }
+
+  async getRevenueLossMetrics(user: AuthenticatedUser) {
+    const metrics = await this.getMetrics(user);
+
+    return {
+      estimatedRevenueCents: metrics.estimatedRevenueCents,
+      lostRevenueCents: metrics.lostRevenueCents
+    };
+  }
+
+  async getOccupancyMetrics(user: AuthenticatedUser) {
+    const metrics = await this.getMetrics(user);
+
+    return {
+      activeAppointments: metrics.activeAppointments,
+      completedAppointments: metrics.completedAppointments,
+      weeklyBreakdown: metrics.weeklyBreakdown
+    };
+  }
+
   private sumDailyMetrics(
     metrics: Array<{
       activeAppointments: number;

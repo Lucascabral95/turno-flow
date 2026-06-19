@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  AlertTriangle,
   BellRing,
   CalendarClock,
   CalendarDays,
@@ -9,6 +10,8 @@ import {
   Clock,
   Mail,
   LogIn,
+  TrendingDown,
+  TrendingUp,
   RefreshCcw,
   Scissors,
   Settings2,
@@ -28,7 +31,13 @@ import type {
   NotificationHistoryItem,
   ReminderSettings
 } from "../../lib/api";
-import { formatDateTime, formatMoney, requestJson } from "../../lib/api";
+import { formatDateTime, formatMoney, formatPercent, requestJson } from "../../lib/api";
+import {
+  buildRecurringCustomerBars,
+  buildTopServiceBars,
+  buildWeeklyChartBars,
+  riskTone
+} from "../../lib/dashboard-metrics";
 import { formNumber, formString } from "../../lib/form";
 
 type AuthMode = "login" | "register";
@@ -893,12 +902,117 @@ function ReminderSummaryPanel({
 }
 
 function MetricsPanel({ metrics }: { metrics: DashboardMetrics | null }) {
+  const weeklyBars = buildWeeklyChartBars(metrics);
+  const serviceBars = buildTopServiceBars(metrics);
+  const recurringBars = buildRecurringCustomerBars(metrics);
+
   return (
-    <section className="metric-grid">
-      <Metric label="Turnos" value={metrics?.totalAppointments ?? 0} />
-      <Metric label="Activos" value={metrics?.activeAppointments ?? 0} />
-      <Metric label="No-shows" value={metrics?.noShowAppointments ?? 0} tone="danger" />
-      <Metric label="Perdida estimada" value={formatMoney(metrics?.lostRevenueCents ?? 0)} tone="warning" />
+    <section className="stack">
+      <section className="metric-grid metric-grid-analytics">
+        <Metric icon={<CalendarDays size={18} />} label="Turnos del mes" value={metrics?.totalAppointments ?? 0} />
+        <Metric icon={<Clock size={18} />} label="Activos" value={metrics?.activeAppointments ?? 0} />
+        <Metric icon={<CheckCircle2 size={18} />} label="Completados" value={metrics?.completedAppointments ?? 0} />
+        <Metric icon={<AlertTriangle size={18} />} label="Cancelados" value={metrics?.cancelledAppointments ?? 0} tone="warning" />
+        <Metric icon={<ShieldAlert size={18} />} label="No-shows" value={metrics?.noShowAppointments ?? 0} tone="danger" />
+        <Metric icon={<TrendingUp size={18} />} label="Ingreso estimado" value={formatMoney(metrics?.estimatedRevenueCents ?? 0)} />
+        <Metric icon={<TrendingDown size={18} />} label="Perdida estimada" value={formatMoney(metrics?.lostRevenueCents ?? 0)} tone="warning" />
+        <Metric icon={<Users size={18} />} label="Tasa de no-show" value={`${formatPercent(metrics?.noShowRate ?? 0)}%`} tone="danger" />
+      </section>
+
+      <section className="analytics-grid">
+        <section className="panel stack">
+          <header className="panel-header">
+            <div>
+              <h2>Actividad semanal</h2>
+              <p>Turnos del dashboard de los ultimos 7 dias.</p>
+            </div>
+            <span className="badge">{metrics?.weeklyBreakdown.length ?? 0} dias</span>
+          </header>
+          {weeklyBars.length === 0 ? (
+            <div className="message">Todavia no hay datos diarios para el grafico.</div>
+          ) : (
+            <div className="weekly-chart" aria-label="Actividad semanal">
+              {weeklyBars.map((bar) => (
+                <div className="weekly-column" key={bar.date}>
+                  <div className="weekly-bar-stack">
+                    <div className="weekly-bar-fill" style={{ height: `${bar.height}%` }} />
+                  </div>
+                  <strong>{bar.totalAppointments}</strong>
+                  <span>{bar.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="legend-row">
+            <span className="legend-item"><span className="legend-swatch legend-primary" /> Total diario</span>
+            <span className="legend-item"><span className="legend-swatch legend-danger" /> No-shows: {metrics?.noShowAppointments ?? 0}</span>
+          </div>
+        </section>
+
+        <section className="panel stack">
+          <header className="panel-header">
+            <div>
+              <h2>Servicios mas reservados</h2>
+              <p>Ranking mensual sobre turnos no cancelados.</p>
+            </div>
+          </header>
+          {serviceBars.length === 0 ? (
+            <div className="message">Todavia no hay servicios con reservas en el periodo.</div>
+          ) : (
+            <div className="stack">
+              {serviceBars.map((service) => (
+                <article className="rank-row" key={service.label}>
+                  <header>
+                    <strong>{service.label}</strong>
+                    <span>{service.value} reservas</span>
+                  </header>
+                  <div className="rank-track">
+                    <div className="rank-fill" style={{ width: `${service.width}%` }} />
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      </section>
+
+      <section className="analytics-grid analytics-grid-bottom">
+        <section className="panel stack">
+          <header className="panel-header">
+            <div>
+              <h2>Clientes recurrentes</h2>
+              <p>Clientes con mas de una reserva confirmada o cerrada en el mes.</p>
+            </div>
+          </header>
+          {recurringBars.length === 0 ? (
+            <div className="message">Todavia no hay clientes recurrentes en el periodo.</div>
+          ) : (
+            <div className="stack">
+              {recurringBars.map((customer) => (
+                <article className="rank-row" key={customer.label}>
+                  <header>
+                    <strong>{customer.label}</strong>
+                    <span>{customer.value} turnos</span>
+                  </header>
+                  <div className="rank-track">
+                    <div className="rank-fill rank-fill-secondary" style={{ width: `${customer.width}%` }} />
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="panel stack">
+          <header className="panel-header">
+            <div>
+              <h2>Clientes riesgosos</h2>
+              <p>Score persistido por historial de asistencia.</p>
+            </div>
+          </header>
+          <RiskyCustomersTable metrics={metrics} />
+        </section>
+      </section>
     </section>
   );
 }
@@ -946,12 +1060,67 @@ function NotificationHistoryPanel({ history }: { history: NotificationHistoryIte
   );
 }
 
-function Metric({ label, tone, value }: { label: string; tone?: "danger" | "warning"; value: number | string }) {
+function Metric({
+  icon,
+  label,
+  tone,
+  value
+}: {
+  icon?: ReactNode;
+  label: string;
+  tone?: "danger" | "warning";
+  value: number | string;
+}) {
   const className = tone === "danger" ? "badge badge-danger" : tone === "warning" ? "badge badge-warning" : "badge";
   return (
     <div className="metric">
+      {icon ? <div className="metric-icon">{icon}</div> : null}
       <strong>{value}</strong>
       <span className={className}>{label}</span>
+    </div>
+  );
+}
+
+function RiskyCustomersTable({ metrics }: { metrics: DashboardMetrics | null }) {
+  if (!metrics || metrics.riskyCustomers.length === 0) {
+    return <div className="message">No hay clientes con riesgo medio o alto todavia.</div>;
+  }
+
+  return (
+    <div className="table-shell">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Cliente</th>
+            <th>Riesgo</th>
+            <th>Score</th>
+            <th>No-shows</th>
+            <th>Historial</th>
+            <th>Senia</th>
+          </tr>
+        </thead>
+        <tbody>
+          {metrics.riskyCustomers.map((customer) => (
+            <tr key={customer.id}>
+              <td>
+                <div className="table-primary">
+                  <strong>{customer.name}</strong>
+                  <span>{customer.email}</span>
+                </div>
+              </td>
+              <td>
+                <span className={riskBadgeClass(customer.riskLevel)}>{customer.riskLevel}</span>
+              </td>
+              <td>{customer.riskScore}</td>
+              <td>{customer.noShowCount}</td>
+              <td>
+                {customer.completedAppointments}/{customer.totalAppointments}
+              </td>
+              <td>{customer.requiresDeposit ? "Sugerida" : "No"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -1058,6 +1227,18 @@ function notificationStatusClass(status: NotificationHistoryItem["status"]): str
     return "badge";
   }
   return "badge badge-warning";
+}
+
+function riskBadgeClass(level: DashboardMetrics["riskyCustomers"][number]["riskLevel"]): string {
+  const tone = riskTone(level);
+  if (tone === "danger") {
+    return "badge badge-danger";
+  }
+  if (tone === "warning") {
+    return "badge badge-warning";
+  }
+
+  return "badge";
 }
 
 function weekdayName(weekday: number): string {
