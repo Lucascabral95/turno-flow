@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import type { Appointment } from "../../lib/api";
 import { formatDateTime, requestJson } from "../../lib/api";
+import styles from "./cancel-appointment.module.scss";
 
 export function CancelAppointment({ appointmentId }: { appointmentId: string }) {
   const [cancelledAppointment, setCancelledAppointment] = useState<Appointment | null>(null);
@@ -37,7 +38,7 @@ export function CancelAppointment({ appointmentId }: { appointmentId: string }) 
   }
 
   return (
-    <main className="booking-shell">
+    <main className={styles.cancelAppointment}>
       <section className="panel stack">
         <h1 className="inline">
           <Ban size={24} />

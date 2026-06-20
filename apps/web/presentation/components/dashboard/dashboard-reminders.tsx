@@ -13,6 +13,7 @@ import {
   notificationStatusLabel
 } from "./dashboard-helpers";
 import { EmptyState, Metric, SummaryValue } from "./dashboard-shared";
+import styles from "./dashboard-reminders.module.scss";
 
 export function RemindersView({
   appointments,
@@ -26,7 +27,7 @@ export function RemindersView({
   settings: ReminderSettings | null;
 }) {
   return (
-    <section className="stack">
+    <section className={`stack ${styles.remindersView}`}>
       <ReminderCommandCenter appointments={appointments} history={history} settings={settings} />
       <section className="layout-grid">
         <aside className="stack">
@@ -50,7 +51,7 @@ function ReminderSettingsPanel({
   settings: ReminderSettings | null;
 }) {
   return (
-    <form className="panel stack reminder-settings-card" onSubmit={onSubmit}>
+    <form className={`panel stack reminder-settings-card ${styles.settingsPanel}`} onSubmit={onSubmit}>
       <header className="panel-header">
         <div>
           <h2 className="inline">
@@ -125,7 +126,7 @@ function ReminderCommandCenter({
   const deliveryRate = history.length > 0 ? sentCount / history.length : 0;
 
   return (
-    <section className="reminder-command panel">
+    <section className={`reminder-command panel ${styles.remindersView}`}>
       <div className="reminder-command-copy">
         <span className="page-kicker">Automatizacion</span>
         <h2>Recordatorios que bajan ausencias sin bloquear la agenda.</h2>
@@ -156,7 +157,7 @@ function ReminderSummaryPanel({
   const pendingCount = history.filter((item) => item.status === "pending").length;
 
   return (
-    <section className="metric-grid">
+    <section className={`metric-grid ${styles.summaryPanel}`}>
       <Metric label="Estado" value={settings?.enabled ? "Activo" : "Pausado"} />
       <Metric label="Enviados" value={sentCount} />
       <Metric label="Pendientes" value={pendingCount} tone="warning" />
@@ -167,7 +168,7 @@ function ReminderSummaryPanel({
 
 function NotificationHistoryPanel({ history }: { history: NotificationHistoryItem[] }) {
   return (
-    <section className="panel stack">
+    <section className={`panel stack ${styles.historyPanel}`}>
       <header className="panel-header">
         <div>
           <h2 className="inline">
@@ -249,7 +250,7 @@ function ReminderQueuePanel({
     .slice(0, 6);
 
   return (
-    <section className="panel stack">
+    <section className={`panel stack ${styles.queuePanel}`}>
       <header className="panel-header">
         <div>
           <h2 className="inline">

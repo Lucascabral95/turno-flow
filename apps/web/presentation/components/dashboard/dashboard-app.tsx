@@ -55,6 +55,7 @@ import {
 import { BookingAdminView, HomeView, MetricsPanel } from "./dashboard-overview";
 import { RemindersView } from "./dashboard-reminders";
 import { Alert, EmptyState, InventoryList, LoadingState, Metric, SummaryValue } from "./dashboard-shared";
+import styles from "./dashboard-app.module.scss";
 export type DashboardView = "home" | "setup" | "schedule" | "appointments" | "reminders" | "booking" | "metrics";
 
 type SubmitResult = Promise<boolean>;
@@ -378,7 +379,7 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
 
   if (!token) {
     return (
-      <main className="auth-shell">
+      <main className={styles.authShell}>
         {error ? <Alert tone="danger">{error}</Alert> : null}
         <AuthView authMode={authMode} onAuthMode={setAuthMode} onSubmit={(event) => void handleAuth(event)} />
       </main>
@@ -471,7 +472,7 @@ function SetupView({
   onStaffUpdate: (staffMemberId: string, input: StaffFormValues) => SubmitResult;
 }) {
   return (
-    <section className="stack">
+    <section className={`stack ${styles.setupView}`}>
       <section className="feature-banner dashboard-section-banner">
         <div>
           <span className="badge badge-soft">Configuracion operativa</span>
@@ -527,7 +528,7 @@ function ScheduleView({
   }
 
   return (
-    <section className="stack">
+    <section className={`stack ${styles.scheduleView}`}>
       <section className="feature-banner dashboard-section-banner">
         <div>
           <span className="badge badge-soft">Agenda semanal</span>

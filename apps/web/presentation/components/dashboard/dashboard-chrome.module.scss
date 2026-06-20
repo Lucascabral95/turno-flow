@@ -1,0 +1,254 @@
+@use "../../../app/styles/tokens" as *;
+
+.dashboardShell {
+  display: grid;
+  grid-template-columns: 292px minmax(0, 1fr);
+  min-height: 100vh;
+
+  :global(.sidebar) {
+    background: rgb(255 255 255 / 88%);
+    border-right: 1px solid $border;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    min-height: 100vh;
+    padding: 22px;
+    position: sticky;
+    top: 0;
+  }
+
+  :global(.sidebar-brand) {
+    align-items: center;
+    display: flex;
+    gap: 12px;
+    margin-bottom: 26px;
+
+    div:last-child {
+      display: grid;
+      gap: 2px;
+    }
+
+    strong {
+      font-size: 1.03rem;
+    }
+
+    span {
+      color: $muted;
+      font-size: 0.82rem;
+    }
+  }
+
+  :global(.sidebar-footer) {
+    border-top: 1px solid $border;
+    color: $muted;
+    display: grid;
+    gap: 10px;
+    padding-top: 18px;
+
+    small {
+      line-height: 1.4;
+    }
+  }
+
+  :global(.sidebar-nav) {
+    align-content: start;
+    display: grid;
+    gap: 6px;
+  }
+
+  :global(.tab-button) {
+    align-items: center;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: $radius;
+    border-color: transparent;
+    color: $muted;
+    cursor: pointer;
+    display: inline-flex;
+    font-weight: 760;
+    gap: 8px;
+    justify-content: flex-start;
+    min-height: 44px;
+    padding: 9px 13px;
+    text-decoration: none;
+    transition:
+      background 160ms ease,
+      color 160ms ease,
+      box-shadow 160ms ease;
+    width: 100%;
+
+    &:hover {
+      background: $surface-soft;
+      color: $ink;
+      transform: none;
+    }
+
+    &:focus-visible {
+      box-shadow: $focus;
+      outline: 0;
+    }
+
+    &[aria-current="page"] {
+      background: $primary-soft;
+      color: $primary-dark;
+    }
+  }
+
+  :global(.workspace) {
+    display: grid;
+    gap: 22px;
+    padding: 28px;
+  }
+
+  :global(.workspace-header) {
+    align-items: center;
+    background: rgb(255 255 255 / 92%);
+    border: 1px solid $border;
+    border-radius: $radius;
+    box-shadow: $shadow-soft;
+    display: flex;
+    gap: 20px;
+    justify-content: space-between;
+    padding: 22px;
+  }
+
+  :global(.page-title) {
+    display: grid;
+    gap: 5px;
+
+    h1 {
+      font-size: 1.65rem;
+      line-height: 1.15;
+      margin: 0;
+    }
+
+    p {
+      color: $muted;
+      margin: 0;
+    }
+  }
+}
+
+.authView {
+  align-items: stretch;
+  display: grid;
+  gap: 22px;
+  grid-template-columns: minmax(0, 1.05fr) minmax(360px, 440px);
+  max-width: 1080px;
+  width: 100%;
+
+  :global(.auth-hero) {
+    align-content: center;
+    background: $surface;
+    border: 1px solid $border;
+    border-radius: $radius;
+    box-shadow: $shadow-card;
+    display: grid;
+    gap: 18px;
+    padding: 44px;
+
+    h1 {
+      font-size: 2.35rem;
+      line-height: 1.05;
+      margin: 0;
+      max-width: 620px;
+    }
+
+    p {
+      color: $muted;
+      font-size: 1.02rem;
+      line-height: 1.6;
+      margin: 0;
+      max-width: 580px;
+    }
+  }
+
+  :global(.auth-card) {
+    align-self: center;
+  }
+
+  :global(.auth-proof-grid) {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 160px));
+    margin-top: 10px;
+  }
+
+  :global(.brand-mark) {
+    align-items: center;
+    background: $primary;
+    border-radius: $radius;
+    box-shadow: 0 8px 18px rgb(99 91 255 / 24%);
+    color: #ffffff;
+    display: inline-flex;
+    font-weight: 850;
+    height: 34px;
+    justify-content: center;
+    width: 34px;
+  }
+
+  :global(.brand-mark-large) {
+    font-size: 1.45rem;
+    height: 48px;
+    width: 48px;
+  }
+}
+
+@media (max-width: 1120px) {
+  .dashboardShell {
+    grid-template-columns: 1fr;
+
+    :global(.sidebar) {
+      min-height: auto;
+      position: static;
+    }
+
+    :global(.sidebar-footer) {
+      display: none;
+    }
+
+    :global(.sidebar-nav) {
+      display: flex;
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }
+
+    :global(.tab-button) {
+      flex: 0 0 auto;
+      width: auto;
+    }
+  }
+}
+
+@media (max-width: 860px) {
+  .dashboardShell {
+    :global(.workspace) {
+      padding: 16px;
+    }
+
+    :global(.workspace-header) {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    :global(.header-actions) {
+      width: 100%;
+
+      button,
+      .button-link {
+        width: 100%;
+      }
+    }
+  }
+
+  .authView {
+    grid-template-columns: 1fr;
+
+    :global(.auth-hero) {
+      padding: 24px;
+
+      h1 {
+        font-size: 1.85rem;
+      }
+    }
+  }
+}

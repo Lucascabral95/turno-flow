@@ -35,6 +35,7 @@ import {
   type StaffFormValues,
   staffFormSchema
 } from "../../../lib/dashboard-forms";
+import styles from "./public-booking.module.scss";
 
 export function PublicBusinessLanding({ businessSlug }: { businessSlug: string }) {
   const [business, setBusiness] = useState<Business | null>(null);
@@ -88,14 +89,14 @@ export function PublicBusinessLanding({ businessSlug }: { businessSlug: string }
 
   if (loading) {
     return (
-      <main className="booking-shell">
+      <main className={styles.publicLanding}>
         <div className="skeleton-card" />
       </main>
     );
   }
 
   return (
-    <main className="booking-shell">
+    <main className={styles.publicLanding}>
       <header className="topbar">
         <div className="brand">
           <h1>{business?.name ?? "TurnoFlow"}</h1>
@@ -400,7 +401,7 @@ export function PublicBooking({ businessSlug }: { businessSlug: string }) {
   }
 
   return (
-    <main className="booking-shell">
+    <main className={styles.publicBooking}>
       <header className="topbar">
         <div className="brand">
           <h1>{business?.name ?? "TurnoFlow"}</h1>
