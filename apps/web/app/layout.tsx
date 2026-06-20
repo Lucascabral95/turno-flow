@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { Toaster } from "sonner";
 
-import "./globals.css";
+import "./globals.scss";
 
 export const metadata: Metadata = {
   description: "Turnos online para profesionales y negocios chicos",
@@ -11,7 +12,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="es">
-      <body>{children}</body>
+      <body>
+        {children}
+        <Toaster closeButton={false} duration={3200} expand={false} position="top-right" richColors />
+      </body>
     </html>
   );
 }

@@ -66,8 +66,7 @@ export function riskTone(level: DashboardMetrics["riskyCustomers"][number]["risk
 
 function weekdayLabel(value: string): string {
   const date = new Date(`${value}T00:00:00.000Z`);
+  const labels = ["dom", "lun", "mar", "mie", "jue", "vie", "sab"];
 
-  return new Intl.DateTimeFormat("es-AR", {
-    weekday: "short"
-  }).format(date);
+  return labels[date.getUTCDay()] ?? value.slice(5);
 }

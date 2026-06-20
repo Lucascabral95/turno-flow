@@ -291,6 +291,7 @@ export class BusinessesService {
     const business = await this.requireCurrentBusiness(user);
     await this.requireStaffMember(business.id, input.staffMemberId);
     this.assertTimeRange(input.startTime, input.endTime);
+    await this.assertUniqueWeeklyAvailabilityRule(business.id, input.staffMemberId, input.weekday);
 
     return this.prisma.$transaction(async (tx) => {
       const rule = await tx.availabilityRule.create({
@@ -320,7 +321,16 @@ export class BusinessesService {
       throw new NotFoundException("Availability rule not found");
     }
 
-    this.assertTimeRange(input.startTime ?? rule.startTime, input.endTime ?? rule.endTime);
+    const nextStartTime = input.startTime ?? rule.startTime;
+    const nextEndTime = input.endTime ?? rule.endTime;
+    const nextWeekday = input.weekday ?? rule.weekday;
+    const nextActive = input.active ?? rule.active;
+
+    this.assertTimeRange(nextStartTime, nextEndTime);
+
+    if (nextActive) {
+      await this.assertUniqueWeeklyAvailabilityRule(business.id, rule.staffMemberId, nextWeekday, ruleId);
+    }
 
     return this.prisma.availabilityRule.update({
       data: input,
@@ -493,6 +503,27 @@ export class BusinessesService {
   private assertTimeRange(startTime: string, endTime: string): void {
     if (minutesSinceMidnight(startTime) >= minutesSinceMidnight(endTime)) {
       throw new ConflictException("Availability start time must be before end time");
+    }
+  }
+
+  private async assertUniqueWeeklyAvailabilityRule(
+    businessId: string,
+    staffMemberId: string,
+    weekday: number,
+    excludeRuleId?: string
+  ): Promise<void> {
+    const existingRule = await this.prisma.availabilityRule.findFirst({
+      where: {
+        active: true,
+        businessId,
+        id: excludeRuleId ? { not: excludeRuleId } : undefined,
+        staffMemberId,
+        weekday
+      }
+    });
+
+    if (existingRule) {
+      throw new ConflictException("Each professional can only have one active weekly availability per day");
     }
   }
 

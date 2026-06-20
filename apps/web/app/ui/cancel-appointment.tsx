@@ -3,6 +3,7 @@
 import { Ban, CheckCircle2 } from "lucide-react";
 import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import type { Appointment } from "../../lib/api";
 import { formatDateTime, requestJson } from "../../lib/api";
@@ -27,8 +28,11 @@ export function CancelAppointment({ appointmentId }: { appointmentId: string }) 
         method: "POST"
       });
       setCancelledAppointment(appointment);
+      toast.success("Turno cancelado");
     } catch (cancelError) {
-      setError(cancelError instanceof Error ? cancelError.message : "No se pudo cancelar el turno");
+      const message = cancelError instanceof Error ? cancelError.message : "No se pudo cancelar el turno";
+      setError(message);
+      toast.error(message);
     }
   }
 
