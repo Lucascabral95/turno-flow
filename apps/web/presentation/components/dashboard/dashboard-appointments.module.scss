@@ -1,0 +1,91 @@
+@use "../../../app/styles/tokens" as *;
+
+.appointmentsView {
+  :global(.appointments-command) {
+    align-items: stretch;
+    display: grid;
+    gap: 18px;
+    grid-template-columns: minmax(0, 1fr) minmax(420px, 0.95fr);
+    padding: 22px;
+  }
+
+  :global(.appointments-command-copy) {
+    display: grid;
+    gap: 8px;
+
+    h2 {
+      font-size: 1.45rem;
+      line-height: 1.18;
+      margin: 0;
+    }
+
+    p {
+      color: $muted;
+      line-height: 1.55;
+      margin: 0;
+      max-width: 760px;
+    }
+  }
+}
+
+.operationsPanel,
+.historyPanel {
+  :global(.appointments-toolbar) {
+    align-items: end;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: minmax(260px, 1fr) repeat(2, minmax(180px, 240px));
+  }
+
+  :global(.appointments-table) {
+    min-width: 1080px;
+
+    td:last-child,
+    th:last-child {
+      text-align: right;
+    }
+  }
+}
+
+.operationsPanel {
+  :global(.appointments-toolbar) {
+    grid-template-columns: minmax(260px, 1fr) minmax(220px, 280px);
+  }
+
+  :global(.appointment-actions) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
+
+    button {
+      min-height: 34px;
+      padding: 7px 10px;
+    }
+  }
+}
+
+@media (max-width: 860px) {
+  .appointmentsView {
+    :global(.appointments-command) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .operationsPanel,
+  .historyPanel {
+    :global(.appointments-toolbar) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .operationsPanel {
+    :global(.appointment-actions) {
+      width: 100%;
+
+      button {
+        width: 100%;
+      }
+    }
+  }
+}

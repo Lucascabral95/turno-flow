@@ -7,6 +7,7 @@ import type { FormEvent, ReactNode } from "react";
 import type { CurrentBusiness } from "../../../lib/api";
 import type { DashboardView } from "./dashboard-app";
 import { Alert, Metric } from "./dashboard-shared";
+import styles from "./dashboard-chrome.module.scss";
 
 type AuthMode = "login" | "register";
 
@@ -22,7 +23,7 @@ export function DashboardShell({
   loading: boolean;
 }) {
   return (
-    <main className="dashboard-shell">
+    <main className={`${styles.dashboardShell} dashboard-shell`}>
       <aside className="sidebar">
         <div className="sidebar-brand">
           <div className="brand-mark">T</div>
@@ -99,7 +100,7 @@ export function AuthView({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   return (
-    <section className="auth-layout">
+    <section className={`${styles.authView} auth-layout`}>
       <section className="auth-hero">
         <div className="brand-mark brand-mark-large">T</div>
         <span className="page-kicker">TurnoFlow para profesionales</span>

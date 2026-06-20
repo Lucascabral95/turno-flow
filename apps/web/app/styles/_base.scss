@@ -1,0 +1,53 @@
+@use "./tokens" as *;
+
+:root {
+  --background: #{$bg};
+  --border: #{$border};
+  --danger: #{$danger};
+  --danger-soft: #{$danger-soft};
+  --ink: #{$ink};
+  --muted: #{$muted};
+  --panel: #{$surface};
+  --primary: #{$primary};
+  --primary-dark: #{$primary-dark};
+  --primary-soft: #{$primary-soft};
+  --secondary: #{$secondary};
+  --secondary-soft: #{$secondary-soft};
+  --warning: #{$warning};
+  --warning-soft: #{$warning-soft};
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: $bg;
+}
+
+body {
+  background:
+    linear-gradient(180deg, #ffffff 0, $bg 280px),
+    $bg;
+  color: $ink;
+  font-family: $font-sans;
+  letter-spacing: 0;
+  margin: 0;
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}

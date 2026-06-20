@@ -1,0 +1,64 @@
+@use "../../../app/styles/tokens" as *;
+
+.inventoryPanel {
+  min-height: 100%;
+}
+
+.inventoryHeader {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+
+  h3 {
+    margin: 0;
+  }
+}
+
+.inventoryList {
+  display: grid;
+  gap: 8px;
+}
+
+.inventoryItem {
+  align-items: center;
+  background: linear-gradient(180deg, #fff 0%, $surface-soft 100%);
+  border: 1px solid $border;
+  border-radius: $radius;
+  display: flex;
+  gap: 10px;
+  min-height: 46px;
+  padding: 11px 12px;
+
+  &::before {
+    background: $primary;
+    border-radius: 999px;
+    content: "";
+    height: 8px;
+    width: 8px;
+  }
+
+  span {
+    color: $ink;
+    font-size: 0.9rem;
+    font-weight: 740;
+    line-height: 1.35;
+  }
+}
+
+.listItem {
+  display: grid;
+  gap: 8px;
+  padding: 13px;
+
+  header {
+    align-items: center;
+    display: flex;
+    gap: 10px;
+    justify-content: space-between;
+  }
+}
+
+.compactListItem {
+  box-shadow: none;
+}

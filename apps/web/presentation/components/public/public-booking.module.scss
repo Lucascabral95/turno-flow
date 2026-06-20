@@ -1,0 +1,306 @@
+@use "../../../app/styles/tokens" as *;
+
+.publicLanding,
+.publicBooking {
+  display: grid;
+  gap: 18px;
+  margin: 0 auto;
+  max-width: 1120px;
+  padding: 28px;
+
+  :global(.topbar) {
+    align-items: center;
+    background: $surface;
+    border: 1px solid $border;
+    border-radius: $radius;
+    box-shadow: $shadow-soft;
+    display: flex;
+    gap: 16px;
+    justify-content: space-between;
+    padding: 18px;
+  }
+
+  :global(.brand) {
+    display: grid;
+    gap: 2px;
+
+    h1 {
+      font-size: 1.55rem;
+      margin: 0;
+    }
+
+    span {
+      color: $muted;
+      font-size: 0.92rem;
+    }
+  }
+
+  :global(.feature-banner) {
+    background: $surface-violet;
+    border: 1px solid #b8b3ff;
+    border-radius: $radius;
+    box-shadow: $shadow-soft;
+    padding: 22px;
+
+    h2 {
+      margin: 12px 0 6px;
+    }
+
+    p {
+      color: $muted;
+      margin-bottom: 0;
+    }
+  }
+
+  :global(.public-hero) {
+    align-items: center;
+    display: flex;
+    gap: 18px;
+    justify-content: space-between;
+  }
+}
+
+.publicBooking {
+  :global(.booking-hero) {
+    align-items: stretch;
+    display: grid;
+    gap: 18px;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  :global(.booking-hero-stats) {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(3, minmax(84px, 1fr));
+  }
+
+  :global(.booking-stat) {
+    align-content: center;
+    background: rgb(255 255 255 / 72%);
+    border: 1px solid rgb(255 255 255 / 80%);
+    border-radius: $radius;
+    display: grid;
+    min-height: 88px;
+    padding: 14px;
+    text-align: center;
+
+    strong {
+      font-size: 1.45rem;
+    }
+
+    span {
+      color: $muted;
+      font-size: 0.82rem;
+      font-weight: 760;
+    }
+  }
+
+  :global(.booking-workspace) {
+    align-items: start;
+    display: grid;
+    gap: 16px;
+    grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  }
+
+  :global(.booking-main),
+  :global(.booking-sidebar) {
+    display: grid;
+    gap: 16px;
+  }
+
+  :global(.booking-sidebar) {
+    position: sticky;
+    top: 28px;
+  }
+
+  :global(.booking-section),
+  :global(.booking-summary-card),
+  :global(.booking-waitlist-card),
+  :global(.booking-confirmation) {
+    padding: 22px;
+  }
+
+  :global(.booking-section-primary) {
+    background:
+      linear-gradient(180deg, rgb(99 91 255 / 5%) 0%, rgb(255 255 255 / 100%) 38%),
+      $surface;
+  }
+
+  :global(.booking-section-header) {
+    align-items: start;
+    display: flex;
+    gap: 14px;
+    justify-content: space-between;
+  }
+
+  :global(.booking-step) {
+    color: $primary-dark;
+    display: inline-block;
+    font-size: 0.76rem;
+    font-weight: 850;
+    letter-spacing: 0.02em;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+  }
+
+  :global(.section-title) {
+    font-size: 1.3rem;
+    line-height: 1.12;
+    margin: 0;
+  }
+
+  :global(.section-copy) {
+    color: $muted;
+    line-height: 1.55;
+    margin: 6px 0 0;
+  }
+
+  :global(.booking-slot-panel) {
+    background: $surface-soft;
+    border: 1px solid $border;
+    border-radius: $radius;
+    display: grid;
+    gap: 12px;
+    padding: 16px;
+  }
+
+  :global(.booking-slot-header) {
+    align-items: center;
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+
+    strong {
+      display: block;
+      font-size: 0.96rem;
+    }
+
+    span {
+      color: $muted;
+      font-size: 0.84rem;
+    }
+  }
+
+  :global(.booking-empty-state) {
+    background: linear-gradient(180deg, #f7f9ff 0%, #eef3ff 100%);
+    justify-items: center;
+
+    button {
+      margin-top: 4px;
+    }
+  }
+
+  :global(.input-shell) {
+    align-items: center;
+    background: $surface;
+    border: 1px solid $border;
+    border-radius: $radius;
+    display: flex;
+    gap: 10px;
+    min-height: 48px;
+    padding: 0 12px;
+    transition:
+      border-color 160ms ease,
+      box-shadow 160ms ease,
+      background 160ms ease;
+
+    svg {
+      color: $muted;
+      flex: 0 0 auto;
+    }
+
+    &:focus-within {
+      border-color: $primary;
+      box-shadow: $focus;
+    }
+
+    input {
+      background: transparent;
+      border: 0;
+      box-shadow: none;
+      min-height: auto;
+      padding: 0;
+    }
+  }
+
+  :global(.booking-form-actions) {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  :global(.booking-submit) {
+    min-width: 220px;
+  }
+
+  :global(.summary-row) {
+    align-items: center;
+    border-bottom: 1px solid $border;
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+    padding-bottom: 10px;
+
+    &:last-of-type {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    span {
+      color: $muted;
+    }
+  }
+
+  :global(.booking-summary-note) {
+    margin-top: 6px;
+  }
+
+  :global(.booking-confirmation) {
+    background:
+      linear-gradient(180deg, rgb(15 143 114 / 7%) 0%, rgb(255 255 255 / 100%) 44%),
+      $surface;
+  }
+
+  :global(.booking-confirmation-actions) {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+}
+
+@media (max-width: 860px) {
+  .publicLanding,
+  .publicBooking {
+    padding: 16px;
+
+    :global(.topbar),
+    :global(.public-hero) {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+  }
+
+  .publicBooking {
+    :global(.booking-hero),
+    :global(.booking-workspace),
+    :global(.booking-hero-stats) {
+      grid-template-columns: 1fr;
+    }
+
+    :global(.booking-sidebar) {
+      position: static;
+    }
+
+    :global(.booking-section-header),
+    :global(.booking-form-actions) {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    :global(.booking-submit) {
+      width: 100%;
+    }
+  }
+}

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import type { Appointment } from "../../lib/api";
 import { formatDateTime, requestJson } from "../../lib/api";
+import styles from "./accept-waitlist-offer.module.scss";
 
 export function AcceptWaitlistOffer({ token }: { token: string }) {
   const [appointment, setAppointment] = useState<Appointment | null>(null);
@@ -31,7 +32,7 @@ export function AcceptWaitlistOffer({ token }: { token: string }) {
   }
 
   return (
-    <main className="booking-shell">
+    <main className={styles.acceptWaitlistOffer}>
       <section className="panel stack">
         <h1 className="inline">
           <MailCheck size={24} />

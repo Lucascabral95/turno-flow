@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 
 import type { CurrentBusiness, DashboardMetrics } from "../../../lib/api";
 import { capitalizeFirst, riskBadgeClass, summarizeAvailabilityCoverage } from "./dashboard-helpers";
+import styles from "./dashboard-shared.module.scss";
 
 export function Alert({ children, tone = "info" }: { children: ReactNode; tone?: "danger" | "info" }) {
   return <div className={tone === "danger" ? "error" : "message"}>{children}</div>;
@@ -92,8 +93,8 @@ export function InventoryPanel({ business }: { business: CurrentBusiness | null 
 
 export function InventoryList({ icon, title, values }: { icon: ReactNode; title: string; values: string[] }) {
   return (
-    <section className="panel stack inventory-panel">
-      <header className="inventory-panel-header">
+    <section className={`panel stack inventory-panel ${styles.inventoryPanel}`}>
+      <header className={`inventory-panel-header ${styles.inventoryHeader}`}>
         <h3 className="inline">
           {icon}
           {title}
@@ -103,9 +104,9 @@ export function InventoryList({ icon, title, values }: { icon: ReactNode; title:
       {values.length === 0 ? (
         <EmptyState compact title="Sin datos" description={`Todavia no hay ${title.toLowerCase()} cargados.`} />
       ) : (
-        <div className="inventory-list">
+        <div className={`inventory-list ${styles.inventoryList}`}>
           {values.map((value) => (
-            <div className="inventory-item" key={value}>
+            <div className={`inventory-item ${styles.inventoryItem}`} key={value}>
               <span>{capitalizeFirst(value)}</span>
             </div>
           ))}

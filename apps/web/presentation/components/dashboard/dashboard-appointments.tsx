@@ -8,6 +8,7 @@ import type { Appointment, CurrentBusiness, DashboardMetrics } from "../../../li
 import { formatDateTime, formatMoney } from "../../../lib/api";
 import { appointmentStatusLabel, capitalizeFirst, isActionableAppointment, statusClass } from "./dashboard-helpers";
 import { EmptyState, InventoryPanel, Metric } from "./dashboard-shared";
+import styles from "./dashboard-appointments.module.scss";
 
 export function AppointmentsView({
   appointments,
@@ -28,7 +29,7 @@ export function AppointmentsView({
     .reduce((total, appointment) => total + appointment.service.priceCents, 0);
 
   return (
-    <section className="stack">
+    <section className={`stack ${styles.appointmentsView}`}>
       <section className="appointments-command panel">
         <div className="appointments-command-copy">
           <span className="page-kicker">Operacion diaria</span>
@@ -89,7 +90,7 @@ function AppointmentsOperationsPanel({
     .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime());
 
   return (
-    <section className="panel stack appointments-panel">
+    <section className={`panel stack appointments-panel ${styles.operationsPanel}`}>
       <header className="panel-header">
         <div>
           <h2 className="inline">
@@ -290,7 +291,7 @@ function AppointmentHistoryPanel({ appointments }: { appointments: Appointment[]
   }
 
   return (
-    <section className="panel stack appointments-history-panel">
+    <section className={`panel stack appointments-history-panel ${styles.historyPanel}`}>
       <header className="panel-header">
         <div>
           <h2 className="inline">

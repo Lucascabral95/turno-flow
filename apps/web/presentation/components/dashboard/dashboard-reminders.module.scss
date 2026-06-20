@@ -1,0 +1,161 @@
+@use "../../../app/styles/tokens" as *;
+
+.remindersView {
+  :global(.reminder-command) {
+    align-items: stretch;
+    display: grid;
+    gap: 18px;
+    grid-template-columns: minmax(0, 1fr) minmax(420px, 0.95fr);
+    padding: 22px;
+  }
+
+  :global(.reminder-command-copy) {
+    display: grid;
+    gap: 8px;
+
+    h2 {
+      font-size: 1.45rem;
+      line-height: 1.18;
+      margin: 0;
+    }
+
+    p {
+      color: $muted;
+      line-height: 1.55;
+      margin: 0;
+      max-width: 760px;
+    }
+  }
+
+  :global(.reminder-command-grid) {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.settingsPanel {
+  :global(.reminder-settings-card) {
+    align-content: start;
+  }
+
+  :global(.reminder-flow) {
+    display: grid;
+    gap: 8px;
+
+    div {
+      align-items: center;
+      background: $surface-soft;
+      border: 1px solid $border;
+      border-radius: $radius;
+      display: grid;
+      gap: 10px;
+      grid-template-columns: auto minmax(0, 1fr);
+      padding: 10px;
+    }
+
+    strong {
+      align-items: center;
+      background: $primary-soft;
+      border-radius: 999px;
+      color: $primary-dark;
+      display: inline-flex;
+      font-size: 0.8rem;
+      height: 26px;
+      justify-content: center;
+      width: 26px;
+    }
+
+    span {
+      color: $ink;
+      font-size: 0.86rem;
+      font-weight: 760;
+    }
+  }
+}
+
+.queuePanel {
+  :global(.reminder-timeline) {
+    display: grid;
+    gap: 10px;
+  }
+
+  :global(.reminder-timeline-item) {
+    align-items: center;
+    background: linear-gradient(180deg, #fff 0%, $surface-soft 100%);
+    border: 1px solid $border;
+    border-radius: $radius;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: auto minmax(180px, 1fr) minmax(220px, auto) auto;
+    padding: 12px;
+  }
+
+  :global(.timeline-dot) {
+    background: $primary;
+    border: 4px solid $primary-soft;
+    border-radius: 999px;
+    height: 18px;
+    width: 18px;
+  }
+
+  :global(.timeline-date),
+  :global(.reminder-timeline-item > div:not(.timeline-dot)) {
+    display: grid;
+    gap: 3px;
+
+    span {
+      color: $muted;
+      font-size: 0.84rem;
+    }
+  }
+}
+
+.historyPanel {
+  :global(.notification-table) {
+    min-width: 960px;
+  }
+}
+
+.summaryPanel {
+  :global(.summary-value) {
+    background: $surface-soft;
+    border: 1px solid $border;
+    border-radius: $radius;
+    display: grid;
+    gap: 6px;
+    padding: 14px;
+
+    span {
+      color: $muted;
+      font-size: 0.8rem;
+      font-weight: 760;
+    }
+
+    strong {
+      font-size: 0.98rem;
+      line-height: 1.35;
+    }
+  }
+}
+
+@media (max-width: 860px) {
+  .remindersView {
+    :global(.reminder-command),
+    :global(.reminder-command-grid) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .queuePanel {
+    :global(.reminder-timeline-item) {
+      align-items: start;
+      grid-template-columns: auto minmax(0, 1fr);
+
+      .timeline-date,
+      .badge {
+        grid-column: 2;
+      }
+    }
+  }
+}

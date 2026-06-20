@@ -8,6 +8,7 @@ import { formatDateTime, formatMoney, formatPercent } from "../../../lib/api";
 import { buildRecurringCustomerBars, buildTopServiceBars, buildWeeklyChartBars } from "../../../lib/dashboard-metrics";
 import { countCoveredWeekdays, statusClass } from "./dashboard-helpers";
 import { Alert, EmptyState, InventoryPanel, Metric, RiskyCustomersTable } from "./dashboard-shared";
+import styles from "./dashboard-overview.module.scss";
 
 export function HomeView({
   appointments,
@@ -23,7 +24,7 @@ export function HomeView({
     .slice(0, 4);
 
   return (
-    <section className="stack">
+    <section className={`stack ${styles.homeView}`}>
       {!business ? (
         <section className="feature-banner">
           <div>
@@ -71,7 +72,7 @@ export function MetricsPanel({ metrics }: { metrics: DashboardMetrics | null }) 
   const recurringBars = buildRecurringCustomerBars(metrics);
 
   return (
-    <section className="stack">
+    <section className={`stack ${styles.metricsPanel}`}>
       <section className="metric-grid metric-grid-analytics">
         <Metric icon={<CalendarDays size={18} />} label="Turnos del mes" value={metrics?.totalAppointments ?? 0} />
         <Metric icon={<Clock size={18} />} label="Activos" value={metrics?.activeAppointments ?? 0} />
@@ -196,7 +197,7 @@ export function BookingAdminView({ business }: { business: CurrentBusiness | nul
   const hasBookableSetup = business.services.length > 0 && business.staffMembers.length > 0 && business.availabilityRules.length > 0;
 
   return (
-    <section className="stack">
+    <section className={`stack ${styles.bookingAdminView}`}>
       <section className="feature-banner public-hero">
         <div>
           <span className="badge badge-soft">Reserva publica</span>
