@@ -2,6 +2,7 @@
 
 import { CheckCircle2, MailCheck } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 
 import type { Appointment } from "../../lib/api";
 import { formatDateTime, requestJson } from "../../lib/api";
@@ -19,8 +20,11 @@ export function AcceptWaitlistOffer({ token }: { token: string }) {
         method: "POST"
       });
       setAppointment(response);
+      toast.success("Turno confirmado");
     } catch (acceptError) {
-      setError(acceptError instanceof Error ? acceptError.message : "No se pudo aceptar la oferta");
+      const message = acceptError instanceof Error ? acceptError.message : "No se pudo aceptar la oferta";
+      setError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
