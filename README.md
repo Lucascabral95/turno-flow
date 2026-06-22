@@ -10,7 +10,7 @@ Phases 1-12 are implemented for local development:
 - Public business pages with booking, cancellation, and waitlist entry.
 - PostgreSQL-backed appointment creation with transactional validation and outbox events.
 - RabbitMQ exchange, durable queues, and a Go worker connected to the event stream.
-- Mock reminder scheduling and delivery with retry tracking.
+- Reminder scheduling and delivery with retry tracking. Local development uses JSON logging by default, and Gmail SMTP can be enabled with an app password.
 - Waitlist offers with accept, reject, expire, and automatic reassignment.
 - Manual completed/no-show marking plus persisted customer risk scoring.
 - Daily business metrics aggregation with dashboard analytics for activity, revenue, top services, recurring customers, and risky customers.
@@ -97,6 +97,24 @@ The local `.env.example` is configured for Docker Compose defaults:
 - `DATABASE_URL` is used by local Prisma commands.
 - Docker services override internal service URLs where needed, for example `postgres:5432`, `rabbitmq:5672`, and `api:3001`.
 - If an old RabbitMQ volume was created with `guest` credentials, recreate the stack volume before switching to `turnoflow` credentials.
+
+### Reminder email delivery
+
+Reminder emails are sent by the Go worker to the customer email stored on the appointment. The default local transport is `EMAIL_TRANSPORT=json`, which logs the email payload and does not contact an email provider.
+
+To send real emails with Gmail SMTP, set these values in your local `.env`:
+
+```env
+EMAIL_TRANSPORT=smtp
+EMAIL_FROM=Your Name <your-email@gmail.com>
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASSWORD=your-gmail-app-password
+SMTP_TIMEOUT_SECONDS=10
+```
+
+Gmail requires an App Password for SMTP. Do not use your normal Gmail password, and do not commit the real secret.
 
 ## API Contract
 

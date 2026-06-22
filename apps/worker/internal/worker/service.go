@@ -94,12 +94,56 @@ func (service *Service) ProcessAttendanceAlerts(ctx context.Context, now time.Ti
 }
 
 func (service *Service) notificationMessage(notification DueNotification) email.Message {
+	payload := reminderNotificationPayload{}
+	_ = json.Unmarshal(notification.Payload, &payload)
+	serviceName := fallbackString(payload.ServiceName, "tu servicio")
+	customerName := fallbackString(payload.CustomerName, "cliente")
+	startsAt := formatReminderStartTime(payload.StartsAt, notification.DueAt)
+	cancelLine := ""
+	if payload.CancelURL != "" {
+		cancelLine = fmt.Sprintf("\n\nSi no podes asistir, podes cancelar tu turno desde: %s", payload.CancelURL)
+	}
+
 	return email.Message{
 		From:    service.emailFrom,
 		To:      notification.Email,
 		Subject: "Recordatorio de turno",
-		Text:    fmt.Sprintf("Tenes un recordatorio pendiente de TurnoFlow. Template: %s", notification.Template),
+		Text: fmt.Sprintf(
+			"Hola %s,\n\nTe recordamos tu turno para %s el %s.\n\nGracias por reservar con TurnoFlow.%s",
+			customerName,
+			serviceName,
+			startsAt,
+			cancelLine,
+		),
 	}
+}
+
+type reminderNotificationPayload struct {
+	CancelURL    string `json:"cancelUrl"`
+	CustomerName string `json:"customerName"`
+	ServiceName  string `json:"serviceName"`
+	StartsAt     string `json:"startsAt"`
+}
+
+func fallbackString(value string, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+
+	return value
+}
+
+func formatReminderStartTime(value string, fallback time.Time) string {
+	if value == "" {
+		return fallback.Format(time.RFC1123)
+	}
+
+	startsAt, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return value
+	}
+
+	return startsAt.Format(time.RFC1123)
 }
 
 func (service *Service) nextNotificationAttempt(notification DueNotification, now time.Time) *time.Time {

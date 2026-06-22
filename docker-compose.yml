@@ -69,6 +69,9 @@ services:
   web:
     build:
       context: ./apps/web
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
+        SERVER_API_URL: http://api:3001
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
       SERVER_API_URL: http://api:3001
@@ -87,6 +90,11 @@ services:
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
       EMAIL_FROM: ${EMAIL_FROM:-TurnoFlow <noreply@turnoflow.local>}
       EMAIL_TRANSPORT: ${EMAIL_TRANSPORT:-json}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_TIMEOUT_SECONDS: ${SMTP_TIMEOUT_SECONDS:-10}
+      SMTP_USER: ${SMTP_USER:-}
     depends_on:
       postgres:
         condition: service_healthy
