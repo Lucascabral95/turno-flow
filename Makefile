@@ -13,7 +13,7 @@ GO_CACHE := $$root = (Get-Location).Path; $$cache = Join-Path $$root ".cache/go-
 WORKER_BINARY := .cache/turnoflow-worker.exe
 
 .PHONY: help install worker-tidy
-.PHONY: up up-logs down logs api-dev web-dev worker-dev
+.PHONY: up up-build up-build-classic up-logs down logs api-dev web-dev worker-dev
 .PHONY: db-migrate db-generate db-studio db-seed
 .PHONY: lint typecheck test api-test web-test worker-test
 .PHONY: build api-build web-build worker-build
@@ -28,6 +28,8 @@ help:
 	@echo.
 	@echo Development:
 	@echo   make up               Start Docker Compose services in the background
+	@echo   make up-build         Rebuild images and start Docker Compose services
+	@echo   make up-build-classic Rebuild with Docker classic builder for proxy/cache issues
 	@echo   make up-logs          Start Docker Compose services in the foreground
 	@echo   make down             Stop Docker Compose services
 	@echo   make logs             Stream Docker Compose logs
@@ -66,10 +68,16 @@ worker-tidy:
 	$(POWERSHELL) '$(GO_CACHE) go mod tidy'
 
 up:
+	$(DOCKER_COMPOSE) up -d
+
+up-build:
 	$(DOCKER_COMPOSE) up --build -d
 
+up-build-classic:
+	$(POWERSHELL) '$$env:DOCKER_BUILDKIT = "0"; $$env:COMPOSE_DOCKER_CLI_BUILD = "0"; $(DOCKER_COMPOSE) up --build -d'
+
 up-logs:
-	$(DOCKER_COMPOSE) up --build
+	$(DOCKER_COMPOSE) up
 
 down:
 	$(DOCKER_COMPOSE) down

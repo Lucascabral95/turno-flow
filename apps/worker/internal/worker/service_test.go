@@ -264,7 +264,13 @@ func TestSendDueRemindersMarksNotificationSentAndLogsAttempt(t *testing.T) {
 			DueAt:         time.Date(2026, 6, 16, 10, 0, 0, 0, time.UTC),
 			Email:         "cliente@example.test",
 			ID:            "notification-1",
-			Template:      reminderTemplate24Hours,
+			Payload: json.RawMessage(`{
+				"cancelUrl": "http://localhost:3000/cancel/appointment-1?token=token",
+				"customerName": "Ana",
+				"serviceName": "Corte clasico",
+				"startsAt": "2026-06-17T14:00:00Z"
+			}`),
+			Template: reminderTemplate24Hours,
 		},
 	}
 	sender := &fakeSender{}
@@ -276,6 +282,17 @@ func TestSendDueRemindersMarksNotificationSentAndLogsAttempt(t *testing.T) {
 
 	if len(sender.messages) != 1 {
 		t.Fatalf("expected one reminder email, got %d", len(sender.messages))
+	}
+	message := sender.messages[0]
+	for _, expected := range []string{
+		"Hola Ana",
+		"Corte clasico",
+		"Wed, 17 Jun 2026 14:00:00 UTC",
+		"http://localhost:3000/cancel/appointment-1?token=token",
+	} {
+		if !strings.Contains(message.Text, expected) {
+			t.Fatalf("expected reminder email to contain %q, got %q", expected, message.Text)
+		}
 	}
 	if len(repository.sentNotifications) != 1 {
 		t.Fatalf("expected one sent notification, got %d", len(repository.sentNotifications))

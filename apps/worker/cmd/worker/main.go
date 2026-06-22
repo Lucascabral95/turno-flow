@@ -51,7 +51,10 @@ func main() {
 	}
 	defer repository.Close()
 
-	sender := email.NewJSONSender(cfg.EmailFrom)
+	sender, err := createEmailSender(cfg)
+	if err != nil {
+		log.Fatalf("email sender: %v", err)
+	}
 	service := worker.NewService(repository, sender, cfg.AppBaseURL, cfg.EmailFrom)
 
 	connection, err := connectRabbitMQ(ctx, cfg.RabbitMQURL)
@@ -85,6 +88,24 @@ func main() {
 			}
 			handleDelivery(ctx, service, delivery)
 		}
+	}
+}
+
+func createEmailSender(cfg config.Config) (email.Sender, error) {
+	switch cfg.EmailTransport {
+	case "json":
+		return email.NewJSONSender(cfg.EmailFrom), nil
+	case "smtp":
+		return email.NewSMTPSender(email.SMTPConfig{
+			From:     cfg.EmailFrom,
+			Host:     cfg.SMTPHost,
+			Password: cfg.SMTPPassword,
+			Port:     cfg.SMTPPort,
+			Timeout:  cfg.SMTPTimeout(),
+			User:     cfg.SMTPUser,
+		})
+	default:
+		return nil, fmt.Errorf("unsupported email transport %q", cfg.EmailTransport)
 	}
 }
 

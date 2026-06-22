@@ -169,6 +169,7 @@ export function PublicBooking({ businessSlug }: { businessSlug: string }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [nextAvailableDate, setNextAvailableDate] = useState<string | null>(null);
+  const [recentlyBookedSlotKeys, setRecentlyBookedSlotKeys] = useState<string[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [slots, setSlots] = useState<AvailabilitySlot[]>([]);
   const [waitlistMessage, setWaitlistMessage] = useState<string | null>(null);
@@ -203,10 +204,14 @@ export function PublicBooking({ businessSlug }: { businessSlug: string }) {
   const selectedServiceId = bookingForm.watch("serviceId");
   const date = bookingForm.watch("date");
   const selectedSlotKey = bookingForm.watch("slotKey");
-  const slotLookup = useMemo(
-    () => new Map(slots.map((slot) => [buildSlotKey(slot), slot])),
-    [slots]
+  const visibleSlots = useMemo(
+    () =>
+      normalizeAvailabilitySlots(slots).filter(
+        (slot) => !recentlyBookedSlotKeys.includes(buildBookedSlotKey(selectedServiceId, date, slot.startsAt))
+      ),
+    [date, recentlyBookedSlotKeys, selectedServiceId, slots]
   );
+  const slotLookup = useMemo(() => new Map(visibleSlots.map((slot) => [buildSlotKey(slot), slot])), [visibleSlots]);
 
   const selectedService = useMemo(
     () => services.find((service) => service.id === selectedServiceId) ?? null,
@@ -273,7 +278,7 @@ export function PublicBooking({ businessSlug }: { businessSlug: string }) {
   useEffect(() => {
     let active = true;
 
-    async function loadAvailability() {
+    async function refreshAvailability() {
       if (!selectedServiceId) {
         setSlots([]);
         return;
@@ -283,9 +288,7 @@ export function PublicBooking({ businessSlug }: { businessSlug: string }) {
       setError(null);
       setNextAvailableDate(null);
       try {
-        const slotResponse = await requestJson<AvailabilitySlot[]>(
-          `/public/businesses/${businessSlug}/availability?serviceId=${selectedServiceId}&date=${date}`
-        );
+        const slotResponse = await fetchAvailabilitySlots(businessSlug, selectedServiceId, date);
 
         if (active) {
           setSlots(slotResponse);
@@ -302,7 +305,7 @@ export function PublicBooking({ businessSlug }: { businessSlug: string }) {
       }
     }
 
-    void loadAvailability();
+    void refreshAvailability();
 
     return () => {
       active = false;
@@ -339,6 +342,10 @@ export function PublicBooking({ businessSlug }: { businessSlug: string }) {
         method: "POST"
       });
       setConfirmation(appointment);
+      setRecentlyBookedSlotKeys((current) => [
+        ...new Set([...current, buildBookedSlotKey(values.serviceId, values.date, selectedSlot.startsAt)])
+      ]);
+      setSlots((currentSlots) => normalizeAvailabilitySlots(currentSlots).filter((slot) => slot.startsAt !== selectedSlot.startsAt));
       toast.success("Turno reservado");
       bookingForm.reset({
         customerEmail: "",
@@ -348,6 +355,9 @@ export function PublicBooking({ businessSlug }: { businessSlug: string }) {
         serviceId: values.serviceId,
         slotKey: ""
       });
+      void fetchAvailabilitySlots(businessSlug, values.serviceId, values.date)
+        .then((updatedSlots) => setSlots(updatedSlots))
+        .catch(() => undefined);
     } catch (bookingError) {
       const message = bookingError instanceof Error ? bookingError.message : "No se pudo reservar el turno";
       setError(message);
@@ -494,9 +504,9 @@ export function PublicBooking({ businessSlug }: { businessSlug: string }) {
                   </span>
                 ) : null}
               </div>
-              {slots.length > 0 ? (
+              {visibleSlots.length > 0 ? (
                 <div className="slot-grid">
-                  {slots.map((slot) => {
+                  {visibleSlots.map((slot) => {
                     const slotKey = buildSlotKey(slot);
                     const isActive = selectedSlotKey === slotKey;
 
@@ -1110,7 +1120,45 @@ function PublicManagedStaffItem({
 }
 
 function buildSlotKey(slot: AvailabilitySlot): string {
-  return `${slot.staffMemberId}::${slot.startsAt}`;
+  return slot.startsAt;
+}
+
+function buildBookedSlotKey(serviceId: string, date: string, startsAt: string): string {
+  return `${serviceId}::${date}::${startsAt}`;
+}
+
+async function fetchAvailabilitySlots(
+  businessSlug: string,
+  serviceId: string,
+  date: string
+): Promise<AvailabilitySlot[]> {
+  const slots = await requestJson<AvailabilitySlot[]>(
+    `/public/businesses/${businessSlug}/availability?serviceId=${serviceId}&date=${date}`
+  );
+
+  return normalizeAvailabilitySlots(slots);
+}
+
+function normalizeAvailabilitySlots(slots: AvailabilitySlot[]): AvailabilitySlot[] {
+  const uniqueSlots = new Map<string, AvailabilitySlot>();
+
+  for (const slot of slots) {
+    const existingSlot = uniqueSlots.get(slot.startsAt);
+
+    if (!existingSlot || slot.staffMemberId.localeCompare(existingSlot.staffMemberId) < 0) {
+      uniqueSlots.set(slot.startsAt, slot);
+    }
+  }
+
+  return [...uniqueSlots.values()].sort((left, right) => {
+    const startsAtComparison = new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime();
+
+    if (startsAtComparison !== 0) {
+      return startsAtComparison;
+    }
+
+    return left.staffMemberId.localeCompare(right.staffMemberId);
+  });
 }
 
 async function findNextAvailableDate(
@@ -1124,9 +1172,7 @@ async function findNextAvailableDate(
     const candidateDate = new Date(baseDate);
     candidateDate.setDate(baseDate.getDate() + offset);
     const formattedCandidate = createLocalDateString(candidateDate);
-    const candidateSlots = await requestJson<AvailabilitySlot[]>(
-      `/public/businesses/${businessSlug}/availability?serviceId=${serviceId}&date=${formattedCandidate}`
-    );
+    const candidateSlots = await fetchAvailabilitySlots(businessSlug, serviceId, formattedCandidate);
 
     if (candidateSlots.length > 0) {
       return formattedCandidate;
