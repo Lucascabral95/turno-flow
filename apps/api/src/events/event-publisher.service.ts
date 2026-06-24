@@ -6,11 +6,20 @@ import { connect, type ChannelModel, type ConfirmChannel } from "amqplib";
 import { PrismaService } from "../prisma/prisma.service";
 
 const EXCHANGE_NAME = "turnoflow.events";
+const DEAD_LETTER_EXCHANGE = "turnoflow.events.dlx";
+const APPOINTMENTS_DEAD_LETTER_ROUTING_KEY = "worker.appointments.dead";
 const MAX_ATTEMPTS = 5;
 const PUBLISH_INTERVAL_MS = 5_000;
 const QUEUE_BINDINGS = [
   {
     name: "worker.appointments",
+    options: {
+      arguments: {
+        "x-dead-letter-exchange": DEAD_LETTER_EXCHANGE,
+        "x-dead-letter-routing-key": APPOINTMENTS_DEAD_LETTER_ROUTING_KEY
+      },
+      durable: true
+    },
     routingKeys: [
       "appointment.booked",
       "appointment.confirmed",
@@ -26,6 +35,9 @@ const QUEUE_BINDINGS = [
   },
   {
     name: "worker.waitlist",
+    options: {
+      durable: true
+    },
     routingKeys: [
       "appointment.cancelled",
       "slot.released",
@@ -38,6 +50,9 @@ const QUEUE_BINDINGS = [
   },
   {
     name: "worker.notifications",
+    options: {
+      durable: true
+    },
     routingKeys: [
       "appointment.booked",
       "appointment.cancelled",
@@ -51,6 +66,9 @@ const QUEUE_BINDINGS = [
   },
   {
     name: "worker.metrics",
+    options: {
+      durable: true
+    },
     routingKeys: [
       "appointment.booked",
       "appointment.cancelled",
@@ -151,13 +169,17 @@ export class EventPublisherService implements OnModuleInit, OnModuleDestroy {
     const connection = await this.getConnection();
     const channel = await connection.createConfirmChannel();
     await channel.assertExchange(EXCHANGE_NAME, "topic", { durable: true });
+    await channel.assertExchange(DEAD_LETTER_EXCHANGE, "direct", { durable: true });
     await this.assertQueues(channel);
     return channel;
   }
 
   private async assertQueues(channel: ConfirmChannel): Promise<void> {
+    await channel.assertQueue("worker.appointments.dlq", { durable: true });
+    await channel.bindQueue("worker.appointments.dlq", DEAD_LETTER_EXCHANGE, APPOINTMENTS_DEAD_LETTER_ROUTING_KEY);
+
     for (const queue of QUEUE_BINDINGS) {
-      await channel.assertQueue(queue.name, { durable: true });
+      await channel.assertQueue(queue.name, queue.options);
       for (const routingKey of queue.routingKeys) {
         await channel.bindQueue(queue.name, EXCHANGE_NAME, routingKey);
       }

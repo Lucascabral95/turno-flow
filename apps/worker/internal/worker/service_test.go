@@ -252,6 +252,34 @@ func TestProcessAttendanceAlertsRequestsBatchForOverdueAppointments(t *testing.T
 	}
 }
 
+func TestServiceUsesConfiguredBatchSizes(t *testing.T) {
+	ctx := context.Background()
+	repository := newFakeRepository()
+	service := NewServiceWithOptions(repository, &fakeSender{}, "http://localhost:3000", "noreply@example.test", Options{
+		AttendanceReviewBatchSize: 7,
+		DueNotificationBatchSize:  9,
+		MaxNotificationAttempts:   4,
+	})
+	now := time.Date(2026, 6, 19, 11, 0, 0, 0, time.UTC)
+
+	if err := service.ProcessAttendanceAlerts(ctx, now); err != nil {
+		t.Fatalf("process attendance alerts: %v", err)
+	}
+	if err := service.SendDueReminders(ctx, now); err != nil {
+		t.Fatalf("send due reminders: %v", err)
+	}
+
+	if repository.attendanceAlertRuns[0].limit != 7 {
+		t.Fatalf("expected attendance batch size 7, got %d", repository.attendanceAlertRuns[0].limit)
+	}
+	if repository.lastDueNotificationLimit != 9 {
+		t.Fatalf("expected reminder batch size 9, got %d", repository.lastDueNotificationLimit)
+	}
+	if repository.lastMaxNotificationAttempts != 4 {
+		t.Fatalf("expected max notification attempts 4, got %d", repository.lastMaxNotificationAttempts)
+	}
+}
+
 func TestSendDueRemindersMarksNotificationSentAndLogsAttempt(t *testing.T) {
 	ctx := context.Background()
 	repository := newFakeRepository()
@@ -336,20 +364,22 @@ func TestSendDueRemindersMarksNotificationFailedWithRetry(t *testing.T) {
 }
 
 type fakeRepository struct {
-	attendance             CustomerAttendance
-	attendanceAlertRuns    []attendanceAlertRun
-	candidate              *domain.WaitlistCandidate
-	customerRiskUpdates    []CustomerRiskSnapshot
-	dueNotifications       []DueNotification
-	failedNotifications    []failedNotification
-	metricsRecalculated    []BusinessMetricsDailySnapshot
-	notificationLogs       []NotificationLog
-	offerCount             int
-	outboxEvents           []OutboxEventInput
-	processed              map[string]bool
-	reminderSettings       ReminderSettings
-	sentNotifications      []DueNotification
-	scheduledNotifications []ScheduledNotificationInput
+	attendance                  CustomerAttendance
+	attendanceAlertRuns         []attendanceAlertRun
+	candidate                   *domain.WaitlistCandidate
+	customerRiskUpdates         []CustomerRiskSnapshot
+	dueNotifications            []DueNotification
+	failedNotifications         []failedNotification
+	metricsRecalculated         []BusinessMetricsDailySnapshot
+	notificationLogs            []NotificationLog
+	offerCount                  int
+	outboxEvents                []OutboxEventInput
+	processed                   map[string]bool
+	reminderSettings            ReminderSettings
+	sentNotifications           []DueNotification
+	scheduledNotifications      []ScheduledNotificationInput
+	lastDueNotificationLimit    int
+	lastMaxNotificationAttempts int
 }
 
 type failedNotification struct {
@@ -413,7 +443,9 @@ func (repository *fakeRepository) CreateNotificationLog(_ context.Context, input
 	return nil
 }
 
-func (repository *fakeRepository) ClaimDueNotifications(_ context.Context, _ time.Time, _ int, _ int) ([]DueNotification, error) {
+func (repository *fakeRepository) ClaimDueNotifications(_ context.Context, _ time.Time, limit int, maxAttempts int) ([]DueNotification, error) {
+	repository.lastDueNotificationLimit = limit
+	repository.lastMaxNotificationAttempts = maxAttempts
 	return repository.dueNotifications, nil
 }
 

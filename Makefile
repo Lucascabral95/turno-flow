@@ -27,8 +27,8 @@ help:
 	@echo   make worker-tidy      Tidy Go worker dependencies
 	@echo.
 	@echo Development:
-	@echo   make up               Start Docker Compose services in the background
-	@echo   make up-build         Rebuild images and start Docker Compose services
+	@echo   make up               Rebuild images and start Docker Compose services in the background
+	@echo   make up-build         Alias of make up
 	@echo   make up-build-classic Rebuild with Docker classic builder for proxy/cache issues
 	@echo   make up-logs          Start Docker Compose services in the foreground
 	@echo   make down             Stop Docker Compose services
@@ -68,7 +68,7 @@ worker-tidy:
 	$(POWERSHELL) '$(GO_CACHE) go mod tidy'
 
 up:
-	$(DOCKER_COMPOSE) up -d
+	$(DOCKER_COMPOSE) up --build -d
 
 up-build:
 	$(DOCKER_COMPOSE) up --build -d

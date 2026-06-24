@@ -67,6 +67,28 @@ export function isActionableAppointment(appointment: Appointment): boolean {
   return appointment.status === "pending" || appointment.status === "confirmed";
 }
 
+export function isOverdueAppointment(appointment: Appointment, now: number | Date = Date.now()): boolean {
+  if (!isActionableAppointment(appointment)) {
+    return false;
+  }
+
+  const nowMs = now instanceof Date ? now.getTime() : now;
+  return new Date(appointment.endsAt).getTime() < nowMs;
+}
+
+export function isUpcomingAppointment(appointment: Appointment, now: number | Date = Date.now()): boolean {
+  if (!isActionableAppointment(appointment)) {
+    return false;
+  }
+
+  const nowMs = now instanceof Date ? now.getTime() : now;
+  return new Date(appointment.startsAt).getTime() > nowMs;
+}
+
+export function isOperationalAppointment(appointment: Appointment, now: number | Date = Date.now()): boolean {
+  return isActionableAppointment(appointment) && !isOverdueAppointment(appointment, now);
+}
+
 export function appointmentStatusLabel(status: Appointment["status"]): string {
   const labels: Record<Appointment["status"], string> = {
     cancelled_by_business: "Cancelado por negocio",
@@ -78,6 +100,42 @@ export function appointmentStatusLabel(status: Appointment["status"]): string {
   };
 
   return labels[status];
+}
+
+export function appointmentDisplayStatus(appointment: Appointment, now: number | Date = Date.now()): {
+  className: string;
+  label: string;
+  overdue: boolean;
+} {
+  if (isOverdueAppointment(appointment, now)) {
+    return {
+      className: "badge badge-warning",
+      label: "Ausencia a revisar",
+      overdue: true
+    };
+  }
+
+  return {
+    className: statusClass(appointment.status),
+    label: appointmentStatusLabel(appointment.status),
+    overdue: false
+  };
+}
+
+export function appointmentTimingHint(appointment: Appointment, now: number | Date = Date.now()): string | null {
+  if (!isActionableAppointment(appointment)) {
+    return null;
+  }
+
+  if (isOverdueAppointment(appointment, now)) {
+    return "El horario ya paso y no se registro asistencia.";
+  }
+
+  if (isUpcomingAppointment(appointment, now)) {
+    return "Todavia no llego la hora de este turno.";
+  }
+
+  return "Turno en curso.";
 }
 
 export function notificationStatusClass(status: NotificationHistoryItem["status"]): string {
