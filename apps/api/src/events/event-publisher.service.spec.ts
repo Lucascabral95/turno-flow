@@ -126,7 +126,16 @@ describe("EventPublisherService", () => {
     await publishPromise;
 
     expect(rabbit.channel.assertExchange).toHaveBeenCalledWith("turnoflow.events", "topic", { durable: true });
-    expect(rabbit.channel.assertQueue).toHaveBeenCalledWith("worker.appointments", { durable: true });
+    expect(rabbit.channel.assertExchange).toHaveBeenCalledWith("turnoflow.events.dlx", "direct", { durable: true });
+    expect(rabbit.channel.assertQueue).toHaveBeenCalledWith("worker.appointments.dlq", { durable: true });
+    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.appointments.dlq", "turnoflow.events.dlx", "worker.appointments.dead");
+    expect(rabbit.channel.assertQueue).toHaveBeenCalledWith("worker.appointments", {
+      arguments: {
+        "x-dead-letter-exchange": "turnoflow.events.dlx",
+        "x-dead-letter-routing-key": "worker.appointments.dead"
+      },
+      durable: true
+    });
     expect(rabbit.channel.assertQueue).toHaveBeenCalledWith("worker.waitlist", { durable: true });
     expect(rabbit.channel.assertQueue).toHaveBeenCalledWith("worker.notifications", { durable: true });
     expect(rabbit.channel.assertQueue).toHaveBeenCalledWith("worker.metrics", { durable: true });

@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -12,7 +12,6 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 
 	"github.com/turnoflow/turnoflow/apps/worker/internal/config"
-	"github.com/turnoflow/turnoflow/apps/worker/internal/domain"
 	"github.com/turnoflow/turnoflow/apps/worker/internal/email"
 	"github.com/turnoflow/turnoflow/apps/worker/internal/postgres"
 	worker "github.com/turnoflow/turnoflow/apps/worker/internal/worker"
@@ -23,6 +22,7 @@ const (
 	startupRetryAttempts = 30
 	startupRetryDelay    = 2 * time.Second
 	workerQueue          = "worker.appointments"
+	workerQueueDLQ       = "worker.appointments.dlq"
 )
 
 var eventBindingKeys = []string{
@@ -44,50 +44,36 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{}))
+	slog.SetDefault(logger)
 	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		logger.Error("invalid worker config", "error", err)
+		os.Exit(1)
+	}
+
 	repository, err := connectPostgres(ctx, cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("postgres: %v", err)
+		logger.Error("postgres connection failed", "error", err)
+		os.Exit(1)
 	}
 	defer repository.Close()
 
 	sender, err := createEmailSender(cfg)
 	if err != nil {
-		log.Fatalf("email sender: %v", err)
-	}
-	service := worker.NewService(repository, sender, cfg.AppBaseURL, cfg.EmailFrom)
-
-	connection, err := connectRabbitMQ(ctx, cfg.RabbitMQURL)
-	if err != nil {
-		log.Fatalf("rabbitmq dial: %v", err)
-	}
-	defer connection.Close()
-
-	channel, err := connection.Channel()
-	if err != nil {
-		log.Fatalf("rabbitmq channel: %v", err)
-	}
-	defer channel.Close()
-
-	deliveries, err := consumeEvents(channel)
-	if err != nil {
-		log.Fatalf("rabbitmq consume: %v", err)
+		logger.Error("email sender setup failed", "error", err)
+		os.Exit(1)
 	}
 
-	go runPeriodicJobs(ctx, service)
+	service := worker.NewServiceWithOptions(repository, sender, cfg.AppBaseURL, cfg.EmailFrom, worker.Options{
+		AttendanceReviewBatchSize: cfg.AttendanceBatchSize,
+		DueNotificationBatchSize:  cfg.ReminderBatchSize,
+		MaxNotificationAttempts:   cfg.MaxNotificationAttempts,
+	})
 
-	for {
-		select {
-		case <-ctx.Done():
-			log.Print("worker shutting down")
-			return
-		case delivery, ok := <-deliveries:
-			if !ok {
-				log.Print("rabbitmq delivery channel closed")
-				return
-			}
-			handleDelivery(ctx, service, delivery)
-		}
+	if err := run(ctx, cfg, service, logger); err != nil {
+		logger.Error("worker stopped with error", "error", err)
+		os.Exit(1)
 	}
 }
 
@@ -142,7 +128,7 @@ func retryStartup(ctx context.Context, label string, fn func() error) error {
 	for attempt := 1; attempt <= startupRetryAttempts; attempt++ {
 		if err := fn(); err != nil {
 			lastErr = err
-			log.Printf("%s not ready attempt=%d/%d error=%v", label, attempt, startupRetryAttempts, err)
+			slog.Warn("dependency not ready", "dependency", label, "attempt", attempt, "max_attempts", startupRetryAttempts, "error", err)
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
@@ -155,66 +141,4 @@ func retryStartup(ctx context.Context, label string, fn func() error) error {
 	}
 
 	return fmt.Errorf("%s not ready after %d attempts: %w", label, startupRetryAttempts, lastErr)
-}
-
-func consumeEvents(channel *amqp.Channel) (<-chan amqp.Delivery, error) {
-	if err := channel.ExchangeDeclare(eventsExchange, "topic", true, false, false, false, nil); err != nil {
-		return nil, err
-	}
-
-	queue, err := channel.QueueDeclare(workerQueue, true, false, false, false, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, bindingKey := range eventBindingKeys {
-		if err := channel.QueueBind(queue.Name, bindingKey, eventsExchange, false, nil); err != nil {
-			return nil, err
-		}
-	}
-
-	if err := channel.Qos(10, 0, false); err != nil {
-		return nil, err
-	}
-
-	return channel.Consume(queue.Name, "", false, false, false, false, nil)
-}
-
-func handleDelivery(ctx context.Context, service *worker.Service, delivery amqp.Delivery) {
-	var event domain.Event
-	if err := json.Unmarshal(delivery.Body, &event); err != nil {
-		log.Printf("drop invalid event payload: %v", err)
-		_ = delivery.Nack(false, false)
-		return
-	}
-
-	if err := service.HandleEvent(ctx, event); err != nil {
-		log.Printf("event processing failed event_id=%s type=%s error=%v", event.EventID, event.Type, err)
-		_ = delivery.Nack(false, true)
-		return
-	}
-
-	_ = delivery.Ack(false)
-}
-
-func runPeriodicJobs(ctx context.Context, service *worker.Service) {
-	ticker := time.NewTicker(time.Minute)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case now := <-ticker.C:
-			if err := service.SendDueReminders(ctx, now.UTC()); err != nil {
-				log.Printf("send due reminders: %v", err)
-			}
-			if err := service.ProcessAttendanceAlerts(ctx, now.UTC()); err != nil {
-				log.Printf("process attendance alerts: %v", err)
-			}
-			if err := service.ExpireWaitlistOffers(ctx, now.UTC()); err != nil {
-				log.Printf("expire waitlist offers: %v", err)
-			}
-		}
-	}
 }

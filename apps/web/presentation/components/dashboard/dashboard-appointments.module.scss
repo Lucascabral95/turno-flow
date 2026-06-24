@@ -65,6 +65,52 @@
   }
 }
 
+.statusCell {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
+.overdueMeta,
+.overdueHint,
+.upcomingMeta,
+.upcomingHint,
+.liveMeta,
+.liveHint {
+  color: $warning;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.overdueHint {
+  max-width: 28ch;
+}
+
+.upcomingMeta,
+.upcomingHint {
+  color: $secondary;
+}
+
+.liveMeta,
+.liveHint {
+  color: $success;
+}
+
+.upcomingHint,
+.liveHint {
+  max-width: 28ch;
+}
+
+.overdueRow {
+  td {
+    background: linear-gradient(90deg, rgb(255 247 223 / 72%), rgb(255 247 223 / 24%));
+  }
+
+  td:first-child {
+    box-shadow: inset 3px 0 0 $warning;
+  }
+}
+
 @media (max-width: 860px) {
   .appointmentsView {
     :global(.appointments-command) {

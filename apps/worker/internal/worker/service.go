@@ -25,43 +25,68 @@ const (
 	waitlistOfferTTL                   = 15 * time.Minute
 )
 
+type Options struct {
+	AttendanceReviewBatchSize int
+	DueNotificationBatchSize  int
+	MaxNotificationAttempts   int
+}
+
+type eventHandler func(context.Context, Tx, domain.Event) error
+
 type Service struct {
 	appBaseURL string
 	emailFrom  string
+	handlers   map[string]eventHandler
+	options    Options
 	repository Repository
 	sender     email.Sender
 }
 
 func NewService(repository Repository, sender email.Sender, appBaseURL string, emailFrom string) *Service {
-	return &Service{
+	return NewServiceWithOptions(repository, sender, appBaseURL, emailFrom, DefaultOptions())
+}
+
+func NewServiceWithOptions(repository Repository, sender email.Sender, appBaseURL string, emailFrom string, options Options) *Service {
+	service := &Service{
 		appBaseURL: appBaseURL,
 		emailFrom:  emailFrom,
+		options:    options.withDefaults(),
 		repository: repository,
 		sender:     sender,
+	}
+	service.handlers = service.defaultHandlers()
+
+	return service
+}
+
+func DefaultOptions() Options {
+	return Options{
+		AttendanceReviewBatchSize: attendanceReviewBatchSize,
+		DueNotificationBatchSize:  dueNotificationBatchSize,
+		MaxNotificationAttempts:   maxNotificationAttempts,
 	}
 }
 
 func (service *Service) HandleEvent(ctx context.Context, event domain.Event) error {
 	_, err := service.repository.RunOnce(ctx, event.EventID, event.Type, func(ctx context.Context, tx Tx) error {
-		switch event.Type {
-		case domain.EventAppointmentBooked:
-			return service.handleAppointmentBooked(ctx, tx, event.Payload)
-		case domain.EventAppointmentCompleted, domain.EventAppointmentMarkedAsNoShow, domain.EventAppointmentMarkedNoShow:
-			return service.handleCustomerRiskEvent(ctx, tx, event.Payload, eventOccurredAt(event))
-		case domain.EventAppointmentCancelled, domain.EventWaitlistOfferExpired, domain.EventWaitlistOfferRejected:
-			return service.handleWaitlistOpportunity(ctx, tx, event.Payload, eventOccurredAt(event))
-		case domain.EventWaitlistOfferAccepted, domain.EventWaitlistOfferCreated, domain.EventCustomerRiskScoreUpdated:
-			return nil
-		default:
+		handler, ok := service.handlers[event.Type]
+		if !ok {
 			return nil
 		}
+
+		return handler(ctx, tx, event)
 	})
 
 	return err
 }
 
 func (service *Service) SendDueReminders(ctx context.Context, now time.Time) error {
-	notifications, err := service.repository.ClaimDueNotifications(ctx, now, dueNotificationBatchSize, maxNotificationAttempts)
+	notifications, err := service.repository.ClaimDueNotifications(
+		ctx,
+		now,
+		service.options.DueNotificationBatchSize,
+		service.options.MaxNotificationAttempts,
+	)
 	if err != nil {
 		return fmt.Errorf("claim due reminders: %w", err)
 	}
@@ -89,8 +114,37 @@ func (service *Service) ExpireWaitlistOffers(ctx context.Context, now time.Time)
 }
 
 func (service *Service) ProcessAttendanceAlerts(ctx context.Context, now time.Time) error {
-	_, err := service.repository.CreateAttendanceReviewAlerts(ctx, now, attendanceReviewBatchSize)
+	_, err := service.repository.CreateAttendanceReviewAlerts(ctx, now, service.options.AttendanceReviewBatchSize)
 	return err
+}
+
+func (service *Service) defaultHandlers() map[string]eventHandler {
+	return map[string]eventHandler{
+		domain.EventAppointmentBooked: func(ctx context.Context, tx Tx, event domain.Event) error {
+			return service.handleAppointmentBooked(ctx, tx, event.Payload)
+		},
+		domain.EventAppointmentCancelled:      service.handleWaitlistOpportunityEvent,
+		domain.EventAppointmentCompleted:      service.handleCustomerRiskEventEvent,
+		domain.EventAppointmentMarkedAsNoShow: service.handleCustomerRiskEventEvent,
+		domain.EventAppointmentMarkedNoShow:   service.handleCustomerRiskEventEvent,
+		domain.EventCustomerRiskScoreUpdated:  ignoreEvent,
+		domain.EventWaitlistOfferAccepted:     ignoreEvent,
+		domain.EventWaitlistOfferCreated:      ignoreEvent,
+		domain.EventWaitlistOfferExpired:      service.handleWaitlistOpportunityEvent,
+		domain.EventWaitlistOfferRejected:     service.handleWaitlistOpportunityEvent,
+	}
+}
+
+func (service *Service) handleWaitlistOpportunityEvent(ctx context.Context, tx Tx, event domain.Event) error {
+	return service.handleWaitlistOpportunity(ctx, tx, event.Payload, eventOccurredAt(event))
+}
+
+func (service *Service) handleCustomerRiskEventEvent(ctx context.Context, tx Tx, event domain.Event) error {
+	return service.handleCustomerRiskEvent(ctx, tx, event.Payload, eventOccurredAt(event))
+}
+
+func ignoreEvent(context.Context, Tx, domain.Event) error {
+	return nil
 }
 
 func (service *Service) notificationMessage(notification DueNotification) email.Message {
@@ -147,13 +201,28 @@ func formatReminderStartTime(value string, fallback time.Time) string {
 }
 
 func (service *Service) nextNotificationAttempt(notification DueNotification, now time.Time) *time.Time {
-	if notification.Attempts >= maxNotificationAttempts {
+	if notification.Attempts >= service.options.MaxNotificationAttempts {
 		return nil
 	}
 
 	backoff := time.Duration(notification.Attempts*notification.Attempts) * time.Minute
 	nextAttemptAt := now.Add(backoff)
 	return &nextAttemptAt
+}
+
+func (options Options) withDefaults() Options {
+	defaults := DefaultOptions()
+	if options.AttendanceReviewBatchSize <= 0 {
+		options.AttendanceReviewBatchSize = defaults.AttendanceReviewBatchSize
+	}
+	if options.DueNotificationBatchSize <= 0 {
+		options.DueNotificationBatchSize = defaults.DueNotificationBatchSize
+	}
+	if options.MaxNotificationAttempts <= 0 {
+		options.MaxNotificationAttempts = defaults.MaxNotificationAttempts
+	}
+
+	return options
 }
 
 func (service *Service) handleAppointmentBooked(ctx context.Context, tx Tx, payload json.RawMessage) error {

@@ -116,6 +116,25 @@ SMTP_TIMEOUT_SECONDS=10
 
 Gmail requires an App Password for SMTP. Do not use your normal Gmail password, and do not commit the real secret.
 
+### Worker runtime
+
+The Go worker runs in `WORKER_MODE=all` by default, which keeps local development simple by running RabbitMQ consumers and scheduled jobs in one process.
+
+For heavier workloads, run one scheduler instance and scale consumer instances separately:
+
+```env
+WORKER_MODE=scheduler
+WORKER_MODE=consumer
+WORKER_CONCURRENCY=4
+RABBITMQ_PREFETCH=8
+REMINDER_BATCH_SIZE=25
+ATTENDANCE_BATCH_SIZE=25
+MAX_NOTIFICATION_ATTEMPTS=3
+SCHEDULER_INTERVAL_SECONDS=60
+```
+
+RabbitMQ events still use the durable `worker.appointments` queue. Invalid event payloads are rejected without requeue and routed to `worker.appointments.dlq`.
+
 ## API Contract
 
 Core private endpoints include `/auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/me`, `/businesses/me`, `/services`, `/availability/rules`, `/availability/exceptions`, `/availability/slots`, `/appointments`, `/waitlist`, `/waitlist-offers`, and `/metrics/dashboard`.

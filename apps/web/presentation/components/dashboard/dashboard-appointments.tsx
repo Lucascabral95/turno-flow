@@ -1,12 +1,19 @@
 "use client";
 
 import { AlertTriangle, CalendarDays, CheckCircle2, ClipboardList, Clock, Download, ShieldAlert, TrendingDown, TrendingUp } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import type { Appointment, CurrentBusiness, DashboardMetrics } from "../../../lib/api";
 import { formatDateTime, formatMoney } from "../../../lib/api";
-import { appointmentStatusLabel, capitalizeFirst, isActionableAppointment, statusClass } from "./dashboard-helpers";
+import {
+  appointmentDisplayStatus,
+  appointmentTimingHint,
+  capitalizeFirst,
+  isActionableAppointment,
+  isOperationalAppointment,
+  isUpcomingAppointment
+} from "./dashboard-helpers";
 import { EmptyState, InventoryPanel, Metric } from "./dashboard-shared";
 import styles from "./dashboard-appointments.module.scss";
 
@@ -21,11 +28,12 @@ export function AppointmentsView({
   metrics: DashboardMetrics | null;
   onStatus: (appointmentId: string, status: "completed" | "no_show" | "cancelled_by_business") => void;
 }) {
-  const activeAppointments = appointments.filter(isActionableAppointment).length;
+  const now = useLiveNow();
+  const activeAppointments = appointments.filter((appointment) => isOperationalAppointment(appointment, now)).length;
   const noShowAppointments = appointments.filter((appointment) => appointment.status === "no_show").length;
   const cancelledAppointments = appointments.filter((appointment) => appointment.status.startsWith("cancelled")).length;
   const estimatedPipelineCents = appointments
-    .filter(isActionableAppointment)
+    .filter((appointment) => isOperationalAppointment(appointment, now))
     .reduce((total, appointment) => total + appointment.service.priceCents, 0);
 
   return (
@@ -62,14 +70,20 @@ function AppointmentsOperationsPanel({
   appointments: Appointment[];
   onStatus: (appointmentId: string, status: "completed" | "no_show" | "cancelled_by_business") => void;
 }) {
+  const now = useLiveNow();
   const [statusFilter, setStatusFilter] = useState<"active" | Appointment["status"]>("active");
   const [query, setQuery] = useState("");
   const filteredAppointments = appointments
     .filter((appointment) => {
       if (statusFilter === "active") {
-        return isActionableAppointment(appointment);
+        return isOperationalAppointment(appointment, now);
       }
-      return appointment.status === statusFilter;
+
+      if (appointment.status !== statusFilter) {
+        return false;
+      }
+
+      return !isActionableAppointment(appointment) || isOperationalAppointment(appointment, now);
     })
     .filter((appointment) => {
       const normalizedQuery = query.trim().toLowerCase();
@@ -129,7 +143,7 @@ function AppointmentsOperationsPanel({
       {appointments.length === 0 ? (
         <EmptyState compact title="Todavia no hay turnos" description="Cuando un cliente reserve, vas a poder operarlo desde esta tabla." />
       ) : filteredAppointments.length === 0 ? (
-        <EmptyState compact title="Sin agenda operativa" description="No hay turnos activos que coincidan con el filtro actual." />
+        <EmptyState compact title="Sin agenda operativa" description="No hay turnos vigentes que coincidan con el filtro actual." />
       ) : (
         <div className="table-shell">
           <table className="data-table appointments-table">
@@ -147,9 +161,12 @@ function AppointmentsOperationsPanel({
             <tbody>
               {filteredAppointments.map((appointment) => {
                 const actionable = isActionableAppointment(appointment);
+                const displayStatus = appointmentDisplayStatus(appointment, now);
+                const timingHint = appointmentTimingHint(appointment, now);
+                const upcoming = isUpcomingAppointment(appointment, now);
 
                 return (
-                  <tr key={appointment.id}>
+                  <tr className={displayStatus.overdue ? styles.overdueRow : undefined} key={appointment.id}>
                     <td>
                       <div className="table-primary">
                         <strong>{capitalizeFirst(appointment.customer.name)}</strong>
@@ -168,9 +185,16 @@ function AppointmentsOperationsPanel({
                       <div className="table-primary">
                         <strong>{formatDateTime(appointment.startsAt)}</strong>
                         <span>Fin: {formatDateTime(appointment.endsAt)}</span>
+                        {timingHint ? <span className={upcoming ? styles.upcomingHint : styles.liveHint}>{timingHint}</span> : null}
                       </div>
                     </td>
-                    <td><span className={statusClass(appointment.status)}>{appointmentStatusLabel(appointment.status)}</span></td>
+                    <td>
+                      <div className={styles.statusCell}>
+                        <span className={displayStatus.className}>{displayStatus.label}</span>
+                        {upcoming ? <span className={styles.upcomingMeta}>Proximo</span> : null}
+                        {!upcoming && actionable ? <span className={styles.liveMeta}>En curso</span> : null}
+                      </div>
+                    </td>
                     <td>{formatMoney(appointment.service.priceCents)}</td>
                     <td>
                       <div className="appointment-actions">
@@ -212,6 +236,7 @@ function AppointmentsOperationsPanel({
 }
 
 function AppointmentHistoryPanel({ appointments }: { appointments: Appointment[] }) {
+  const now = useLiveNow();
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"closed" | Appointment["status"] | "all">("closed");
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
@@ -225,10 +250,18 @@ function AppointmentHistoryPanel({ appointments }: { appointments: Appointment[]
       }
 
       if (statusFilter === "closed") {
-        return !isActionableAppointment(appointment);
+        return !isOperationalAppointment(appointment, now);
       }
 
-      return appointment.status === statusFilter;
+      if (appointment.status !== statusFilter) {
+        return false;
+      }
+
+      if (isActionableAppointment(appointment)) {
+        return !isOperationalAppointment(appointment, now);
+      }
+
+      return true;
     })
     .filter((appointment) => matchesDateRange(appointment, fromDate, toDate))
     .filter((appointment) => {
@@ -272,7 +305,7 @@ function AppointmentHistoryPanel({ appointments }: { appointments: Appointment[]
       profesional: capitalizeFirst(appointment.staffMember.name),
       inicio: formatDateTime(appointment.startsAt),
       fin: formatDateTime(appointment.endsAt),
-      estado: appointmentStatusLabel(appointment.status),
+      estado: appointmentDisplayStatus(appointment, now).label,
       valor: formatMoney(appointment.service.priceCents)
     }));
 
@@ -376,28 +409,43 @@ function AppointmentHistoryPanel({ appointments }: { appointments: Appointment[]
               </tr>
             </thead>
             <tbody>
-              {historyAppointments.map((appointment) => (
-                <tr key={appointment.id}>
-                  <td>
-                    <div className="table-primary">
-                      <strong>{capitalizeFirst(appointment.customer.name)}</strong>
-                      <span>{appointment.customer.email}</span>
-                      {appointment.customer.phone ? <span>{appointment.customer.phone}</span> : null}
-                    </div>
-                  </td>
-                  <td>
-                    <div className="table-primary">
-                      <strong>{appointment.service.name}</strong>
-                      <span>{appointment.service.durationMinutes} min</span>
-                    </div>
-                  </td>
-                  <td>{capitalizeFirst(appointment.staffMember.name)}</td>
-                  <td>{formatDateTime(appointment.startsAt)}</td>
-                  <td>{formatDateTime(appointment.endsAt)}</td>
-                  <td><span className={statusClass(appointment.status)}>{appointmentStatusLabel(appointment.status)}</span></td>
-                  <td>{formatMoney(appointment.service.priceCents)}</td>
-                </tr>
-              ))}
+              {historyAppointments.map((appointment) => {
+                const displayStatus = appointmentDisplayStatus(appointment, now);
+                const timingHint = appointmentTimingHint(appointment, now);
+
+                return (
+                  <tr className={displayStatus.overdue ? styles.overdueRow : undefined} key={appointment.id}>
+                    <td>
+                      <div className="table-primary">
+                        <strong>{capitalizeFirst(appointment.customer.name)}</strong>
+                        <span>{appointment.customer.email}</span>
+                        {appointment.customer.phone ? <span>{appointment.customer.phone}</span> : null}
+                      </div>
+                    </td>
+                    <td>
+                      <div className="table-primary">
+                        <strong>{appointment.service.name}</strong>
+                        <span>{appointment.service.durationMinutes} min</span>
+                      </div>
+                    </td>
+                    <td>{capitalizeFirst(appointment.staffMember.name)}</td>
+                    <td>{formatDateTime(appointment.startsAt)}</td>
+                    <td>
+                      <div className="table-primary">
+                        <strong>{formatDateTime(appointment.endsAt)}</strong>
+                        {displayStatus.overdue && timingHint ? <span className={styles.overdueHint}>{timingHint}</span> : null}
+                      </div>
+                    </td>
+                    <td>
+                      <div className={styles.statusCell}>
+                        <span className={displayStatus.className}>{displayStatus.label}</span>
+                        {displayStatus.overdue ? <span className={styles.overdueMeta}>No hubo asistencia confirmada</span> : null}
+                      </div>
+                    </td>
+                    <td>{formatMoney(appointment.service.priceCents)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -423,4 +471,18 @@ function matchesDateRange(appointment: Appointment, fromDate: string, toDate: st
 function escapeCsvValue(value: string): string {
   const normalizedValue = value.replaceAll("\"", "\"\"");
   return `"${normalizedValue}"`;
+}
+
+function useLiveNow(): number {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setNow(Date.now());
+    }, 60_000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  return now;
 }

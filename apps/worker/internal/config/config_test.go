@@ -7,12 +7,19 @@ func TestLoadUsesDefaultsWhenEnvironmentIsEmpty(t *testing.T) {
 	t.Setenv("DATABASE_URL", "")
 	t.Setenv("EMAIL_FROM", "")
 	t.Setenv("EMAIL_TRANSPORT", "")
+	t.Setenv("MAX_NOTIFICATION_ATTEMPTS", "")
 	t.Setenv("RABBITMQ_URL", "")
+	t.Setenv("RABBITMQ_PREFETCH", "")
+	t.Setenv("REMINDER_BATCH_SIZE", "")
+	t.Setenv("SCHEDULER_INTERVAL_SECONDS", "")
 	t.Setenv("SMTP_HOST", "")
 	t.Setenv("SMTP_PASSWORD", "")
 	t.Setenv("SMTP_PORT", "")
 	t.Setenv("SMTP_TIMEOUT_SECONDS", "")
 	t.Setenv("SMTP_USER", "")
+	t.Setenv("ATTENDANCE_BATCH_SIZE", "")
+	t.Setenv("WORKER_CONCURRENCY", "")
+	t.Setenv("WORKER_MODE", "")
 
 	cfg := Load()
 
@@ -30,6 +37,27 @@ func TestLoadUsesDefaultsWhenEnvironmentIsEmpty(t *testing.T) {
 	}
 	if cfg.RabbitMQURL != "amqp://guest:guest@localhost:5672/" {
 		t.Fatalf("unexpected rabbitmq url %q", cfg.RabbitMQURL)
+	}
+	if cfg.WorkerMode != WorkerModeAll {
+		t.Fatalf("unexpected worker mode %q", cfg.WorkerMode)
+	}
+	if cfg.WorkerConcurrency != 4 {
+		t.Fatalf("unexpected worker concurrency %d", cfg.WorkerConcurrency)
+	}
+	if cfg.RabbitMQPrefetch != 8 {
+		t.Fatalf("unexpected rabbitmq prefetch %d", cfg.RabbitMQPrefetch)
+	}
+	if cfg.ReminderBatchSize != 25 {
+		t.Fatalf("unexpected reminder batch size %d", cfg.ReminderBatchSize)
+	}
+	if cfg.AttendanceBatchSize != 25 {
+		t.Fatalf("unexpected attendance batch size %d", cfg.AttendanceBatchSize)
+	}
+	if cfg.MaxNotificationAttempts != 3 {
+		t.Fatalf("unexpected max notification attempts %d", cfg.MaxNotificationAttempts)
+	}
+	if cfg.SchedulerIntervalSeconds != 60 {
+		t.Fatalf("unexpected scheduler interval %d", cfg.SchedulerIntervalSeconds)
 	}
 	if cfg.SMTPHost != "smtp.gmail.com" {
 		t.Fatalf("unexpected smtp host %q", cfg.SMTPHost)
@@ -53,12 +81,19 @@ func TestLoadUsesEnvironmentOverrides(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://db.example/turnoflow")
 	t.Setenv("EMAIL_FROM", "TurnoFlow <mail@example.test>")
 	t.Setenv("EMAIL_TRANSPORT", "smtp")
+	t.Setenv("MAX_NOTIFICATION_ATTEMPTS", "5")
 	t.Setenv("RABBITMQ_URL", "amqp://rabbit.example:5672/")
+	t.Setenv("RABBITMQ_PREFETCH", "12")
+	t.Setenv("REMINDER_BATCH_SIZE", "40")
+	t.Setenv("SCHEDULER_INTERVAL_SECONDS", "30")
 	t.Setenv("SMTP_HOST", "smtp.example.test")
 	t.Setenv("SMTP_PASSWORD", "secret")
 	t.Setenv("SMTP_PORT", "2525")
 	t.Setenv("SMTP_TIMEOUT_SECONDS", "5")
 	t.Setenv("SMTP_USER", "mail@example.test")
+	t.Setenv("ATTENDANCE_BATCH_SIZE", "35")
+	t.Setenv("WORKER_CONCURRENCY", "6")
+	t.Setenv("WORKER_MODE", WorkerModeConsumer)
 
 	cfg := Load()
 
@@ -77,6 +112,27 @@ func TestLoadUsesEnvironmentOverrides(t *testing.T) {
 	if cfg.RabbitMQURL != "amqp://rabbit.example:5672/" {
 		t.Fatalf("unexpected rabbitmq url %q", cfg.RabbitMQURL)
 	}
+	if cfg.WorkerMode != WorkerModeConsumer {
+		t.Fatalf("unexpected worker mode %q", cfg.WorkerMode)
+	}
+	if cfg.WorkerConcurrency != 6 {
+		t.Fatalf("unexpected worker concurrency %d", cfg.WorkerConcurrency)
+	}
+	if cfg.RabbitMQPrefetch != 12 {
+		t.Fatalf("unexpected rabbitmq prefetch %d", cfg.RabbitMQPrefetch)
+	}
+	if cfg.ReminderBatchSize != 40 {
+		t.Fatalf("unexpected reminder batch size %d", cfg.ReminderBatchSize)
+	}
+	if cfg.AttendanceBatchSize != 35 {
+		t.Fatalf("unexpected attendance batch size %d", cfg.AttendanceBatchSize)
+	}
+	if cfg.MaxNotificationAttempts != 5 {
+		t.Fatalf("unexpected max notification attempts %d", cfg.MaxNotificationAttempts)
+	}
+	if cfg.SchedulerIntervalSeconds != 30 {
+		t.Fatalf("unexpected scheduler interval %d", cfg.SchedulerIntervalSeconds)
+	}
 	if cfg.SMTPHost != "smtp.example.test" {
 		t.Fatalf("unexpected smtp host %q", cfg.SMTPHost)
 	}
@@ -91,5 +147,50 @@ func TestLoadUsesEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.SMTPPassword != "secret" {
 		t.Fatalf("unexpected smtp password %q", cfg.SMTPPassword)
+	}
+}
+
+func TestLoadFallsBackForInvalidPositiveIntegers(t *testing.T) {
+	t.Setenv("WORKER_CONCURRENCY", "-1")
+	t.Setenv("RABBITMQ_PREFETCH", "0")
+	t.Setenv("REMINDER_BATCH_SIZE", "nope")
+
+	cfg := Load()
+
+	if cfg.WorkerConcurrency != 4 {
+		t.Fatalf("unexpected worker concurrency %d", cfg.WorkerConcurrency)
+	}
+	if cfg.RabbitMQPrefetch != 8 {
+		t.Fatalf("unexpected rabbitmq prefetch %d", cfg.RabbitMQPrefetch)
+	}
+	if cfg.ReminderBatchSize != 25 {
+		t.Fatalf("unexpected reminder batch size %d", cfg.ReminderBatchSize)
+	}
+}
+
+func TestValidateRejectsInvalidWorkerMode(t *testing.T) {
+	cfg := Load()
+	cfg.WorkerMode = "sidecar"
+
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected invalid worker mode error")
+	}
+}
+
+func TestWorkerModePredicates(t *testing.T) {
+	cfg := Load()
+	cfg.WorkerMode = WorkerModeAll
+	if !cfg.ShouldRunConsumer() || !cfg.ShouldRunScheduler() {
+		t.Fatal("all mode should run consumer and scheduler")
+	}
+
+	cfg.WorkerMode = WorkerModeConsumer
+	if !cfg.ShouldRunConsumer() || cfg.ShouldRunScheduler() {
+		t.Fatal("consumer mode should only run consumer")
+	}
+
+	cfg.WorkerMode = WorkerModeScheduler
+	if cfg.ShouldRunConsumer() || !cfg.ShouldRunScheduler() {
+		t.Fatal("scheduler mode should only run scheduler")
 	}
 }
