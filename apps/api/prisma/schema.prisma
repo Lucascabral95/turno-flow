@@ -68,6 +68,14 @@ enum CustomerRiskLevel {
   @@map("customer_risk_level")
 }
 
+enum BusinessMemberRole {
+  OWNER        @map("owner")
+  RECEPTIONIST @map("receptionist")
+  PROFESSIONAL @map("professional")
+
+  @@map("business_member_role")
+}
+
 model User {
   id           String     @id @default(uuid()) @db.Uuid
   email        String     @unique
@@ -75,6 +83,8 @@ model User {
   name         String
   businesses   Business[]
   refreshTokens RefreshToken[]
+  memberships  BusinessMember[]
+  auditLogs    AuditLog[]
   createdAt    DateTime   @default(now()) @map("created_at")
   updatedAt    DateTime   @updatedAt @map("updated_at")
 
@@ -119,8 +129,29 @@ model Business {
   eventOutbox       EventOutbox[]
   reminderSettings  BusinessReminderSettings?
   metricsDaily      BusinessMetricsDaily[]
+  members           BusinessMember[]
+  auditLogs         AuditLog[]
 
   @@map("businesses")
+}
+
+model BusinessMember {
+  id            String             @id @default(uuid()) @db.Uuid
+  businessId    String             @map("business_id") @db.Uuid
+  business      Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  userId        String             @map("user_id") @db.Uuid
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  staffMemberId String?            @map("staff_member_id") @db.Uuid
+  staffMember   StaffMember?       @relation(fields: [staffMemberId], references: [id], onDelete: SetNull)
+  role          BusinessMemberRole
+  active        Boolean            @default(true)
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
+
+  @@unique([businessId, userId])
+  @@index([businessId, role])
+  @@index([userId, active])
+  @@map("business_members")
 }
 
 model StaffMember {
@@ -135,6 +166,7 @@ model StaffMember {
   appointments      Appointment[]
   availabilityRules AvailabilityRule[]
   availabilityExceptions AvailabilityException[]
+  memberships      BusinessMember[]
 
   @@index([businessId])
   @@map("staff_members")
@@ -363,6 +395,27 @@ model AppointmentEvent {
 
   @@index([businessId, appointmentId])
   @@map("appointment_events")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  userId     String?  @map("user_id") @db.Uuid
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String
+  entity     String
+  entityId   String   @map("entity_id")
+  before     Json?
+  after      Json?
+  metadata   Json?
+  requestId  String?  @map("request_id")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([businessId, createdAt])
+  @@index([businessId, entity, entityId])
+  @@index([userId, createdAt])
+  @@map("audit_logs")
 }
 
 model EventOutbox {

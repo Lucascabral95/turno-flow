@@ -29,6 +29,19 @@ export class CancelAppointmentDto {
   token!: string;
 }
 
+export class RescheduleAppointmentDto {
+  @IsISO8601()
+  startsAt!: string;
+
+  @IsUUID()
+  @IsOptional()
+  staffMemberId?: string;
+
+  @IsString()
+  @IsOptional()
+  token?: string;
+}
+
 export class CreateWaitlistEntryDto {
   @IsUUID()
   serviceId!: string;

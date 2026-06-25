@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, BellRing, CalendarClock, CalendarDays, ClipboardList, ExternalLink, Home, LogIn, RefreshCcw, Settings2, UserPlus } from "lucide-react";
+import { BarChart3, BellRing, CalendarClock, CalendarDays, ClipboardList, ExternalLink, Home, LogIn, RefreshCcw, Settings2, UserPlus, Users } from "lucide-react";
 import Link from "next/link";
 import type { FormEvent, ReactNode } from "react";
 
@@ -160,6 +160,7 @@ function DashboardTabs({ activeView }: { activeView: DashboardView }) {
       <TabLink active={activeView === "setup"} href="/dashboard/configuracion" icon={<Settings2 size={18} />} label="Configuracion" />
       <TabLink active={activeView === "schedule"} href="/dashboard/disponibilidad" icon={<CalendarDays size={18} />} label="Disponibilidad" />
       <TabLink active={activeView === "appointments"} href="/dashboard/turnos" icon={<ClipboardList size={18} />} label="Turnos" />
+      <TabLink active={activeView === "customers"} href="/dashboard/clientes" icon={<Users size={18} />} label="Clientes" />
       <TabLink active={activeView === "reminders"} href="/dashboard/recordatorios" icon={<BellRing size={18} />} label="Recordatorios" />
       <TabLink active={activeView === "booking"} href="/dashboard/reservar" icon={<CalendarClock size={18} />} label="Reservar" />
       <TabLink active={activeView === "metrics"} href="/dashboard/metricas" icon={<BarChart3 size={18} />} label="Metricas" />
@@ -195,6 +196,10 @@ function viewMeta(view: DashboardView): { description: string; title: string } {
     home: {
       description: "Resumen operativo para entender agenda, ingresos y riesgos.",
       title: "Inicio"
+    },
+    customers: {
+      description: "Historial, recurrencia, gasto estimado y riesgo por cliente.",
+      title: "Clientes"
     },
     metrics: {
       description: "Mide ocupacion, no-shows, ingresos estimados y clientes riesgosos.",

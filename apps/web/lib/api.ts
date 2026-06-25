@@ -4,6 +4,7 @@ export type {
   AvailabilityRule,
   AvailabilitySlot,
   Business,
+  CustomerProfile,
   CurrentBusiness,
   DashboardMetrics,
   NotificationHistoryItem,

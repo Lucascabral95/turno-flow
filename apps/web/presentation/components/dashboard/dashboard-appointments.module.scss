@@ -111,6 +111,35 @@
   }
 }
 
+.rescheduleForm {
+  background: $surface-soft;
+  border: 1px solid $border;
+  border-radius: $radius;
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 12px;
+  text-align: left;
+
+  label {
+    color: $muted;
+    display: grid;
+    font-size: 0.78rem;
+    font-weight: 780;
+    gap: 6px;
+  }
+
+  input {
+    min-width: 220px;
+  }
+
+  div {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+}
+
 @media (max-width: 860px) {
   .appointmentsView {
     :global(.appointments-command) {
@@ -131,6 +160,17 @@
 
       button {
         width: 100%;
+      }
+    }
+
+    .rescheduleForm {
+      input {
+        min-width: 0;
+        width: 100%;
+      }
+
+      div {
+        display: grid;
       }
     }
   }

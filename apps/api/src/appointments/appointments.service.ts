@@ -1,6 +1,7 @@
 import { ConflictException, HttpException, Injectable, NotFoundException } from "@nestjs/common";
 import { AppointmentStatus, Prisma, WaitlistOfferStatus, WaitlistStatus } from "@prisma/client";
 
+import { AuditService } from "../audit/audit.service";
 import type { AuthenticatedUser } from "../common/authenticated-user";
 import { createPublicToken } from "../common/tokens";
 import { dateOnly, parseDateOnly, weekdayUtc } from "../common/time";
@@ -16,6 +17,7 @@ import type {
   CancelAppointmentDto,
   CreatePublicAppointmentDto,
   CreateWaitlistEntryDto,
+  RescheduleAppointmentDto,
   UpdateAppointmentStatusDto
 } from "./dto/appointment.dto";
 
@@ -50,6 +52,7 @@ type WaitlistOfferForRejection = Prisma.WaitlistOfferGetPayload<{
 @Injectable()
 export class AppointmentsService {
   constructor(
+    private readonly audit: AuditService,
     private readonly businesses: BusinessesService,
     private readonly outbox: OutboxService,
     private readonly prisma: PrismaService
@@ -234,6 +237,24 @@ export class AppointmentsService {
     return this.serializeAppointment(cancelledAppointment);
   }
 
+  async reschedulePublicAppointment(appointmentId: string, input: RescheduleAppointmentDto) {
+    const appointment = await this.prisma.appointment.findUnique({
+      where: { id: appointmentId }
+    });
+
+    if (!appointment || appointment.cancellationToken !== input.token) {
+      throw new NotFoundException("Appointment not found");
+    }
+
+    return this.rescheduleAppointment({
+      appointmentId,
+      requestedBy: null,
+      source: "public",
+      staffMemberId: input.staffMemberId,
+      startsAt: input.startsAt
+    });
+  }
+
   async createWaitlistEntry(slug: string, input: CreateWaitlistEntryDto) {
     const business = await this.getPublicBusiness(slug);
     return this.createWaitlistEntryForBusiness(business.id, input);
@@ -330,6 +351,26 @@ export class AppointmentsService {
 
   async updatePrivateAppointmentStatus(user: AuthenticatedUser, appointmentId: string, input: UpdateAppointmentStatusDto) {
     return this.updatePrivateAppointmentStatusValue(user, appointmentId, input.status);
+  }
+
+  async reschedulePrivateAppointment(user: AuthenticatedUser, appointmentId: string, input: RescheduleAppointmentDto) {
+    const business = await this.businesses.requireCurrentBusiness(user);
+    const appointment = await this.prisma.appointment.findFirst({
+      select: { id: true },
+      where: { businessId: business.id, id: appointmentId }
+    });
+
+    if (!appointment) {
+      throw new NotFoundException("Appointment not found");
+    }
+
+    return this.rescheduleAppointment({
+      appointmentId,
+      requestedBy: user,
+      source: "dashboard",
+      staffMemberId: input.staffMemberId,
+      startsAt: input.startsAt
+    });
   }
 
   async listPrivateWaitlistEntries(user: AuthenticatedUser) {
@@ -630,6 +671,112 @@ export class AppointmentsService {
     return this.serializeAppointment(updatedAppointment);
   }
 
+  private async rescheduleAppointment(input: {
+    appointmentId: string;
+    startsAt: string;
+    staffMemberId: string | undefined;
+    requestedBy: AuthenticatedUser | null;
+    source: "dashboard" | "public";
+  }) {
+    const startsAt = new Date(input.startsAt);
+
+    if (Number.isNaN(startsAt.getTime())) {
+      throw new ConflictException("Invalid appointment start date");
+    }
+
+    if (startsAt <= new Date()) {
+      throw new ConflictException("Cannot reschedule an appointment to the past");
+    }
+
+    try {
+      const appointment = await this.prisma.$transaction(async (tx) => {
+        const current = await tx.appointment.findUnique({
+          include: { customer: true, service: true, staffMember: true },
+          where: { id: input.appointmentId }
+        });
+
+        if (!current) {
+          throw new NotFoundException("Appointment not found");
+        }
+
+        if (!activeAppointmentStatuses.includes(current.status)) {
+          throw new ConflictException("Only active appointments can be rescheduled");
+        }
+
+        const staffMemberId = input.staffMemberId ?? current.staffMemberId;
+        await this.assertStaffMemberCanTakeSlot(
+          tx,
+          current.businessId,
+          current.serviceId,
+          staffMemberId,
+          startsAt,
+          current.id
+        );
+
+        const endsAt = new Date(startsAt.getTime() + (current.service.durationMinutes + current.service.bufferMinutes) * 60_000);
+        const updated = await tx.appointment.update({
+          data: {
+            endsAt,
+            staffMemberId,
+            startsAt
+          },
+          include: { customer: true, service: true, staffMember: true },
+          where: { id: current.id }
+        });
+
+        await tx.appointmentEvent.create({
+          data: {
+            appointmentId: current.id,
+            businessId: current.businessId,
+            eventType: EventTypes.AppointmentRescheduled,
+            metadata: {
+              fromEndsAt: current.endsAt.toISOString(),
+              fromStartsAt: current.startsAt.toISOString(),
+              source: input.source,
+              toEndsAt: updated.endsAt.toISOString(),
+              toStartsAt: updated.startsAt.toISOString()
+            }
+          }
+        });
+
+        await this.audit.create(tx, {
+          action: "appointment.rescheduled",
+          after: this.appointmentPayload(updated),
+          before: this.appointmentPayload(current),
+          businessId: current.businessId,
+          entity: "appointment",
+          entityId: current.id,
+          metadata: { source: input.source },
+          user: input.requestedBy
+        });
+
+        await this.outbox.create(tx, {
+          aggregateId: current.id,
+          businessId: current.businessId,
+          payload: {
+            ...this.appointmentPayload(updated),
+            previousEndsAt: current.endsAt.toISOString(),
+            previousStartsAt: current.startsAt.toISOString(),
+            source: input.source
+          },
+          routingKey: EventRoutingKeys.AppointmentRescheduled,
+          type: EventTypes.AppointmentRescheduled,
+          version: 1
+        });
+
+        return updated;
+      });
+
+      return this.serializeAppointment(appointment);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      throw new ConflictException("Appointment slot is no longer available");
+    }
+  }
+
   private async createAppointmentInTransaction(input: {
     businessId: string;
     serviceId: string;
@@ -786,7 +933,8 @@ export class AppointmentsService {
     businessId: string,
     serviceId: string,
     staffMemberId: string,
-    startsAt: Date
+    startsAt: Date,
+    excludeAppointmentId?: string
   ): Promise<void> {
     const staffMember = await tx.staffMember.findFirst({
       where: {
@@ -800,7 +948,7 @@ export class AppointmentsService {
       throw new NotFoundException("Staff member not found");
     }
 
-    const slots = await this.getAvailabilityForTransaction(tx, businessId, serviceId, dateOnly(startsAt));
+    const slots = await this.getAvailabilityForTransaction(tx, businessId, serviceId, dateOnly(startsAt), excludeAppointmentId);
     const matchingSlot = slots.find(
       (slot) => slot.staffMemberId === staffMemberId && slot.startsAt.getTime() === startsAt.getTime()
     );
@@ -814,7 +962,8 @@ export class AppointmentsService {
     tx: Prisma.TransactionClient,
     businessId: string,
     serviceId: string,
-    date: string
+    date: string,
+    excludeAppointmentId?: string
   ): Promise<AvailabilitySlot[]> {
     const requestedDate = parseDateOnly(date);
     const nextDate = new Date(requestedDate);
@@ -860,6 +1009,7 @@ export class AppointmentsService {
         },
         where: {
           businessId,
+          id: excludeAppointmentId ? { not: excludeAppointmentId } : undefined,
           startsAt: { lt: nextDate },
           status: { in: activeAppointmentStatuses },
           endsAt: { gt: requestedDate }

@@ -4,7 +4,7 @@ import { AuthGuard } from "../auth/auth.guard";
 import type { AuthenticatedUser } from "../common/authenticated-user";
 import { CurrentUser } from "../common/current-user.decorator";
 import { AppointmentsService } from "./appointments.service";
-import { CreateWaitlistEntryDto, UpdateAppointmentStatusDto } from "./dto/appointment.dto";
+import { CreateWaitlistEntryDto, RescheduleAppointmentDto, UpdateAppointmentStatusDto } from "./dto/appointment.dto";
 
 @UseGuards(AuthGuard)
 @Controller("appointments")
@@ -29,6 +29,15 @@ export class AppointmentsController {
   @Patch(":id/cancel")
   cancel(@CurrentUser() user: AuthenticatedUser, @Param("id", ParseUUIDPipe) id: string) {
     return this.appointments.cancelPrivateAppointment(user, id);
+  }
+
+  @Patch(":id/reschedule")
+  reschedule(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() input: RescheduleAppointmentDto
+  ) {
+    return this.appointments.reschedulePrivateAppointment(user, id, input);
   }
 
   @Patch(":id/complete")

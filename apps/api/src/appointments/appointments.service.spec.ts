@@ -52,6 +52,10 @@ type TransactionMock = {
 };
 
 describe("AppointmentsService", () => {
+  const audit = {
+    create: vi.fn()
+  };
+
   it("rejects a pending waitlist offer and emits a reassignment event", async () => {
     const offer = {
       appointmentId: "00000000-0000-0000-0000-000000000002",
@@ -115,7 +119,7 @@ describe("AppointmentsService", () => {
         })
       )
     };
-    const service = new AppointmentsService({} as never, new OutboxService(), prisma as never);
+    const service = new AppointmentsService(audit as never, {} as never, new OutboxService(), prisma as never);
 
     await expect(service.rejectWaitlistOffer("public-token")).resolves.toEqual({ status: "rejected" });
 
@@ -230,6 +234,7 @@ describe("AppointmentsService", () => {
       )
     };
     const service = new AppointmentsService(
+      audit as never,
       { requireCurrentBusiness: vi.fn().mockResolvedValue(business) } as never,
       new OutboxService(),
       prisma as never
