@@ -1,7 +1,12 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from "@nestjs/common";
 
 import { AppointmentsService } from "../appointments/appointments.service";
-import { CancelAppointmentDto, CreatePublicAppointmentDto, CreateWaitlistEntryDto } from "../appointments/dto/appointment.dto";
+import {
+  CancelAppointmentDto,
+  CreatePublicAppointmentDto,
+  CreateWaitlistEntryDto,
+  RescheduleAppointmentDto
+} from "../appointments/dto/appointment.dto";
 
 @Controller("public")
 export class PublicController {
@@ -35,6 +40,11 @@ export class PublicController {
   @Post("appointments/:id/cancel")
   cancelAppointment(@Param("id", ParseUUIDPipe) id: string, @Body() input: CancelAppointmentDto) {
     return this.appointments.cancelPublicAppointment(id, input);
+  }
+
+  @Post("appointments/:id/reschedule")
+  rescheduleAppointment(@Param("id", ParseUUIDPipe) id: string, @Body() input: RescheduleAppointmentDto) {
+    return this.appointments.reschedulePublicAppointment(id, input);
   }
 
   @Post("businesses/:slug/waitlist")

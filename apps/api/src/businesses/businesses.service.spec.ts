@@ -4,6 +4,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BusinessesService } from "./businesses.service";
 
 describe("BusinessesService", () => {
+  const audit = {
+    create: vi.fn()
+  };
   const outbox = {
     create: vi.fn()
   };
@@ -52,7 +55,7 @@ describe("BusinessesService", () => {
       businessId: "business-1",
       id: "staff-1"
     });
-    prisma.availabilityRule.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+    prisma.availabilityRule.create.mockImplementation(({ data }: { data: Record<string, unknown> }) => Promise.resolve({
       active: true,
       businessId: "business-1",
       endTime: data.endTime,
@@ -61,7 +64,7 @@ describe("BusinessesService", () => {
       startTime: data.startTime,
       weekday: data.weekday
     }));
-    prisma.availabilityRule.update.mockImplementation(async ({ data, where }: { data: Record<string, unknown>; where: { id: string } }) => ({
+    prisma.availabilityRule.update.mockImplementation(({ data, where }: { data: Record<string, unknown>; where: { id: string } }) => Promise.resolve({
       active: data.active ?? true,
       businessId: "business-1",
       endTime: data.endTime ?? "18:00",
@@ -77,10 +80,10 @@ describe("BusinessesService", () => {
     prisma.availabilityRule.findFirst.mockResolvedValueOnce({
       id: "rule-existing"
     });
-    const service = new BusinessesService(outbox as never, prisma as never);
+    const service = new BusinessesService(audit as never, outbox, prisma as never);
 
     await expect(
-      service.createAvailabilityRule(user as never, {
+      service.createAvailabilityRule(user, {
         endTime: "18:00",
         staffMemberId: "staff-1",
         startTime: "09:00",
@@ -105,10 +108,10 @@ describe("BusinessesService", () => {
       .mockResolvedValueOnce({
         id: "rule-existing"
       });
-    const service = new BusinessesService(outbox as never, prisma as never);
+    const service = new BusinessesService(audit as never, outbox, prisma as never);
 
     await expect(
-      service.updateAvailabilityRule(user as never, "rule-current", {
+      service.updateAvailabilityRule(user, "rule-current", {
         weekday: 1
       })
     ).rejects.toBeInstanceOf(ConflictException);

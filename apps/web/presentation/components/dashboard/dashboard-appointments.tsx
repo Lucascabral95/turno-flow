@@ -21,11 +21,13 @@ export function AppointmentsView({
   appointments,
   business,
   metrics,
+  onReschedule,
   onStatus
 }: {
   appointments: Appointment[];
   business: CurrentBusiness | null;
   metrics: DashboardMetrics | null;
+  onReschedule: (appointmentId: string, startsAt: string) => void;
   onStatus: (appointmentId: string, status: "completed" | "no_show" | "cancelled_by_business") => void;
 }) {
   const now = useLiveNow();
@@ -57,7 +59,7 @@ export function AppointmentsView({
         <Metric icon={<TrendingDown size={18} />} label="Perdida estimada" value={formatMoney(metrics?.lostRevenueCents ?? 0)} tone="warning" />
       </section>
       <InventoryPanel business={business} />
-      <AppointmentsOperationsPanel appointments={appointments} onStatus={onStatus} />
+      <AppointmentsOperationsPanel appointments={appointments} onReschedule={onReschedule} onStatus={onStatus} />
       <AppointmentHistoryPanel appointments={appointments} />
     </section>
   );
@@ -65,12 +67,16 @@ export function AppointmentsView({
 
 function AppointmentsOperationsPanel({
   appointments,
+  onReschedule,
   onStatus
 }: {
   appointments: Appointment[];
+  onReschedule: (appointmentId: string, startsAt: string) => void;
   onStatus: (appointmentId: string, status: "completed" | "no_show" | "cancelled_by_business") => void;
 }) {
   const now = useLiveNow();
+  const [reschedulingId, setReschedulingId] = useState<string | null>(null);
+  const [rescheduleStartsAt, setRescheduleStartsAt] = useState("");
   const [statusFilter, setStatusFilter] = useState<"active" | Appointment["status"]>("active");
   const [query, setQuery] = useState("");
   const filteredAppointments = appointments
@@ -201,6 +207,17 @@ function AppointmentsOperationsPanel({
                         <button
                           className="button-secondary"
                           disabled={!actionable}
+                          onClick={() => {
+                            setReschedulingId(reschedulingId === appointment.id ? null : appointment.id);
+                            setRescheduleStartsAt(toDatetimeLocalValue(appointment.startsAt));
+                          }}
+                          type="button"
+                        >
+                          Reprogramar
+                        </button>
+                        <button
+                          className="button-secondary"
+                          disabled={!actionable}
                           onClick={() => onStatus(appointment.id, "completed")}
                           type="button"
                         >
@@ -223,6 +240,34 @@ function AppointmentsOperationsPanel({
                           Cancelar
                         </button>
                       </div>
+                      {reschedulingId === appointment.id ? (
+                        <form
+                          className={styles.rescheduleForm}
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            if (!rescheduleStartsAt) {
+                              return;
+                            }
+                            onReschedule(appointment.id, new Date(rescheduleStartsAt).toISOString());
+                            setReschedulingId(null);
+                          }}
+                        >
+                          <label>
+                            Nuevo horario
+                            <input
+                              min={toDatetimeLocalValue(new Date().toISOString())}
+                              onChange={(event) => setRescheduleStartsAt(event.target.value)}
+                              required
+                              type="datetime-local"
+                              value={rescheduleStartsAt}
+                            />
+                          </label>
+                          <div>
+                            <button className="button-primary" type="submit">Guardar</button>
+                            <button className="button-muted" onClick={() => setReschedulingId(null)} type="button">Cerrar</button>
+                          </div>
+                        </form>
+                      ) : null}
                     </td>
                   </tr>
                 );
@@ -485,4 +530,10 @@ function useLiveNow(): number {
   }, []);
 
   return now;
+}
+
+function toDatetimeLocalValue(value: string): string {
+  const date = new Date(value);
+  const offsetMs = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
 }

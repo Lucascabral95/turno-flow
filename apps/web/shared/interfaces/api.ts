@@ -140,6 +140,26 @@ export type NotificationHistoryItem = {
   template: string;
 };
 
+export type CustomerProfile = {
+  appointments: Appointment[];
+  completedAppointments: number;
+  email: string;
+  estimatedSpendCents: number;
+  id: string;
+  lastAppointmentAt: string | null;
+  lastRiskCalculatedAt: string | null;
+  name: string;
+  nextAppointmentAt: string | null;
+  noShowCount: number;
+  phone: string | null;
+  recurrenceRate: number;
+  requiresDeposit: boolean;
+  riskLevel: "low" | "medium" | "high";
+  riskScore: number;
+  totalAppointments: number;
+  waitlistEntries: unknown[];
+};
+
 export type CurrentBusiness = Business & {
   availabilityExceptions: AvailabilityException[];
   availabilityRules: AvailabilityRule[];

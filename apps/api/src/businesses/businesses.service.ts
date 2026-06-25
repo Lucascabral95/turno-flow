@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import { type AvailabilityException, type AvailabilityRule, type Service } from "@prisma/client";
+import { BusinessMemberRole, type AvailabilityException, type AvailabilityRule, type Service } from "@prisma/client";
 
+import { AuditService } from "../audit/audit.service";
 import { activeAppointmentStatuses } from "../appointments/status";
 import { calculateAvailability, type AvailabilitySlot } from "../appointments/availability";
 import type { AuthenticatedUser } from "../common/authenticated-user";
@@ -19,6 +20,7 @@ import type { CreateStaffMemberDto, UpdateStaffMemberDto } from "./dto/staff-mem
 @Injectable()
 export class BusinessesService {
   constructor(
+    private readonly audit: AuditService,
     private readonly outbox: OutboxService,
     private readonly prisma: PrismaService
   ) {}
@@ -58,6 +60,28 @@ export class BusinessesService {
         }
       });
 
+      await tx.businessMember.create({
+        data: {
+          businessId: business.id,
+          role: BusinessMemberRole.OWNER,
+          userId: user.id
+        }
+      });
+
+      await this.audit.create(tx, {
+        action: "business.created",
+        after: {
+          email: business.email,
+          name: business.name,
+          slug: business.slug,
+          timezone: business.timezone
+        },
+        businessId: business.id,
+        entity: "business",
+        entityId: business.id,
+        user
+      });
+
       await this.outbox.create(tx, {
         aggregateId: business.id,
         businessId: business.id,
@@ -86,9 +110,23 @@ export class BusinessesService {
   async updateBusiness(user: AuthenticatedUser, businessId: string, input: UpdateBusinessDto) {
     const business = await this.requireBusinessForUser(user, businessId);
 
-    return this.prisma.business.update({
-      data: input,
-      where: { id: business.id }
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.business.update({
+        data: input,
+        where: { id: business.id }
+      });
+
+      await this.audit.create(tx, {
+        action: "business.updated",
+        after: updated,
+        before: business,
+        businessId: business.id,
+        entity: "business",
+        entityId: business.id,
+        user
+      });
+
+      return updated;
     });
   }
 
@@ -145,6 +183,15 @@ export class BusinessesService {
         data: { ...input, businessId: business.id }
       });
 
+      await this.audit.create(tx, {
+        action: "service.created",
+        after: this.servicePayload(service),
+        businessId: business.id,
+        entity: "service",
+        entityId: service.id,
+        user
+      });
+
       await this.outbox.create(tx, {
         aggregateId: service.id,
         businessId: business.id,
@@ -162,9 +209,24 @@ export class BusinessesService {
     const business = await this.requireCurrentBusiness(user);
     await this.requireService(business.id, serviceId);
 
-    return this.prisma.service.update({
-      data: input,
-      where: { id: serviceId }
+    return this.prisma.$transaction(async (tx) => {
+      const before = await tx.service.findUniqueOrThrow({ where: { id: serviceId } });
+      const updated = await tx.service.update({
+        data: input,
+        where: { id: serviceId }
+      });
+
+      await this.audit.create(tx, {
+        action: "service.updated",
+        after: this.servicePayload(updated),
+        before: this.servicePayload(before),
+        businessId: business.id,
+        entity: "service",
+        entityId: serviceId,
+        user
+      });
+
+      return updated;
     });
   }
 
@@ -184,8 +246,21 @@ export class BusinessesService {
   async createStaffMember(user: AuthenticatedUser, input: CreateStaffMemberDto) {
     const business = await this.requireCurrentBusiness(user);
 
-    return this.prisma.staffMember.create({
-      data: { ...input, businessId: business.id }
+    return this.prisma.$transaction(async (tx) => {
+      const staffMember = await tx.staffMember.create({
+        data: { ...input, businessId: business.id }
+      });
+
+      await this.audit.create(tx, {
+        action: "staff.created",
+        after: staffMember,
+        businessId: business.id,
+        entity: "staff_member",
+        entityId: staffMember.id,
+        user
+      });
+
+      return staffMember;
     });
   }
 
@@ -193,9 +268,24 @@ export class BusinessesService {
     const business = await this.requireCurrentBusiness(user);
     await this.requireStaffMember(business.id, staffMemberId);
 
-    return this.prisma.staffMember.update({
-      data: input,
-      where: { id: staffMemberId }
+    return this.prisma.$transaction(async (tx) => {
+      const before = await tx.staffMember.findUniqueOrThrow({ where: { id: staffMemberId } });
+      const updated = await tx.staffMember.update({
+        data: input,
+        where: { id: staffMemberId }
+      });
+
+      await this.audit.create(tx, {
+        action: "staff.updated",
+        after: updated,
+        before,
+        businessId: business.id,
+        entity: "staff_member",
+        entityId: staffMemberId,
+        user
+      });
+
+      return updated;
     });
   }
 
@@ -296,6 +386,15 @@ export class BusinessesService {
     return this.prisma.$transaction(async (tx) => {
       const rule = await tx.availabilityRule.create({
         data: { ...input, businessId: business.id }
+      });
+
+      await this.audit.create(tx, {
+        action: "availability_rule.created",
+        after: this.availabilityRulePayload(rule),
+        businessId: business.id,
+        entity: "availability_rule",
+        entityId: rule.id,
+        user
       });
 
       await this.outbox.create(tx, {
@@ -415,14 +514,39 @@ export class BusinessesService {
     const business = await this.requireCurrentBusiness(user);
     await this.requireAvailabilityException(business.id, exceptionId);
 
-    return this.prisma.availabilityException.delete({
-      where: { id: exceptionId }
+    return this.prisma.$transaction(async (tx) => {
+      const deleted = await tx.availabilityException.delete({
+        where: { id: exceptionId }
+      });
+
+      await this.audit.create(tx, {
+        action: "availability_exception.deleted",
+        before: this.availabilityExceptionPayload(deleted),
+        businessId: business.id,
+        entity: "availability_exception",
+        entityId: exceptionId,
+        user
+      });
+
+      return deleted;
     });
   }
 
   async requireCurrentBusiness(user: AuthenticatedUser) {
     const business = await this.prisma.business.findFirst({
-      where: { ownerId: user.id }
+      where: {
+        OR: [
+          { ownerId: user.id },
+          {
+            members: {
+              some: {
+                active: true,
+                userId: user.id
+              }
+            }
+          }
+        ]
+      }
     });
 
     if (!business) {
@@ -434,7 +558,20 @@ export class BusinessesService {
 
   private async requireBusinessForUser(user: AuthenticatedUser, businessId: string) {
     const business = await this.prisma.business.findFirst({
-      where: { id: businessId, ownerId: user.id }
+      where: {
+        id: businessId,
+        OR: [
+          { ownerId: user.id },
+          {
+            members: {
+              some: {
+                active: true,
+                userId: user.id
+              }
+            }
+          }
+        ]
+      }
     });
 
     if (!business) {

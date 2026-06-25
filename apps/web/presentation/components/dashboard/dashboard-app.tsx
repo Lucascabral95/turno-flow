@@ -21,11 +21,12 @@ import type {
   Appointment,
   AvailabilitySlot,
   CurrentBusiness,
+  CustomerProfile,
   DashboardMetrics,
   NotificationHistoryItem,
   ReminderSettings
 } from "../../../lib/api";
-import { formatMoney, formatSlotTime, requestJson } from "../../../lib/api";
+import { formatDateTime, formatMoney, formatSlotTime, requestJson } from "../../../lib/api";
 import {
   type AvailabilityExceptionFormValues,
   availabilityExceptionFormSchema,
@@ -48,6 +49,7 @@ import {
   capitalizeFirst,
   countCoveredWeekdays,
   formatDateOnly,
+  riskBadgeClass,
   summarizeAvailabilityCoverage,
   weekdayName,
   weekdayOptions
@@ -56,7 +58,7 @@ import { BookingAdminView, HomeView, MetricsPanel } from "./dashboard-overview";
 import { RemindersView } from "./dashboard-reminders";
 import { Alert, EmptyState, InventoryList, LoadingState, Metric, SummaryValue } from "./dashboard-shared";
 import styles from "./dashboard-app.module.scss";
-export type DashboardView = "home" | "setup" | "schedule" | "appointments" | "reminders" | "booking" | "metrics";
+export type DashboardView = "home" | "setup" | "schedule" | "appointments" | "customers" | "reminders" | "booking" | "metrics";
 
 type SubmitResult = Promise<boolean>;
 type AuthMode = "login" | "register";
@@ -66,6 +68,7 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [business, setBusiness] = useState<CurrentBusiness | null>(null);
+  const [customers, setCustomers] = useState<CustomerProfile[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
@@ -103,11 +106,21 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
     setLoading(true);
     setError(null);
     try {
-      const [currentBusiness, currentAppointments, currentMetrics, currentReminderSettings, currentNotificationHistory] = await Promise.all([
+      const [
+        currentBusiness,
+        currentAppointments,
+        currentCustomers,
+        currentMetrics,
+        currentReminderSettings,
+        currentNotificationHistory
+      ] = await Promise.all([
         requestJson<CurrentBusiness | null>("/businesses/current", {
           headers: { Authorization: `Bearer ${activeToken}` }
         }),
         requestJson<Appointment[]>("/appointments", {
+          headers: { Authorization: `Bearer ${activeToken}` }
+        }).catch(() => []),
+        requestJson<CustomerProfile[]>("/customers", {
           headers: { Authorization: `Bearer ${activeToken}` }
         }).catch(() => []),
         requestJson<DashboardMetrics>("/dashboard/metrics", {
@@ -122,6 +135,7 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
       ]);
       setBusiness(currentBusiness);
       setAppointments(currentAppointments);
+      setCustomers(currentCustomers);
       setMetrics(currentMetrics);
       setReminderSettings(currentReminderSettings);
       setNotificationHistory(currentNotificationHistory);
@@ -343,6 +357,22 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
     }
   }
 
+  async function rescheduleAppointment(appointmentId: string, startsAt: string) {
+    setError(null);
+    try {
+      await authRequest(`/appointments/${appointmentId}/reschedule`, {
+        body: JSON.stringify({ startsAt }),
+        method: "PATCH"
+      });
+      await refresh();
+      toast.success("Turno reprogramado");
+    } catch (rescheduleError) {
+      const message = rescheduleError instanceof Error ? rescheduleError.message : "No se pudo reprogramar el turno";
+      setError(message);
+      toast.error(message);
+    }
+  }
+
   async function handleReminderSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
@@ -371,6 +401,7 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
     window.localStorage.removeItem("turnoflow.token");
     setAppointments([]);
     setBusiness(null);
+    setCustomers([]);
     setMetrics(null);
     setNotificationHistory([]);
     setReminderSettings(null);
@@ -432,11 +463,15 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
             appointments={appointments}
             business={business}
             metrics={metrics}
+            onReschedule={(appointmentId, startsAt) => {
+              void rescheduleAppointment(appointmentId, startsAt);
+            }}
             onStatus={(appointmentId, status) => {
               void updateAppointmentStatus(appointmentId, status);
             }}
           />
         ) : null}
+        {activeView === "customers" ? <CustomersView customers={customers} /> : null}
         {activeView === "reminders" ? (
           <RemindersView
             appointments={appointments}
@@ -507,6 +542,120 @@ function SetupView({
           onStaffDelete={onStaffDelete}
           onStaffUpdate={onStaffUpdate}
         />
+      </section>
+    </section>
+  );
+}
+
+function CustomersView({ customers }: { customers: CustomerProfile[] }) {
+  const [query, setQuery] = useState("");
+  const [riskFilter, setRiskFilter] = useState<"all" | CustomerProfile["riskLevel"]>("all");
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredCustomers = customers
+    .filter((customer) => riskFilter === "all" || customer.riskLevel === riskFilter)
+    .filter((customer) => {
+      if (!normalizedQuery) {
+        return true;
+      }
+
+      return [customer.name, customer.email, customer.phone ?? ""].some((value) => value.toLowerCase().includes(normalizedQuery));
+    });
+  const totalEstimatedSpend = filteredCustomers.reduce((total, customer) => total + customer.estimatedSpendCents, 0);
+  const riskyCustomers = filteredCustomers.filter((customer) => customer.riskLevel !== "low").length;
+
+  return (
+    <section className="stack">
+      <section className="appointments-command panel">
+        <div className="appointments-command-copy">
+          <span className="page-kicker">Clientes</span>
+          <h2>Historial, recurrencia y riesgo por cliente.</h2>
+          <p>Analiza quienes vuelven, cuanto gastan y que clientes requieren mas seguimiento antes de confirmar nuevos turnos.</p>
+        </div>
+        <div className="dashboard-banner-stats">
+          <Metric icon={<Users size={18} />} label="Clientes" value={filteredCustomers.length} />
+          <Metric icon={<CheckCircle2 size={18} />} label="Riesgo medio/alto" value={riskyCustomers} tone="warning" />
+          <Metric icon={<CalendarClock size={18} />} label="Gasto estimado" value={formatMoney(totalEstimatedSpend)} />
+        </div>
+      </section>
+
+      <section className="panel stack">
+        <header className="panel-header">
+          <div>
+            <h2 className="inline">
+              <Users size={20} />
+              Panel de clientes
+            </h2>
+            <p>Busca por nombre, email o telefono y prioriza segun riesgo operativo.</p>
+          </div>
+          <span className="badge badge-soft">{filteredCustomers.length} visibles</span>
+        </header>
+
+        <div className="appointments-toolbar">
+          <label>
+            Buscar
+            <input onChange={(event) => setQuery(event.target.value)} placeholder="Nombre, email o telefono" value={query} />
+          </label>
+          <label>
+            Riesgo
+            <select onChange={(event) => setRiskFilter(event.target.value as "all" | CustomerProfile["riskLevel"])} value={riskFilter}>
+              <option value="all">Todos</option>
+              <option value="low">Bajo</option>
+              <option value="medium">Medio</option>
+              <option value="high">Alto</option>
+            </select>
+          </label>
+        </div>
+
+        {customers.length === 0 ? (
+          <EmptyState compact title="Todavia no hay clientes" description="Cuando entren reservas, el historial de clientes va a aparecer aca." />
+        ) : filteredCustomers.length === 0 ? (
+          <EmptyState compact title="Sin coincidencias" description="No hay clientes que coincidan con los filtros actuales." />
+        ) : (
+          <div className="table-shell">
+            <table className="data-table appointments-table">
+              <thead>
+                <tr>
+                  <th>Cliente</th>
+                  <th>Historial</th>
+                  <th>Riesgo</th>
+                  <th>Gasto estimado</th>
+                  <th>Proximo turno</th>
+                  <th>Ultimo turno</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredCustomers.map((customer) => (
+                  <tr key={customer.id}>
+                    <td>
+                      <div className="table-primary">
+                        <strong>{capitalizeFirst(customer.name)}</strong>
+                        <span>{customer.email}</span>
+                        {customer.phone ? <span>{customer.phone}</span> : null}
+                      </div>
+                    </td>
+                    <td>
+                      <div className="table-primary">
+                        <strong>{customer.totalAppointments} turnos</strong>
+                        <span>{customer.completedAppointments} completados · {customer.noShowCount} no-shows</span>
+                        <span>{customer.recurrenceRate}% recurrencia operativa</span>
+                      </div>
+                    </td>
+                    <td>
+                      <div className="table-primary">
+                        <span className={riskBadgeClass(customer.riskLevel)}>{customer.riskLevel}</span>
+                        <span>Score {customer.riskScore}</span>
+                        {customer.requiresDeposit ? <span>Requiere seña sugerida</span> : null}
+                      </div>
+                    </td>
+                    <td>{formatMoney(customer.estimatedSpendCents)}</td>
+                    <td>{customer.nextAppointmentAt ? formatDateTime(customer.nextAppointmentAt) : "Sin proximo turno"}</td>
+                    <td>{customer.lastAppointmentAt ? formatDateTime(customer.lastAppointmentAt) : "Sin historial"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </section>
   );
