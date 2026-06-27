@@ -44,6 +44,7 @@ type DueNotification struct {
 	ID            string
 	Payload       json.RawMessage
 	Template      string
+	Timezone      string
 }
 
 type CustomerAttendance struct {
@@ -76,6 +77,50 @@ type BusinessMetricsDailySnapshot struct {
 	LostRevenueCents      int
 	NoShowAppointments    int
 	TotalAppointments     int
+}
+
+type CalendarAppointment struct {
+	AppointmentID string
+	BusinessID    string
+	CustomerEmail string
+	CustomerName  string
+	CustomerPhone *string
+	EndsAt        time.Time
+	ServiceName   string
+	StaffName     string
+	StartsAt      time.Time
+	Status        string
+	Timezone      string
+}
+
+type CalendarConnection struct {
+	AccessTokenEncrypted  *string
+	BusinessID            string
+	ExpiresAt             *time.Time
+	ID                    string
+	RefreshTokenEncrypted *string
+	StaffMemberID         *string
+}
+
+type CalendarSyncTarget struct {
+	Appointment   CalendarAppointment
+	Connection    *CalendarConnection
+	GoogleEventID *string
+}
+
+type CalendarConnectionTokenUpdate struct {
+	AccessTokenEncrypted string
+	ConnectionID         string
+	ExpiresAt            time.Time
+}
+
+type CalendarEventSyncResult struct {
+	AppointmentID        string
+	BusinessID           string
+	CalendarConnectionID string
+	GoogleEventID        *string
+	LastError            *string
+	Status               string
 }
 
 type NotificationLog struct {
@@ -122,9 +167,13 @@ type Tx interface {
 	CreateScheduledNotification(ctx context.Context, input ScheduledNotificationInput) (string, error)
 	CreateWaitlistOffer(ctx context.Context, input WaitlistOfferInput) (string, error)
 	FindWaitlistCandidate(ctx context.Context, appointment domain.AppointmentPayload) (*domain.WaitlistCandidate, error)
+	GetCalendarSyncTarget(ctx context.Context, appointmentID string) (*CalendarSyncTarget, error)
 	GetCustomerAttendance(ctx context.Context, businessID string, customerID string) (CustomerAttendance, error)
 	GetReminderSettings(ctx context.Context, businessID string) (ReminderSettings, error)
+	MarkCalendarConnectionError(ctx context.Context, connectionID string, status string, lastError string) error
 	MarkWaitlistEntryOffered(ctx context.Context, entryID string) error
 	RecalculateBusinessMetricsDaily(ctx context.Context, businessID string, metricDate time.Time) (BusinessMetricsDailySnapshot, error)
+	RecordCalendarEventSync(ctx context.Context, result CalendarEventSyncResult) error
+	UpdateCalendarConnectionToken(ctx context.Context, update CalendarConnectionTokenUpdate) error
 	UpdateCustomerRisk(ctx context.Context, risk CustomerRiskSnapshot) error
 }

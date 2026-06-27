@@ -41,6 +41,7 @@ func TestRabbitMQContracts(t *testing.T) {
 		"appointment.completed",
 		"appointment.no_show",
 		"appointment.marked_no_show",
+		"appointment.rescheduled",
 		"appointment.reminder_due",
 		"notification.reminder_due",
 		"slot.reassigned",
@@ -50,6 +51,25 @@ func TestRabbitMQContracts(t *testing.T) {
 	}
 	if !reflect.DeepEqual(eventBindingKeys, expectedBindings) {
 		t.Fatalf("unexpected binding keys %#v", eventBindingKeys)
+	}
+}
+
+func TestCreateCalendarSyncUsesGoogleCalendarConfig(t *testing.T) {
+	key := "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI="
+	calendarClient, tokenCodec, err := createCalendarSync(config.Config{
+		CalendarTokenEncryptionKey:   key,
+		GoogleCalendarClientID:       "client-id",
+		GoogleCalendarClientSecret:   "client-secret",
+		GoogleCalendarTimeoutSeconds: 5,
+	})
+	if err != nil {
+		t.Fatalf("create calendar sync: %v", err)
+	}
+	if _, ok := calendarClient.(*worker.GoogleCalendarClient); !ok {
+		t.Fatalf("expected GoogleCalendarClient, got %T", calendarClient)
+	}
+	if _, ok := tokenCodec.(*worker.AESGCMTokenCodec); !ok {
+		t.Fatalf("expected AESGCMTokenCodec, got %T", tokenCodec)
 	}
 }
 

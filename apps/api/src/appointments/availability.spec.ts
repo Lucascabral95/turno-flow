@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { calculateAvailability } from "./availability";
 
+const referenceNow = new Date("2026-06-15T12:00:00.000Z");
+
 describe("calculateAvailability", () => {
   it("generates slots by staff member while excluding busy overlaps", () => {
     const slots = calculateAvailability({
@@ -17,6 +19,7 @@ describe("calculateAvailability", () => {
       date: "2026-06-16",
       durationMinutes: 30,
       exceptions: [],
+      now: referenceNow,
       rules: [
         {
           endTime: "10:30",
@@ -27,7 +30,6 @@ describe("calculateAvailability", () => {
     });
 
     expect(slots.map((slot) => slot.startsAt.toISOString())).toEqual([
-      "2026-06-16T09:45:00.000Z",
       "2026-06-16T10:00:00.000Z"
     ]);
   });
@@ -40,6 +42,7 @@ describe("calculateAvailability", () => {
       date: "2026-06-16",
       durationMinutes: 30,
       exceptions: [],
+      now: referenceNow,
       rules: [
         {
           endTime: "10:00",
@@ -49,9 +52,8 @@ describe("calculateAvailability", () => {
       ]
     });
 
-    expect(slots).toHaveLength(2);
+    expect(slots).toHaveLength(1);
     expect(slots[0]?.endsAt.toISOString()).toBe("2026-06-16T09:45:00.000Z");
-    expect(slots[1]?.endsAt.toISOString()).toBe("2026-06-16T10:00:00.000Z");
   });
 
   it("removes slots that overlap a blocking exception", () => {
@@ -69,6 +71,7 @@ describe("calculateAvailability", () => {
           type: "BLOCKED"
         }
       ],
+      now: referenceNow,
       rules: [
         {
           endTime: "10:30",
@@ -99,13 +102,84 @@ describe("calculateAvailability", () => {
           type: "EXTRA_OPENING"
         }
       ],
+      now: referenceNow,
       rules: []
     });
 
     expect(slots.map((slot) => slot.startsAt.toISOString())).toEqual([
       "2026-06-16T11:00:00.000Z",
-      "2026-06-16T11:15:00.000Z",
       "2026-06-16T11:30:00.000Z"
     ]);
+  });
+
+  it("generates slots in the business timezone", () => {
+    const slots = calculateAvailability({
+      activeStaffMemberIds: ["staff-1"],
+      bufferMinutes: 0,
+      busySlots: [],
+      date: "2026-06-16",
+      durationMinutes: 30,
+      exceptions: [],
+      now: referenceNow,
+      rules: [
+        {
+          endTime: "10:00",
+          staffMemberId: "staff-1",
+          startTime: "09:00"
+        }
+      ],
+      timezone: "America/Argentina/Buenos_Aires"
+    });
+
+    expect(slots[0]?.startsAt.toISOString()).toBe("2026-06-16T12:00:00.000Z");
+    expect(slots[0]?.endsAt.toISOString()).toBe("2026-06-16T12:30:00.000Z");
+  });
+
+  it("does not return slots before the current time for the selected business day", () => {
+    const slots = calculateAvailability({
+      activeStaffMemberIds: ["staff-1"],
+      bufferMinutes: 0,
+      busySlots: [],
+      date: "2026-06-16",
+      durationMinutes: 30,
+      exceptions: [],
+      now: new Date("2026-06-16T17:00:00.000Z"),
+      rules: [
+        {
+          endTime: "16:00",
+          staffMemberId: "staff-1",
+          startTime: "13:00"
+        }
+      ],
+      timezone: "America/Argentina/Buenos_Aires"
+    });
+
+    expect(slots.map((slot) => slot.startsAt.toISOString())).toEqual([
+      "2026-06-16T17:30:00.000Z",
+      "2026-06-16T18:00:00.000Z",
+      "2026-06-16T18:30:00.000Z"
+    ]);
+  });
+
+  it("does not return slots for past business dates", () => {
+    const slots = calculateAvailability({
+      activeStaffMemberIds: ["staff-1"],
+      bufferMinutes: 0,
+      busySlots: [],
+      date: "2026-06-15",
+      durationMinutes: 30,
+      exceptions: [],
+      now: new Date("2026-06-16T12:00:00.000Z"),
+      rules: [
+        {
+          endTime: "10:00",
+          staffMemberId: "staff-1",
+          startTime: "09:00"
+        }
+      ],
+      timezone: "UTC"
+    });
+
+    expect(slots).toEqual([]);
   });
 });

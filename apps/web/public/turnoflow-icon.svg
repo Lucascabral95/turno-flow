@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="TurnoFlow">
+  <rect width="128" height="128" rx="28" fill="#635bff"/>
+  <path d="M33 33h62v18H74v49H54V51H33V33Z" fill="#fff"/>
+  <path d="M83 79c8 0 14-6 14-14s-6-14-14-14-14 6-14 14 6 14 14 14Zm0-10c-2 0-4-2-4-4s2-4 4-4 4 2 4 4-2 4-4 4Z" fill="#c7d2fe"/>
+</svg>

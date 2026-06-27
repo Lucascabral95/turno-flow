@@ -5,7 +5,9 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/turnoflow/turnoflow/apps/worker/internal/domain"
@@ -23,6 +25,7 @@ const (
 	waitlistCandidateMatchedRoutingKey = "waitlist.candidate_matched"
 	waitlistOfferCreatedRoutingKey     = "waitlist.offer_created"
 	waitlistOfferTTL                   = 15 * time.Minute
+	defaultBusinessTimezone            = "America/Argentina/Buenos_Aires"
 )
 
 type Options struct {
@@ -35,6 +38,8 @@ type eventHandler func(context.Context, Tx, domain.Event) error
 
 type Service struct {
 	appBaseURL string
+	calendar   CalendarClient
+	codec      TokenCodec
 	emailFrom  string
 	handlers   map[string]eventHandler
 	options    Options
@@ -49,12 +54,22 @@ func NewService(repository Repository, sender email.Sender, appBaseURL string, e
 func NewServiceWithOptions(repository Repository, sender email.Sender, appBaseURL string, emailFrom string, options Options) *Service {
 	service := &Service{
 		appBaseURL: appBaseURL,
+		calendar:   noopCalendarClient{},
 		emailFrom:  emailFrom,
 		options:    options.withDefaults(),
 		repository: repository,
 		sender:     sender,
 	}
 	service.handlers = service.defaultHandlers()
+
+	return service
+}
+
+func (service *Service) WithCalendarSync(calendar CalendarClient, codec TokenCodec) *Service {
+	if calendar != nil && codec != nil {
+		service.calendar = calendar
+		service.codec = codec
+	}
 
 	return service
 }
@@ -123,16 +138,47 @@ func (service *Service) defaultHandlers() map[string]eventHandler {
 		domain.EventAppointmentBooked: func(ctx context.Context, tx Tx, event domain.Event) error {
 			return service.handleAppointmentBooked(ctx, tx, event.Payload)
 		},
-		domain.EventAppointmentCancelled:      service.handleWaitlistOpportunityEvent,
+		domain.EventAppointmentCancelled:      service.handleAppointmentCancelledEvent,
 		domain.EventAppointmentCompleted:      service.handleCustomerRiskEventEvent,
 		domain.EventAppointmentMarkedAsNoShow: service.handleCustomerRiskEventEvent,
 		domain.EventAppointmentMarkedNoShow:   service.handleCustomerRiskEventEvent,
+		domain.EventAppointmentRescheduled:    service.handleAppointmentRescheduledEvent,
 		domain.EventCustomerRiskScoreUpdated:  ignoreEvent,
 		domain.EventWaitlistOfferAccepted:     ignoreEvent,
 		domain.EventWaitlistOfferCreated:      ignoreEvent,
 		domain.EventWaitlistOfferExpired:      service.handleWaitlistOpportunityEvent,
 		domain.EventWaitlistOfferRejected:     service.handleWaitlistOpportunityEvent,
 	}
+}
+
+func (service *Service) handleAppointmentCancelledEvent(ctx context.Context, tx Tx, event domain.Event) error {
+	var appointment domain.AppointmentPayload
+	if err := json.Unmarshal(event.Payload, &appointment); err != nil {
+		return fmt.Errorf("decode appointment cancelled payload: %w", err)
+	}
+
+	if err := service.syncCalendarAppointment(ctx, tx, appointment.AppointmentID, "delete"); err != nil {
+		return err
+	}
+
+	if err := service.sendBusinessCancellationNotification(ctx, tx, appointment); err != nil {
+		return err
+	}
+
+	return service.handleWaitlistOpportunity(ctx, tx, event.Payload, eventOccurredAt(event))
+}
+
+func (service *Service) handleAppointmentRescheduledEvent(ctx context.Context, tx Tx, event domain.Event) error {
+	var appointment domain.AppointmentPayload
+	if err := json.Unmarshal(event.Payload, &appointment); err != nil {
+		return fmt.Errorf("decode appointment rescheduled payload: %w", err)
+	}
+
+	if err := service.syncCalendarAppointment(ctx, tx, appointment.AppointmentID, "upsert"); err != nil {
+		return err
+	}
+
+	return service.recalculateBusinessMetrics(ctx, tx, appointment)
 }
 
 func (service *Service) handleWaitlistOpportunityEvent(ctx context.Context, tx Tx, event domain.Event) error {
@@ -147,12 +193,51 @@ func ignoreEvent(context.Context, Tx, domain.Event) error {
 	return nil
 }
 
+func (service *Service) sendBusinessCancellationNotification(
+	ctx context.Context,
+	tx Tx,
+	appointment domain.AppointmentPayload,
+) error {
+	if appointment.Status != "cancelled_by_business" {
+		return nil
+	}
+
+	message := email.Message{
+		From:    service.emailFrom,
+		To:      appointment.Customer.Email,
+		Subject: "Tu turno fue cancelado",
+		Text: fmt.Sprintf(
+			"Hola %s,\n\nTe avisamos que el negocio cancelo tu turno para %s del %s.\n\nSi necesitas otro horario, podes volver a reservar desde TurnoFlow.",
+			appointment.Customer.Name,
+			appointment.Service.Name,
+			formatBusinessDateTime(appointment.StartsAt, appointment.Timezone),
+		),
+	}
+
+	logInput := NotificationLog{
+		AppointmentID: &appointment.AppointmentID,
+		BusinessID:    appointment.BusinessID,
+		Email:         appointment.Customer.Email,
+		Status:        NotificationSent,
+		Template:      "appointment_cancelled_by_business",
+	}
+
+	if err := service.sender.Send(ctx, message); err != nil {
+		errorMessage := err.Error()
+		logInput.LastError = &errorMessage
+		logInput.Status = NotificationFailed
+	}
+
+	return tx.CreateNotificationLog(ctx, logInput)
+}
+
 func (service *Service) notificationMessage(notification DueNotification) email.Message {
 	payload := reminderNotificationPayload{}
 	_ = json.Unmarshal(notification.Payload, &payload)
 	serviceName := fallbackString(payload.ServiceName, "tu servicio")
 	customerName := fallbackString(payload.CustomerName, "cliente")
-	startsAt := formatReminderStartTime(payload.StartsAt, notification.DueAt)
+	timezone := fallbackString(payload.Timezone, notification.Timezone)
+	startsAt := formatReminderStartTime(payload.StartsAt, notification.DueAt, timezone)
 	cancelLine := ""
 	if payload.CancelURL != "" {
 		cancelLine = fmt.Sprintf("\n\nSi no podes asistir, podes cancelar tu turno desde: %s", payload.CancelURL)
@@ -177,6 +262,7 @@ type reminderNotificationPayload struct {
 	CustomerName string `json:"customerName"`
 	ServiceName  string `json:"serviceName"`
 	StartsAt     string `json:"startsAt"`
+	Timezone     string `json:"timezone"`
 }
 
 func fallbackString(value string, fallback string) string {
@@ -187,9 +273,9 @@ func fallbackString(value string, fallback string) string {
 	return value
 }
 
-func formatReminderStartTime(value string, fallback time.Time) string {
+func formatReminderStartTime(value string, fallback time.Time, timezone string) string {
 	if value == "" {
-		return fallback.Format(time.RFC1123)
+		return formatBusinessDateTime(fallback, timezone)
 	}
 
 	startsAt, err := time.Parse(time.RFC3339, value)
@@ -197,7 +283,21 @@ func formatReminderStartTime(value string, fallback time.Time) string {
 		return value
 	}
 
-	return startsAt.Format(time.RFC1123)
+	return formatBusinessDateTime(startsAt, timezone)
+}
+
+func formatBusinessDateTime(value time.Time, timezone string) string {
+	timezone = fallbackString(timezone, defaultBusinessTimezone)
+	location, err := time.LoadLocation(timezone)
+	if err != nil {
+		timezone = defaultBusinessTimezone
+		location, err = time.LoadLocation(timezone)
+		if err != nil {
+			return value.UTC().Format("02/01/2006 15:04 UTC")
+		}
+	}
+
+	return fmt.Sprintf("%s (%s)", value.In(location).Format("02/01/2006 15:04"), timezone)
 }
 
 func (service *Service) nextNotificationAttempt(notification DueNotification, now time.Time) *time.Time {
@@ -236,6 +336,9 @@ func (service *Service) handleAppointmentBooked(ctx context.Context, tx Tx, payl
 		return fmt.Errorf("get reminder settings: %w", err)
 	}
 	if !settings.Enabled {
+		if err := service.syncCalendarAppointment(ctx, tx, appointment.AppointmentID, "upsert"); err != nil {
+			return err
+		}
 		return service.recalculateBusinessMetrics(ctx, tx, appointment)
 	}
 
@@ -249,6 +352,7 @@ func (service *Service) handleAppointmentBooked(ctx context.Context, tx Tx, payl
 		"serviceId":     appointment.Service.ID,
 		"serviceName":   appointment.Service.Name,
 		"startsAt":      appointment.StartsAt.Format(time.RFC3339),
+		"timezone":      fallbackString(appointment.Timezone, defaultBusinessTimezone),
 	})
 	if err != nil {
 		return fmt.Errorf("encode reminder notification payload: %w", err)
@@ -293,7 +397,205 @@ func (service *Service) handleAppointmentBooked(ctx context.Context, tx Tx, payl
 		return fmt.Errorf("create reminder scheduled outbox event: %w", err)
 	}
 
+	if err := service.syncCalendarAppointment(ctx, tx, appointment.AppointmentID, "upsert"); err != nil {
+		return err
+	}
+
 	return service.recalculateBusinessMetrics(ctx, tx, appointment)
+}
+
+func (service *Service) syncCalendarEvent(ctx context.Context, tx Tx, payload json.RawMessage, action string) error {
+	var appointment domain.AppointmentPayload
+	if err := json.Unmarshal(payload, &appointment); err != nil {
+		return fmt.Errorf("decode calendar sync payload: %w", err)
+	}
+
+	return service.syncCalendarAppointment(ctx, tx, appointment.AppointmentID, action)
+}
+
+func (service *Service) syncCalendarAppointment(ctx context.Context, tx Tx, appointmentID string, action string) error {
+	if isNoopCalendarClient(service.calendar) || service.codec == nil {
+		return nil
+	}
+
+	target, err := tx.GetCalendarSyncTarget(ctx, appointmentID)
+	if err != nil {
+		return fmt.Errorf("get calendar sync target: %w", err)
+	}
+	if target == nil || target.Connection == nil {
+		return nil
+	}
+
+	accessToken, err := service.accessToken(ctx, tx, target.Connection)
+	if err != nil {
+		return service.recordCalendarFailure(ctx, tx, target, err)
+	}
+
+	switch action {
+	case "delete":
+		return service.deleteCalendarEvent(ctx, tx, target, accessToken)
+	default:
+		return service.upsertCalendarEvent(ctx, tx, target, accessToken)
+	}
+}
+
+func (service *Service) upsertCalendarEvent(ctx context.Context, tx Tx, target *CalendarSyncTarget, accessToken string) error {
+	event := calendarEventFromAppointment(target.Appointment)
+	if target.GoogleEventID == nil || *target.GoogleEventID == "" {
+		eventIDs, err := service.calendar.ListEventsByAppointment(ctx, accessToken, target.Appointment.AppointmentID)
+		if err != nil {
+			return service.recordCalendarFailure(ctx, tx, target, err)
+		}
+		if len(eventIDs) > 0 {
+			primaryEventID := eventIDs[0]
+			if err := service.calendar.UpdateEvent(ctx, accessToken, primaryEventID, event); err != nil {
+				return service.recordCalendarFailure(ctx, tx, target, err)
+			}
+			service.deleteDuplicateCalendarEvents(ctx, accessToken, eventIDs[1:])
+
+			return service.recordCalendarSuccess(ctx, tx, target, &primaryEventID, "synced")
+		}
+
+		eventID, err := service.calendar.CreateEvent(ctx, accessToken, event)
+		if err != nil {
+			return service.recordCalendarFailure(ctx, tx, target, err)
+		}
+
+		return service.recordCalendarSuccess(ctx, tx, target, &eventID, "synced")
+	}
+
+	if err := service.calendar.UpdateEvent(ctx, accessToken, *target.GoogleEventID, event); err != nil {
+		var calendarErr CalendarError
+		if errors.As(err, &calendarErr) && calendarErr.StatusCode == 404 {
+			eventID, createErr := service.calendar.CreateEvent(ctx, accessToken, event)
+			if createErr != nil {
+				return service.recordCalendarFailure(ctx, tx, target, createErr)
+			}
+
+			return service.recordCalendarSuccess(ctx, tx, target, &eventID, "synced")
+		}
+
+		return service.recordCalendarFailure(ctx, tx, target, err)
+	}
+	eventIDs, err := service.calendar.ListEventsByAppointment(ctx, accessToken, target.Appointment.AppointmentID)
+	if err == nil {
+		duplicates := make([]string, 0, len(eventIDs))
+		for _, eventID := range eventIDs {
+			if eventID != *target.GoogleEventID {
+				duplicates = append(duplicates, eventID)
+			}
+		}
+		service.deleteDuplicateCalendarEvents(ctx, accessToken, duplicates)
+	}
+
+	return service.recordCalendarSuccess(ctx, tx, target, target.GoogleEventID, "synced")
+}
+
+func (service *Service) deleteDuplicateCalendarEvents(ctx context.Context, accessToken string, eventIDs []string) {
+	for _, eventID := range eventIDs {
+		_ = service.calendar.DeleteEvent(ctx, accessToken, eventID)
+	}
+}
+
+func (service *Service) deleteCalendarEvent(ctx context.Context, tx Tx, target *CalendarSyncTarget, accessToken string) error {
+	if target.GoogleEventID != nil && *target.GoogleEventID != "" {
+		if err := service.calendar.DeleteEvent(ctx, accessToken, *target.GoogleEventID); err != nil {
+			return service.recordCalendarFailure(ctx, tx, target, err)
+		}
+	}
+
+	return service.recordCalendarSuccess(ctx, tx, target, target.GoogleEventID, "deleted")
+}
+
+func (service *Service) accessToken(ctx context.Context, tx Tx, connection *CalendarConnection) (string, error) {
+	if connection.AccessTokenEncrypted != nil && connection.ExpiresAt != nil && connection.ExpiresAt.After(time.Now().UTC().Add(2*time.Minute)) {
+		return service.codec.Decrypt(*connection.AccessTokenEncrypted)
+	}
+
+	if connection.RefreshTokenEncrypted == nil {
+		return "", fmt.Errorf("calendar refresh token is missing")
+	}
+
+	refreshToken, err := service.codec.Decrypt(*connection.RefreshTokenEncrypted)
+	if err != nil {
+		return "", err
+	}
+
+	token, err := service.calendar.RefreshAccessToken(ctx, refreshToken)
+	if err != nil {
+		return "", err
+	}
+
+	encryptedAccessToken, err := service.codec.Encrypt(token.AccessToken)
+	if err != nil {
+		return "", err
+	}
+
+	if err := tx.UpdateCalendarConnectionToken(ctx, CalendarConnectionTokenUpdate{
+		AccessTokenEncrypted: encryptedAccessToken,
+		ConnectionID:         connection.ID,
+		ExpiresAt:            token.ExpiresAt,
+	}); err != nil {
+		return "", err
+	}
+
+	return token.AccessToken, nil
+}
+
+func (service *Service) recordCalendarSuccess(ctx context.Context, tx Tx, target *CalendarSyncTarget, googleEventID *string, status string) error {
+	return tx.RecordCalendarEventSync(ctx, CalendarEventSyncResult{
+		AppointmentID:        target.Appointment.AppointmentID,
+		BusinessID:           target.Appointment.BusinessID,
+		CalendarConnectionID: target.Connection.ID,
+		GoogleEventID:        googleEventID,
+		Status:               status,
+	})
+}
+
+func (service *Service) recordCalendarFailure(ctx context.Context, tx Tx, target *CalendarSyncTarget, err error) error {
+	lastError := err.Error()
+	var calendarErr CalendarError
+	if errors.As(err, &calendarErr) {
+		if calendarErr.IsExpiredGrant() {
+			_ = tx.MarkCalendarConnectionError(ctx, target.Connection.ID, "expired", lastError)
+		} else if calendarErr.IsPermanentAuthFailure() {
+			_ = tx.MarkCalendarConnectionError(ctx, target.Connection.ID, "error", lastError)
+		}
+	}
+
+	return tx.RecordCalendarEventSync(ctx, CalendarEventSyncResult{
+		AppointmentID:        target.Appointment.AppointmentID,
+		BusinessID:           target.Appointment.BusinessID,
+		CalendarConnectionID: target.Connection.ID,
+		GoogleEventID:        target.GoogleEventID,
+		LastError:            &lastError,
+		Status:               "failed",
+	})
+}
+
+func calendarEventFromAppointment(appointment CalendarAppointment) CalendarEvent {
+	phone := ""
+	if appointment.CustomerPhone != nil {
+		phone = *appointment.CustomerPhone
+	}
+
+	description := strings.Join([]string{
+		fmt.Sprintf("Cliente: %s", appointment.CustomerName),
+		fmt.Sprintf("Email: %s", appointment.CustomerEmail),
+		fmt.Sprintf("Telefono: %s", fallbackString(phone, "No informado")),
+		fmt.Sprintf("Profesional: %s", appointment.StaffName),
+		fmt.Sprintf("Turno ID: %s", appointment.AppointmentID),
+		"Origen: TurnoFlow",
+	}, "\n")
+
+	return CalendarEvent{
+		AppointmentID: appointment.AppointmentID,
+		Description:   description,
+		EndsAt:        appointment.EndsAt,
+		StartsAt:      appointment.StartsAt,
+		Summary:       fmt.Sprintf("%s - %s", appointment.ServiceName, appointment.CustomerName),
+		Timezone:      fallbackString(appointment.Timezone, "America/Argentina/Buenos_Aires"),
+	}
 }
 
 func (service *Service) handleWaitlistOpportunity(ctx context.Context, tx Tx, payload json.RawMessage, now time.Time) error {
@@ -364,10 +666,10 @@ func (service *Service) handleWaitlistOpportunity(ctx context.Context, tx Tx, pa
 			"Hola %s, se libero un turno para %s el %s. Podes aceptarlo desde %s o rechazarlo desde %s. La oferta vence a las %s.",
 			candidate.CustomerName,
 			appointment.Service.Name,
-			appointment.StartsAt.Format(time.RFC1123),
+			formatBusinessDateTime(appointment.StartsAt, appointment.Timezone),
 			acceptURL,
 			rejectURL,
-			expiresAt.Format(time.RFC1123),
+			formatBusinessDateTime(expiresAt, appointment.Timezone),
 		),
 	})
 

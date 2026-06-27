@@ -32,6 +32,7 @@ var eventBindingKeys = []string{
 	"appointment.completed",
 	"appointment.no_show",
 	"appointment.marked_no_show",
+	"appointment.rescheduled",
 	"appointment.reminder_due",
 	"notification.reminder_due",
 	"slot.reassigned",
@@ -70,11 +71,40 @@ func main() {
 		DueNotificationBatchSize:  cfg.ReminderBatchSize,
 		MaxNotificationAttempts:   cfg.MaxNotificationAttempts,
 	})
+	if cfg.HasGoogleCalendarSync() {
+		calendarClient, tokenCodec, err := createCalendarSync(cfg)
+		if err != nil {
+			logger.Error("google calendar setup failed", "error", err)
+			os.Exit(1)
+		}
+		service.WithCalendarSync(calendarClient, tokenCodec)
+		logger.Info("google calendar sync enabled")
+	} else {
+		logger.Info("google calendar sync disabled")
+	}
 
 	if err := run(ctx, cfg, service, logger); err != nil {
 		logger.Error("worker stopped with error", "error", err)
 		os.Exit(1)
 	}
+}
+
+func createCalendarSync(cfg config.Config) (worker.CalendarClient, worker.TokenCodec, error) {
+	calendarClient, err := worker.NewGoogleCalendarClient(worker.GoogleCalendarClientConfig{
+		ClientID:     cfg.GoogleCalendarClientID,
+		ClientSecret: cfg.GoogleCalendarClientSecret,
+		Timeout:      cfg.GoogleCalendarTimeout(),
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	tokenCodec, err := worker.NewAESGCMTokenCodec(cfg.CalendarTokenEncryptionKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return calendarClient, tokenCodec, nil
 }
 
 func createEmailSender(cfg config.Config) (email.Sender, error) {

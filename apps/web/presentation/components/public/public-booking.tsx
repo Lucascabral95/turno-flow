@@ -500,7 +500,7 @@ export function PublicBooking({ businessSlug }: { businessSlug: string }) {
                 </div>
                 {selectedSlot ? (
                   <span className="badge badge-soft">
-                    {formatSlotTime(selectedSlot.startsAt)}
+                    {formatSlotTime(selectedSlot.startsAt, business?.timezone)}
                   </span>
                 ) : null}
               </div>
@@ -525,7 +525,7 @@ export function PublicBooking({ businessSlug }: { businessSlug: string }) {
                       >
                         <Clock size={16} />
                         <span>
-                          {formatSlotTime(slot.startsAt)}
+                          {formatSlotTime(slot.startsAt, business?.timezone)}
                         </span>
                       </button>
                     );
@@ -638,7 +638,7 @@ export function PublicBooking({ businessSlug }: { businessSlug: string }) {
               <span>Horario</span>
               <strong>
                 {selectedSlot
-                  ? formatSlotTime(selectedSlot.startsAt)
+                  ? formatSlotTime(selectedSlot.startsAt, business?.timezone)
                   : "Sin elegir"}
               </strong>
             </div>

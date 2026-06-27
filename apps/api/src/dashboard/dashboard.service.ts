@@ -154,6 +154,36 @@ export class DashboardService {
     };
   }
 
+  async getRevenueMetrics(user: AuthenticatedUser) {
+    const metrics = await this.getMetrics(user);
+
+    return {
+      cancellationRate:
+        metrics.totalAppointments > 0 ? metrics.cancelledAppointments / metrics.totalAppointments : 0,
+      estimatedRevenueCents: metrics.estimatedRevenueCents,
+      lostRevenueCents: metrics.lostRevenueCents,
+      noShowRate: metrics.noShowRate,
+      totalAppointments: metrics.totalAppointments
+    };
+  }
+
+  async getServiceMetrics(user: AuthenticatedUser) {
+    const metrics = await this.getMetrics(user);
+
+    return {
+      topServices: metrics.topServices
+    };
+  }
+
+  async getCustomerMetrics(user: AuthenticatedUser) {
+    const metrics = await this.getMetrics(user);
+
+    return {
+      recurringCustomers: metrics.recurringCustomers,
+      riskyCustomers: metrics.riskyCustomers
+    };
+  }
+
   async getOccupancyMetrics(user: AuthenticatedUser) {
     const metrics = await this.getMetrics(user);
 

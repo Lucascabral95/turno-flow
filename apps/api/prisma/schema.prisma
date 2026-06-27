@@ -76,6 +76,31 @@ enum BusinessMemberRole {
   @@map("business_member_role")
 }
 
+enum CalendarProvider {
+  GOOGLE  @map("google")
+  OUTLOOK @map("outlook")
+
+  @@map("calendar_provider")
+}
+
+enum CalendarConnectionStatus {
+  NOT_CONFIGURED @map("not_configured")
+  CONNECTED      @map("connected")
+  EXPIRED        @map("expired")
+  ERROR          @map("error")
+
+  @@map("calendar_connection_status")
+}
+
+enum CalendarEventSyncStatus {
+  PENDING @map("pending")
+  SYNCED  @map("synced")
+  DELETED @map("deleted")
+  FAILED  @map("failed")
+
+  @@map("calendar_event_sync_status")
+}
+
 model User {
   id           String     @id @default(uuid()) @db.Uuid
   email        String     @unique
@@ -131,6 +156,9 @@ model Business {
   metricsDaily      BusinessMetricsDaily[]
   members           BusinessMember[]
   auditLogs         AuditLog[]
+  notificationTemplates NotificationTemplate[]
+  calendarConnections CalendarConnection[]
+  calendarEventSyncs CalendarEventSync[]
 
   @@map("businesses")
 }
@@ -167,6 +195,7 @@ model StaffMember {
   availabilityRules AvailabilityRule[]
   availabilityExceptions AvailabilityException[]
   memberships      BusinessMember[]
+  calendarConnections CalendarConnection[]
 
   @@index([businessId])
   @@map("staff_members")
@@ -272,6 +301,7 @@ model Appointment {
   notificationLogs  NotificationLog[]
   appointmentEvents AppointmentEvent[]
   waitlistOffers    WaitlistOffer[]
+  calendarEventSyncs CalendarEventSync[]
 
   @@index([businessId, startsAt])
   @@index([staffMemberId, startsAt])
@@ -329,6 +359,68 @@ model BusinessReminderSettings {
   updatedAt     DateTime @updatedAt @map("updated_at")
 
   @@map("business_reminder_settings")
+}
+
+model NotificationTemplate {
+  id        String   @id @default(uuid()) @db.Uuid
+  businessId String  @map("business_id") @db.Uuid
+  business  Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  key       String
+  name      String
+  subject   String
+  body      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([businessId, key])
+  @@index([businessId, active])
+  @@map("notification_templates")
+}
+
+model CalendarConnection {
+  id                    String                   @id @default(uuid()) @db.Uuid
+  businessId            String                   @map("business_id") @db.Uuid
+  business              Business                 @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  staffMemberId         String?                  @map("staff_member_id") @db.Uuid
+  staffMember           StaffMember?             @relation(fields: [staffMemberId], references: [id], onDelete: SetNull)
+  provider              CalendarProvider
+  status                CalendarConnectionStatus @default(NOT_CONFIGURED)
+  accountEmail          String?                  @map("account_email")
+  externalCalendarId    String?                  @map("external_calendar_id")
+  accessTokenEncrypted  String?                  @map("access_token_encrypted")
+  refreshTokenEncrypted String?                  @map("refresh_token_encrypted")
+  expiresAt             DateTime?                @map("expires_at") @db.Timestamptz(3)
+  lastSyncedAt          DateTime?                @map("last_synced_at") @db.Timestamptz(3)
+  lastError             String?                  @map("last_error")
+  createdAt             DateTime                 @default(now()) @map("created_at")
+  updatedAt             DateTime                 @updatedAt @map("updated_at")
+  eventSyncs            CalendarEventSync[]
+
+  @@unique([businessId, provider])
+  @@index([businessId, provider, status])
+  @@map("calendar_connections")
+}
+
+model CalendarEventSync {
+  id                   String                  @id @default(uuid()) @db.Uuid
+  businessId           String                  @map("business_id") @db.Uuid
+  business             Business                @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  appointmentId        String                  @map("appointment_id") @db.Uuid
+  appointment          Appointment             @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  calendarConnectionId String                  @map("calendar_connection_id") @db.Uuid
+  calendarConnection   CalendarConnection      @relation(fields: [calendarConnectionId], references: [id], onDelete: Cascade)
+  googleEventId        String?                 @map("google_event_id")
+  status               CalendarEventSyncStatus @default(PENDING)
+  lastError            String?                 @map("last_error")
+  lastSyncedAt         DateTime?               @map("last_synced_at") @db.Timestamptz(3)
+  createdAt            DateTime                @default(now()) @map("created_at")
+  updatedAt            DateTime                @updatedAt @map("updated_at")
+
+  @@unique([appointmentId, calendarConnectionId])
+  @@index([businessId, status])
+  @@index([calendarConnectionId, status])
+  @@map("calendar_event_syncs")
 }
 
 model Notification {

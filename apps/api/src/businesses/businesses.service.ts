@@ -6,13 +6,14 @@ import { activeAppointmentStatuses } from "../appointments/status";
 import { calculateAvailability, type AvailabilitySlot } from "../appointments/availability";
 import type { AuthenticatedUser } from "../common/authenticated-user";
 import { toSlug } from "../common/slug";
-import { minutesSinceMidnight, parseDateOnly, weekdayUtc } from "../common/time";
+import { minutesSinceMidnight, parseDateOnly, weekdayUtc, zonedDayBounds } from "../common/time";
 import { EventRoutingKeys, EventTypes } from "../events/event-types";
 import { OutboxService } from "../events/outbox.service";
 import { PrismaService } from "../prisma/prisma.service";
 import type { CreateAvailabilityExceptionDto, UpdateAvailabilityExceptionDto } from "./dto/availability-exception.dto";
 import type { CreateAvailabilityRuleDto, UpdateAvailabilityRuleDto } from "./dto/availability-rule.dto";
 import type { CreateBusinessDto, UpdateBusinessDto } from "./dto/business.dto";
+import type { CreateNotificationTemplateDto, UpdateNotificationTemplateDto } from "./dto/notification-template.dto";
 import type { UpdateReminderSettingsDto } from "./dto/reminder-settings.dto";
 import type { CreateServiceDto, UpdateServiceDto } from "./dto/service.dto";
 import type { CreateStaffMemberDto, UpdateStaffMemberDto } from "./dto/staff-member.dto";
@@ -163,6 +164,117 @@ export class BusinessesService {
       },
       update: input,
       where: { businessId: business.id }
+    });
+  }
+
+  async listBusinessMembers(user: AuthenticatedUser) {
+    const business = await this.requireCurrentBusiness(user);
+
+    return this.prisma.businessMember.findMany({
+      include: {
+        staffMember: {
+          select: {
+            email: true,
+            id: true,
+            name: true
+          }
+        },
+        user: {
+          select: {
+            email: true,
+            id: true,
+            name: true
+          }
+        }
+      },
+      orderBy: [{ role: "asc" }, { createdAt: "asc" }],
+      where: { businessId: business.id }
+    });
+  }
+
+  async listNotificationTemplates(user: AuthenticatedUser) {
+    const business = await this.requireCurrentBusiness(user);
+    await this.ensureDefaultNotificationTemplates(business.id);
+
+    return this.prisma.notificationTemplate.findMany({
+      orderBy: [{ active: "desc" }, { key: "asc" }],
+      where: { businessId: business.id }
+    });
+  }
+
+  async createNotificationTemplate(user: AuthenticatedUser, input: CreateNotificationTemplateDto) {
+    const business = await this.requireCurrentBusiness(user);
+    const key = this.normalizeTemplateKey(input.key);
+
+    if (!key) {
+      throw new ConflictException("Notification template key cannot be empty");
+    }
+
+    const existingTemplate = await this.prisma.notificationTemplate.findUnique({
+      where: {
+        businessId_key: {
+          businessId: business.id,
+          key
+        }
+      }
+    });
+
+    if (existingTemplate) {
+      throw new ConflictException("Notification template key already exists");
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const template = await tx.notificationTemplate.create({
+        data: {
+          active: input.active ?? true,
+          body: input.body,
+          businessId: business.id,
+          key,
+          name: input.name,
+          subject: input.subject
+        }
+      });
+
+      await this.audit.create(tx, {
+        action: "notification_template.created",
+        after: template,
+        businessId: business.id,
+        entity: "notification_template",
+        entityId: template.id,
+        user
+      });
+
+      return template;
+    });
+  }
+
+  async updateNotificationTemplate(user: AuthenticatedUser, templateId: string, input: UpdateNotificationTemplateDto) {
+    const business = await this.requireCurrentBusiness(user);
+    const before = await this.prisma.notificationTemplate.findFirst({
+      where: { businessId: business.id, id: templateId }
+    });
+
+    if (!before) {
+      throw new NotFoundException("Notification template not found");
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.notificationTemplate.update({
+        data: input,
+        where: { id: templateId }
+      });
+
+      await this.audit.create(tx, {
+        action: "notification_template.updated",
+        after: updated,
+        before,
+        businessId: business.id,
+        entity: "notification_template",
+        entityId: updated.id,
+        user
+      });
+
+      return updated;
     });
   }
 
@@ -317,8 +429,7 @@ export class BusinessesService {
     }
 
     const requestedDate = parseDateOnly(date);
-    const nextDate = new Date(requestedDate);
-    nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+    const dayBounds = zonedDayBounds(date, business.timezone);
 
     const [activeStaffMembers, rules, exceptions, busySlots] = await Promise.all([
       this.prisma.staffMember.findMany({
@@ -359,8 +470,8 @@ export class BusinessesService {
         },
         where: {
           businessId: business.id,
-          endsAt: { gt: requestedDate },
-          startsAt: { lt: nextDate },
+          endsAt: { gt: dayBounds.start },
+          startsAt: { lt: dayBounds.end },
           status: { in: activeAppointmentStatuses }
         }
       })
@@ -373,7 +484,8 @@ export class BusinessesService {
       date,
       durationMinutes: service.durationMinutes,
       exceptions,
-      rules
+      rules,
+      timezone: business.timezone
     });
   }
 
@@ -635,6 +747,58 @@ export class BusinessesService {
     }
 
     throw new ConflictException("Could not generate an available business slug");
+  }
+
+  private async ensureDefaultNotificationTemplates(businessId: string): Promise<void> {
+    const defaults = [
+      {
+        body:
+          "Hola {{customerName}}, te recordamos tu turno de {{serviceName}} el {{startsAt}}. Si no podes asistir, usa este link: {{cancelUrl}}",
+        key: "appointment_reminder_24h",
+        name: "Recordatorio 24 horas",
+        subject: "Recordatorio de turno"
+      },
+      {
+        body:
+          "Hola {{customerName}}, se libero un turno para {{serviceName}} el {{startsAt}}. Aceptalo antes de {{expiresAt}} desde {{offerUrl}}.",
+        key: "waitlist_offer",
+        name: "Oferta de lista de espera",
+        subject: "Se libero un turno"
+      },
+      {
+        body:
+          "Hola {{customerName}}, tu turno de {{serviceName}} fue reprogramado para {{startsAt}}. Si no podes asistir, usa este link: {{cancelUrl}}",
+        key: "appointment_rescheduled",
+        name: "Turno reprogramado",
+        subject: "Tu turno fue reprogramado"
+      }
+    ];
+
+    await Promise.all(
+      defaults.map((template) =>
+        this.prisma.notificationTemplate.upsert({
+          create: {
+            ...template,
+            businessId
+          },
+          update: {},
+          where: {
+            businessId_key: {
+              businessId,
+              key: template.key
+            }
+          }
+        })
+      )
+    );
+  }
+
+  private normalizeTemplateKey(value: string): string {
+    return value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_]+/g, "_")
+      .replace(/^_+|_+$/g, "");
   }
 
   private assertTimeRange(startTime: string, endTime: string): void {

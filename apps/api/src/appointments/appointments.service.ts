@@ -4,7 +4,7 @@ import { AppointmentStatus, Prisma, WaitlistOfferStatus, WaitlistStatus } from "
 import { AuditService } from "../audit/audit.service";
 import type { AuthenticatedUser } from "../common/authenticated-user";
 import { createPublicToken } from "../common/tokens";
-import { dateOnly, parseDateOnly, weekdayUtc } from "../common/time";
+import { dateOnlyInTimeZone, parseDateOnly, weekdayUtc, zonedDayBounds } from "../common/time";
 import { BusinessesService } from "../businesses/businesses.service";
 import { EventRoutingKeys, EventTypes } from "../events/event-types";
 import { OutboxService } from "../events/outbox.service";
@@ -28,6 +28,8 @@ type AppointmentWithRelations = Prisma.AppointmentGetPayload<{
     staffMember: true;
   };
 }>;
+
+const DEFAULT_BUSINESS_TIMEZONE = "America/Argentina/Buenos_Aires";
 
 type WaitlistEntryWithRelations = Prisma.WaitlistEntryGetPayload<{
   include: {
@@ -101,8 +103,7 @@ export class AppointmentsService {
     }
 
     const requestedDate = parseDateOnly(date);
-    const nextDate = new Date(requestedDate);
-    nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+    const dayBounds = zonedDayBounds(date, business.timezone);
 
     const [activeStaffMembers, rules, exceptions, busySlots] = await Promise.all([
       this.prisma.staffMember.findMany({
@@ -143,9 +144,9 @@ export class AppointmentsService {
         },
         where: {
           businessId: business.id,
-          startsAt: { lt: nextDate },
+          startsAt: { lt: dayBounds.end },
           status: { in: activeAppointmentStatuses },
-          endsAt: { gt: requestedDate }
+          endsAt: { gt: dayBounds.start }
         }
       })
     ]);
@@ -157,7 +158,8 @@ export class AppointmentsService {
       date,
       durationMinutes: service.durationMinutes,
       exceptions,
-      rules
+      rules,
+      timezone: business.timezone
     });
   }
 
@@ -195,6 +197,11 @@ export class AppointmentsService {
     }
 
     const cancelledAppointment = await this.prisma.$transaction(async (tx) => {
+      const business = await tx.business.findUniqueOrThrow({
+        select: { timezone: true },
+        where: { id: appointment.businessId }
+      });
+
       const updatedAppointment = await tx.appointment.update({
         data: { status: AppointmentStatus.CANCELLED_BY_CUSTOMER },
         include: { customer: true, service: true, staffMember: true },
@@ -216,7 +223,7 @@ export class AppointmentsService {
       await this.outbox.create(tx, {
         aggregateId: appointment.id,
         businessId: appointment.businessId,
-        payload: this.appointmentPayload(updatedAppointment),
+        payload: this.appointmentPayload(updatedAppointment, business.timezone),
         routingKey: EventRoutingKeys.AppointmentCancelled,
         type: EventTypes.AppointmentCancelled,
         version: 1
@@ -225,7 +232,7 @@ export class AppointmentsService {
       await this.outbox.create(tx, {
         aggregateId: appointment.id,
         businessId: appointment.businessId,
-        payload: this.appointmentPayload(updatedAppointment),
+        payload: this.appointmentPayload(updatedAppointment, business.timezone),
         routingKey: EventRoutingKeys.SlotReleased,
         type: EventTypes.SlotReleased,
         version: 1
@@ -616,7 +623,7 @@ export class AppointmentsService {
         await this.outbox.create(tx, {
           aggregateId: appointment.id,
           businessId: business.id,
-          payload: this.appointmentPayload(updated),
+          payload: this.appointmentPayload(updated, business.timezone),
           routingKey: EventRoutingKeys.AppointmentConfirmed,
           type: EventTypes.AppointmentConfirmed,
           version: 1
@@ -627,7 +634,7 @@ export class AppointmentsService {
         await this.outbox.create(tx, {
           aggregateId: appointment.id,
           businessId: business.id,
-          payload: this.appointmentPayload(updated),
+          payload: this.appointmentPayload(updated, business.timezone),
           routingKey: EventRoutingKeys.AppointmentCompleted,
           type: EventTypes.AppointmentCompleted,
           version: 1
@@ -638,7 +645,7 @@ export class AppointmentsService {
         await this.outbox.create(tx, {
           aggregateId: appointment.id,
           businessId: business.id,
-          payload: this.appointmentPayload(updated),
+          payload: this.appointmentPayload(updated, business.timezone),
           routingKey: EventRoutingKeys.AppointmentMarkedAsNoShow,
           type: EventTypes.AppointmentMarkedAsNoShow,
           version: 1
@@ -649,7 +656,7 @@ export class AppointmentsService {
         await this.outbox.create(tx, {
           aggregateId: appointment.id,
           businessId: business.id,
-          payload: this.appointmentPayload(updated),
+          payload: this.appointmentPayload(updated, business.timezone),
           routingKey: EventRoutingKeys.AppointmentCancelled,
           type: EventTypes.AppointmentCancelled,
           version: 1
@@ -658,7 +665,7 @@ export class AppointmentsService {
         await this.outbox.create(tx, {
           aggregateId: appointment.id,
           businessId: business.id,
-          payload: this.appointmentPayload(updated),
+          payload: this.appointmentPayload(updated, business.timezone),
           routingKey: EventRoutingKeys.SlotReleased,
           type: EventTypes.SlotReleased,
           version: 1
@@ -703,6 +710,11 @@ export class AppointmentsService {
           throw new ConflictException("Only active appointments can be rescheduled");
         }
 
+        const business = await tx.business.findUniqueOrThrow({
+          select: { timezone: true },
+          where: { id: current.businessId }
+        });
+
         const staffMemberId = input.staffMemberId ?? current.staffMemberId;
         await this.assertStaffMemberCanTakeSlot(
           tx,
@@ -741,8 +753,8 @@ export class AppointmentsService {
 
         await this.audit.create(tx, {
           action: "appointment.rescheduled",
-          after: this.appointmentPayload(updated),
-          before: this.appointmentPayload(current),
+          after: this.appointmentPayload(updated, business.timezone),
+          before: this.appointmentPayload(current, business.timezone),
           businessId: current.businessId,
           entity: "appointment",
           entityId: current.id,
@@ -754,7 +766,7 @@ export class AppointmentsService {
           aggregateId: current.id,
           businessId: current.businessId,
           payload: {
-            ...this.appointmentPayload(updated),
+            ...this.appointmentPayload(updated, business.timezone),
             previousEndsAt: current.endsAt.toISOString(),
             previousStartsAt: current.startsAt.toISOString(),
             source: input.source
@@ -789,6 +801,11 @@ export class AppointmentsService {
   }) {
     try {
       const appointment = await this.prisma.$transaction(async (tx) => {
+        const business = await tx.business.findUniqueOrThrow({
+          select: { timezone: true },
+          where: { id: input.businessId }
+        });
+
         if (input.waitlistOfferId) {
           const acceptedOffer = await tx.waitlistOffer.updateMany({
             data: { status: WaitlistOfferStatus.ACCEPTED },
@@ -860,7 +877,7 @@ export class AppointmentsService {
         await this.outbox.create(tx, {
           aggregateId: appointment.id,
           businessId: input.businessId,
-          payload: this.appointmentPayload(appointment),
+          payload: this.appointmentPayload(appointment, business.timezone),
           routingKey: EventRoutingKeys.AppointmentBooked,
           type: EventTypes.AppointmentBooked,
           version: 1
@@ -912,7 +929,7 @@ export class AppointmentsService {
     startsAt: Date
   ): Promise<string> {
     const service = await tx.service.findUniqueOrThrow({ where: { id: serviceId } });
-    const date = dateOnly(startsAt);
+    const date = await this.dateOnlyForBusiness(tx, businessId, startsAt);
     const slots = await this.getAvailabilityForTransaction(tx, businessId, serviceId, date);
     const matchingSlot = slots.find((slot) => slot.startsAt.getTime() === startsAt.getTime());
 
@@ -948,7 +965,8 @@ export class AppointmentsService {
       throw new NotFoundException("Staff member not found");
     }
 
-    const slots = await this.getAvailabilityForTransaction(tx, businessId, serviceId, dateOnly(startsAt), excludeAppointmentId);
+    const date = await this.dateOnlyForBusiness(tx, businessId, startsAt);
+    const slots = await this.getAvailabilityForTransaction(tx, businessId, serviceId, date, excludeAppointmentId);
     const matchingSlot = slots.find(
       (slot) => slot.staffMemberId === staffMemberId && slot.startsAt.getTime() === startsAt.getTime()
     );
@@ -966,9 +984,12 @@ export class AppointmentsService {
     excludeAppointmentId?: string
   ): Promise<AvailabilitySlot[]> {
     const requestedDate = parseDateOnly(date);
-    const nextDate = new Date(requestedDate);
-    nextDate.setUTCDate(nextDate.getUTCDate() + 1);
     const service = await tx.service.findUniqueOrThrow({ where: { id: serviceId } });
+    const business = await tx.business.findUniqueOrThrow({
+      select: { timezone: true },
+      where: { id: businessId }
+    });
+    const dayBounds = zonedDayBounds(date, business.timezone);
 
     const [activeStaffMembers, rules, exceptions, busySlots] = await Promise.all([
       tx.staffMember.findMany({
@@ -1010,9 +1031,9 @@ export class AppointmentsService {
         where: {
           businessId,
           id: excludeAppointmentId ? { not: excludeAppointmentId } : undefined,
-          startsAt: { lt: nextDate },
+          startsAt: { lt: dayBounds.end },
           status: { in: activeAppointmentStatuses },
-          endsAt: { gt: requestedDate }
+          endsAt: { gt: dayBounds.start }
         }
       })
     ]);
@@ -1024,8 +1045,18 @@ export class AppointmentsService {
       date,
       durationMinutes: service.durationMinutes,
       exceptions,
-      rules
+      rules,
+      timezone: business.timezone
     });
+  }
+
+  private async dateOnlyForBusiness(tx: Prisma.TransactionClient, businessId: string, startsAt: Date): Promise<string> {
+    const business = await tx.business.findUniqueOrThrow({
+      select: { timezone: true },
+      where: { id: businessId }
+    });
+
+    return dateOnlyInTimeZone(startsAt, business.timezone);
   }
 
   private async upsertCustomer(
@@ -1057,7 +1088,10 @@ export class AppointmentsService {
     });
   }
 
-  private appointmentPayload(appointment: AppointmentWithRelations): Prisma.InputJsonObject {
+  private appointmentPayload(
+    appointment: AppointmentWithRelations,
+    timezone = DEFAULT_BUSINESS_TIMEZONE
+  ): Prisma.InputJsonObject {
     return {
       appointmentId: appointment.id,
       businessId: appointment.businessId,
@@ -1086,7 +1120,8 @@ export class AppointmentsService {
         name: appointment.staffMember.name
       },
       startsAt: appointment.startsAt.toISOString(),
-      status: fromPrismaAppointmentStatus(appointment.status)
+      status: fromPrismaAppointmentStatus(appointment.status),
+      timezone
     };
   }
 

@@ -3,7 +3,7 @@
 import { BellRing, CalendarClock, CheckCircle2, Mail } from "lucide-react";
 import type { FormEvent } from "react";
 
-import type { Appointment, NotificationHistoryItem, ReminderSettings } from "../../../lib/api";
+import type { Appointment, NotificationHistoryItem, NotificationTemplate, ReminderSettings } from "../../../lib/api";
 import { formatDateTime, formatPercent } from "../../../lib/api";
 import {
   capitalizeFirst,
@@ -18,20 +18,25 @@ import styles from "./dashboard-reminders.module.scss";
 export function RemindersView({
   appointments,
   history,
+  onTemplateUpdate,
   onSubmit,
-  settings
+  settings,
+  templates
 }: {
   appointments: Appointment[];
   history: NotificationHistoryItem[];
+  onTemplateUpdate: (templateId: string, input: Pick<NotificationTemplate, "active" | "body" | "name" | "subject">) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   settings: ReminderSettings | null;
+  templates: NotificationTemplate[];
 }) {
   return (
     <section className={`stack ${styles.remindersView}`}>
       <ReminderCommandCenter appointments={appointments} history={history} settings={settings} />
       <section className="layout-grid">
         <aside className="stack">
-          <ReminderSettingsPanel onSubmit={onSubmit} settings={settings} />
+          <ReminderSettingsPanel onSubmit={onSubmit} settings={settings} templates={templates} />
+          <NotificationTemplatesPanel onTemplateUpdate={onTemplateUpdate} templates={templates} />
         </aside>
         <section className="stack">
           <ReminderSummaryPanel history={history} settings={settings} />
@@ -43,12 +48,102 @@ export function RemindersView({
   );
 }
 
+function NotificationTemplatesPanel({
+  onTemplateUpdate,
+  templates
+}: {
+  onTemplateUpdate: (templateId: string, input: Pick<NotificationTemplate, "active" | "body" | "name" | "subject">) => void;
+  templates: NotificationTemplate[];
+}) {
+  if (templates.length === 0) {
+    return (
+      <section className="panel stack">
+        <header className="panel-header">
+          <div>
+            <h2 className="inline">
+              <Mail size={20} />
+              Templates
+            </h2>
+            <p>Los templates default se crean cuando el backend responde esta vista.</p>
+          </div>
+        </header>
+        <EmptyState compact title="Sin templates" description="Todavia no hay plantillas disponibles para este negocio." />
+      </section>
+    );
+  }
+
+  return (
+    <section className="panel stack">
+      <header className="panel-header">
+        <div>
+          <h2 className="inline">
+            <Mail size={20} />
+            Templates
+          </h2>
+          <p>Edita asunto y cuerpo. Podes usar variables como {"{{customerName}}"}, {"{{serviceName}}"} y {"{{startsAt}}"}.</p>
+        </div>
+      </header>
+      <div className="management-list">
+        {templates.map((template) => (
+          <form
+            className="management-card stack"
+            key={template.id}
+            onSubmit={(event) => {
+              event.preventDefault();
+              const formData = new FormData(event.currentTarget);
+              onTemplateUpdate(template.id, {
+                active: formData.get("active") === "true",
+                body: formValue(formData, "body"),
+                name: formValue(formData, "name"),
+                subject: formValue(formData, "subject")
+              });
+            }}
+          >
+            <div className="management-card-header">
+              <div className="management-card-copy">
+                <strong>{template.name}</strong>
+                <span>{template.key}</span>
+              </div>
+              <select className="compact-select" defaultValue={template.active ? "true" : "false"} name="active">
+                <option value="true">Activo</option>
+                <option value="false">Pausado</option>
+              </select>
+            </div>
+            <label>
+              Nombre
+              <input defaultValue={template.name} name="name" />
+            </label>
+            <label>
+              Asunto
+              <input defaultValue={template.subject} name="subject" />
+            </label>
+            <label>
+              Cuerpo
+              <textarea defaultValue={template.body} name="body" rows={5} />
+            </label>
+            <button className="button-primary" type="submit">
+              Guardar template
+            </button>
+          </form>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function formValue(formData: FormData, key: string): string {
+  const value = formData.get(key);
+  return typeof value === "string" ? value : "";
+}
+
 function ReminderSettingsPanel({
   onSubmit,
-  settings
+  settings,
+  templates
 }: {
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   settings: ReminderSettings | null;
+  templates: NotificationTemplate[];
 }) {
   return (
     <form className={`panel stack reminder-settings-card ${styles.settingsPanel}`} onSubmit={onSubmit}>
@@ -86,7 +181,14 @@ function ReminderSettingsPanel({
       </label>
       <label>
         Template
-        <input defaultValue={settings?.template ?? "appointment_reminder_24h"} name="template" />
+        <select defaultValue={settings?.template ?? templates[0]?.key ?? "appointment_reminder_24h"} name="template">
+          {templates.length === 0 ? <option value="appointment_reminder_24h">appointment_reminder_24h</option> : null}
+          {templates.filter((template) => template.active).map((template) => (
+            <option key={template.id} value={template.key}>
+              {template.name}
+            </option>
+          ))}
+        </select>
       </label>
       <div className="reminder-flow">
         <div>

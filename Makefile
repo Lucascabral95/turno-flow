@@ -11,10 +11,11 @@ HASH := \#
 LOAD_ENV := $$envFile = Join-Path (Get-Location).Path ".env"; if (Test-Path $$envFile) { Get-Content $$envFile | Where-Object { $$_ -and -not $$_.TrimStart().StartsWith("$(HASH)") } | ForEach-Object { $$parts = $$_.Split("=", 2); if ($$parts.Length -eq 2) { [Environment]::SetEnvironmentVariable($$parts[0], $$parts[1], "Process") } } };
 GO_CACHE := $$root = (Get-Location).Path; $$cache = Join-Path $$root ".cache/go-build-codex"; $$modcache = Join-Path $$root ".cache/go-mod-codex"; New-Item -ItemType Directory -Path $$cache -Force | Out-Null; New-Item -ItemType Directory -Path $$modcache -Force | Out-Null; $$env:GOCACHE = $$cache; $$env:GOMODCACHE = $$modcache; Set-Location $(WORKER_DIR);
 WORKER_BINARY := .cache/turnoflow-worker.exe
+WAIT_FOR_POSTGRES := $$deadline = (Get-Date).AddSeconds(60); while ((Get-Date) -lt $$deadline) { try { $$client = New-Object System.Net.Sockets.TcpClient; $$client.Connect("127.0.0.1", 5432); $$client.Close(); exit 0 } catch { Start-Sleep -Seconds 2 } }; Write-Error "PostgreSQL did not become reachable on localhost:5432 within 60 seconds."; exit 1
 
 .PHONY: help install worker-tidy
 .PHONY: up up-build up-build-classic up-logs down logs api-dev web-dev worker-dev
-.PHONY: db-migrate db-generate db-studio db-seed
+.PHONY: db-up db-migrate db-generate db-studio db-seed
 .PHONY: lint typecheck test api-test web-test worker-test
 .PHONY: build api-build web-build worker-build
 .PHONY: compose-config clean
@@ -38,6 +39,7 @@ help:
 	@echo   make worker-dev       Run Go worker locally
 	@echo.
 	@echo Database:
+	@echo   make db-up            Start PostgreSQL container and wait until localhost:5432 is reachable
 	@echo   make db-migrate       Load .env and run Prisma deploy migrations
 	@echo   make db-generate      Generate Prisma client
 	@echo   make db-studio        Load .env and open Prisma Studio
@@ -94,7 +96,13 @@ web-dev:
 worker-dev:
 	$(POWERSHELL) '$(LOAD_ENV) $(GO_CACHE) go run ./cmd/worker'
 
+db-up:
+	$(DOCKER_COMPOSE) up -d postgres
+	$(POWERSHELL) '$(WAIT_FOR_POSTGRES)'
+
 db-migrate:
+	$(DOCKER_COMPOSE) up -d postgres
+	$(POWERSHELL) '$(WAIT_FOR_POSTGRES)'
 	$(POWERSHELL) '$(LOAD_ENV) npm.cmd --workspace $(API_DIR) run prisma:migrate:deploy'
 
 db-generate:
@@ -104,6 +112,8 @@ db-studio:
 	$(POWERSHELL) '$(LOAD_ENV) Set-Location $(API_DIR); npx.cmd prisma studio'
 
 db-seed:
+	$(DOCKER_COMPOSE) up -d postgres
+	$(POWERSHELL) '$(WAIT_FOR_POSTGRES)'
 	$(POWERSHELL) '$(LOAD_ENV) npm.cmd --workspace $(API_DIR) run prisma:seed'
 
 lint:

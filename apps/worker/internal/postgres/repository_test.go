@@ -36,3 +36,38 @@ func TestNotificationLogSQLUsesSevenBoundParameters(t *testing.T) {
 		t.Fatalf("expected SQL not to contain a tenth placeholder, got %s", sql)
 	}
 }
+
+func TestRecordCalendarEventSyncInsertSetsUpdatedAt(t *testing.T) {
+	sql := `
+		INSERT INTO calendar_event_syncs (
+			business_id,
+			appointment_id,
+			calendar_connection_id,
+			google_event_id,
+			status,
+			last_error,
+			last_synced_at,
+			updated_at
+		)
+		VALUES (
+			$1,
+			$2,
+			$3,
+			$4,
+			$5::calendar_event_sync_status,
+			$6,
+			CASE WHEN $5::text IN ('synced', 'deleted') THEN CURRENT_TIMESTAMP ELSE NULL END,
+			CURRENT_TIMESTAMP
+		)
+	`
+
+	for _, expected := range []string{
+		"INSERT INTO calendar_event_syncs",
+		"updated_at",
+		"CURRENT_TIMESTAMP",
+	} {
+		if !strings.Contains(sql, expected) {
+			t.Fatalf("expected SQL to contain %q, got %s", expected, sql)
+		}
+	}
+}

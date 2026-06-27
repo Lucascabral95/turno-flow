@@ -110,10 +110,22 @@ export type DashboardMetrics = {
 
 export type ReminderSettings = {
   businessId: string;
-  channel: "mock";
+  channel: "mock" | "smtp";
   enabled: boolean;
   offsetMinutes: number;
   template: string;
+};
+
+export type NotificationTemplate = {
+  active: boolean;
+  body: string;
+  businessId: string;
+  createdAt: string;
+  id: string;
+  key: string;
+  name: string;
+  subject: string;
+  updatedAt: string;
 };
 
 export type NotificationHistoryItem = {
@@ -158,6 +170,63 @@ export type CustomerProfile = {
   riskScore: number;
   totalAppointments: number;
   waitlistEntries: unknown[];
+};
+
+export type BusinessMember = {
+  active: boolean;
+  createdAt: string;
+  id: string;
+  role: "owner" | "receptionist" | "professional";
+  staffMember: {
+    email: string | null;
+    id: string;
+    name: string;
+  } | null;
+  user: {
+    email: string;
+    id: string;
+    name: string;
+  };
+};
+
+export type WaitlistEntry = {
+  customer: {
+    email: string;
+    id: string;
+    name: string;
+    phone: string | null;
+    riskLevel: "low" | "medium" | "high";
+    riskScore: number;
+  };
+  earliestTime: string | null;
+  id: string;
+  latestTime: string | null;
+  offers: Array<{
+    appointmentId: string;
+    expiresAt: string;
+    id: string;
+    status: "pending" | "accepted" | "expired" | "rejected";
+  }>;
+  preferredDateEnd: string;
+  preferredDateStart: string;
+  priorityScore: number;
+  service: Service;
+  status: "waiting" | "offered" | "booked" | "expired" | "cancelled";
+};
+
+export type CalendarConnection = {
+  accountEmail: string | null;
+  externalCalendarId: string | null;
+  id: string;
+  lastError: string | null;
+  lastSyncedAt: string | null;
+  provider: "google";
+  staffMember: {
+    email: string | null;
+    id: string;
+    name: string;
+  } | null;
+  status: "not_configured" | "connected" | "expired" | "error";
 };
 
 export type CurrentBusiness = Business & {

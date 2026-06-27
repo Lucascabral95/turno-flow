@@ -7,6 +7,7 @@ import { BusinessesService } from "./businesses.service";
 import { CreateAvailabilityExceptionDto, UpdateAvailabilityExceptionDto } from "./dto/availability-exception.dto";
 import { CreateAvailabilityRuleDto, UpdateAvailabilityRuleDto } from "./dto/availability-rule.dto";
 import { CreateBusinessDto, UpdateBusinessDto } from "./dto/business.dto";
+import { CreateNotificationTemplateDto, UpdateNotificationTemplateDto } from "./dto/notification-template.dto";
 import { UpdateReminderSettingsDto } from "./dto/reminder-settings.dto";
 import { CreateServiceDto, UpdateServiceDto } from "./dto/service.dto";
 import { CreateStaffMemberDto, UpdateStaffMemberDto } from "./dto/staff-member.dto";
@@ -55,9 +56,48 @@ export class BusinessesController {
     return this.businesses.getReminderSettings(user);
   }
 
+  @Get("notification-settings")
+  getNotificationSettings(@CurrentUser() user: AuthenticatedUser) {
+    return this.businesses.getReminderSettings(user);
+  }
+
   @Patch("businesses/current/reminder-settings")
   updateReminderSettings(@CurrentUser() user: AuthenticatedUser, @Body() input: UpdateReminderSettingsDto) {
     return this.businesses.updateReminderSettings(user, input);
+  }
+
+  @Patch("notification-settings")
+  updateNotificationSettings(@CurrentUser() user: AuthenticatedUser, @Body() input: UpdateReminderSettingsDto) {
+    return this.businesses.updateReminderSettings(user, input);
+  }
+
+  @Get("businesses/current/members")
+  listBusinessMembers(@CurrentUser() user: AuthenticatedUser) {
+    return this.businesses.listBusinessMembers(user);
+  }
+
+  @Get("business-members")
+  listBusinessMembersAlias(@CurrentUser() user: AuthenticatedUser) {
+    return this.businesses.listBusinessMembers(user);
+  }
+
+  @Get("notification-templates")
+  listNotificationTemplates(@CurrentUser() user: AuthenticatedUser) {
+    return this.businesses.listNotificationTemplates(user);
+  }
+
+  @Post("notification-templates")
+  createNotificationTemplate(@CurrentUser() user: AuthenticatedUser, @Body() input: CreateNotificationTemplateDto) {
+    return this.businesses.createNotificationTemplate(user, input);
+  }
+
+  @Patch("notification-templates/:id")
+  updateNotificationTemplate(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() input: UpdateNotificationTemplateDto
+  ) {
+    return this.businesses.updateNotificationTemplate(user, id, input);
   }
 
   @Get("services")
