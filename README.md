@@ -116,6 +116,22 @@ SMTP_TIMEOUT_SECONDS=10
 
 Gmail requires an App Password for SMTP. Do not use your normal Gmail password, and do not commit the real secret.
 
+### Google Calendar sync
+
+Google Calendar sync is unidirectional from TurnoFlow to one business calendar account. Connect Google Calendar once from `/dashboard/equipo`; the worker will create, update, or delete Google Calendar events for every future appointment in that business when appointments are booked, rescheduled, or cancelled.
+
+Set these values in your local `.env`:
+
+```env
+GOOGLE_CALENDAR_CLIENT_ID=your-google-oauth-client-id
+GOOGLE_CALENDAR_CLIENT_SECRET=your-google-oauth-client-secret
+GOOGLE_CALENDAR_REDIRECT_URI=http://localhost:3001/calendar-connections/google/callback
+CALENDAR_TOKEN_ENCRYPTION_KEY=base64-encoded-32-byte-key
+OAUTH_STATE_SECRET=long-random-state-secret
+```
+
+Create the OAuth client in Google Cloud Console as a Web application and add the redirect URI above. `CALENDAR_TOKEN_ENCRYPTION_KEY` must decode to exactly 32 bytes because tokens are encrypted with AES-256-GCM before being stored in PostgreSQL. Do not commit real OAuth secrets or token encryption keys.
+
 ### Worker runtime
 
 The Go worker runs in `WORKER_MODE=all` by default, which keeps local development simple by running RabbitMQ consumers and scheduled jobs in one process.

@@ -5,9 +5,13 @@ import {
   CalendarDays,
   CheckCircle2,
   Clock,
+  Hourglass,
+  Link2,
+  Mail,
   PencilLine,
   Save,
   Scissors,
+  ShieldCheck,
   Trash2,
   X,
   Users
@@ -20,11 +24,15 @@ import { toast } from "sonner";
 import type {
   Appointment,
   AvailabilitySlot,
+  BusinessMember,
+  CalendarConnection,
   CurrentBusiness,
   CustomerProfile,
   DashboardMetrics,
   NotificationHistoryItem,
-  ReminderSettings
+  NotificationTemplate,
+  ReminderSettings,
+  WaitlistEntry
 } from "../../../lib/api";
 import { formatDateTime, formatMoney, formatSlotTime, requestJson } from "../../../lib/api";
 import {
@@ -58,7 +66,17 @@ import { BookingAdminView, HomeView, MetricsPanel } from "./dashboard-overview";
 import { RemindersView } from "./dashboard-reminders";
 import { Alert, EmptyState, InventoryList, LoadingState, Metric, SummaryValue } from "./dashboard-shared";
 import styles from "./dashboard-app.module.scss";
-export type DashboardView = "home" | "setup" | "schedule" | "appointments" | "customers" | "reminders" | "booking" | "metrics";
+export type DashboardView =
+  | "home"
+  | "setup"
+  | "schedule"
+  | "appointments"
+  | "customers"
+  | "waitlist"
+  | "team"
+  | "reminders"
+  | "booking"
+  | "metrics";
 
 type SubmitResult = Promise<boolean>;
 type AuthMode = "login" | "register";
@@ -68,19 +86,49 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [business, setBusiness] = useState<CurrentBusiness | null>(null);
+  const [businessMembers, setBusinessMembers] = useState<BusinessMember[]>([]);
+  const [calendarConnections, setCalendarConnections] = useState<CalendarConnection[]>([]);
   const [customers, setCustomers] = useState<CustomerProfile[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [notificationHistory, setNotificationHistory] = useState<NotificationHistoryItem[]>([]);
+  const [notificationTemplates, setNotificationTemplates] = useState<NotificationTemplate[]>([]);
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings | null>(null);
   const [token, setToken] = useState<string | null>(null);
+  const [waitlistEntries, setWaitlistEntries] = useState<WaitlistEntry[]>([]);
 
   useEffect(() => {
     const storedToken = window.localStorage.getItem("turnoflow.token");
     if (storedToken) {
       setToken(storedToken);
       void refresh(storedToken);
+    }
+  }, []);
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const calendarStatus = searchParams.get("calendar");
+    const queuedParam = searchParams.get("queued");
+    const queued = queuedParam ? Number.parseInt(queuedParam, 10) : 0;
+
+    if (calendarStatus === "connected") {
+      toast.success(
+        queued > 0
+          ? `Google Calendar conectado. ${queued} turnos futuros quedaron listos para sincronizar.`
+          : "Google Calendar conectado. Las proximas reservas se van a agendar automaticamente."
+      );
+    }
+    if (calendarStatus === "error") {
+      toast.error("No se pudo conectar Google Calendar");
+    }
+    if (calendarStatus === "connected" || calendarStatus === "error") {
+      searchParams.delete("calendar");
+      searchParams.delete("queued");
+      searchParams.delete("connectionId");
+      const nextSearch = searchParams.toString();
+      const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}`;
+      window.history.replaceState({}, "", nextUrl);
     }
   }, []);
 
@@ -112,7 +160,11 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
         currentCustomers,
         currentMetrics,
         currentReminderSettings,
-        currentNotificationHistory
+        currentNotificationHistory,
+        currentNotificationTemplates,
+        currentWaitlistEntries,
+        currentBusinessMembers,
+        currentCalendarConnections
       ] = await Promise.all([
         requestJson<CurrentBusiness | null>("/businesses/current", {
           headers: { Authorization: `Bearer ${activeToken}` }
@@ -131,14 +183,30 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
         }).catch(() => null),
         requestJson<NotificationHistoryItem[]>("/dashboard/notifications", {
           headers: { Authorization: `Bearer ${activeToken}` }
+        }).catch(() => []),
+        requestJson<NotificationTemplate[]>("/notification-templates", {
+          headers: { Authorization: `Bearer ${activeToken}` }
+        }).catch(() => []),
+        requestJson<WaitlistEntry[]>("/waitlist", {
+          headers: { Authorization: `Bearer ${activeToken}` }
+        }).catch(() => []),
+        requestJson<BusinessMember[]>("/business-members", {
+          headers: { Authorization: `Bearer ${activeToken}` }
+        }).catch(() => []),
+        requestJson<CalendarConnection[]>("/calendar-connections", {
+          headers: { Authorization: `Bearer ${activeToken}` }
         }).catch(() => [])
       ]);
       setBusiness(currentBusiness);
+      setBusinessMembers(currentBusinessMembers);
+      setCalendarConnections(currentCalendarConnections);
       setAppointments(currentAppointments);
       setCustomers(currentCustomers);
       setMetrics(currentMetrics);
       setReminderSettings(currentReminderSettings);
       setNotificationHistory(currentNotificationHistory);
+      setNotificationTemplates(currentNotificationTemplates);
+      setWaitlistEntries(currentWaitlistEntries);
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : "No se pudo cargar el dashboard");
     } finally {
@@ -397,15 +465,117 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
     }
   }
 
+  async function handleNotificationTemplateUpdate(templateId: string, input: Pick<NotificationTemplate, "active" | "body" | "name" | "subject">) {
+    setError(null);
+    try {
+      await authRequest(`/notification-templates/${templateId}`, {
+        body: JSON.stringify(input),
+        method: "PATCH"
+      });
+      await refresh();
+      toast.success("Template actualizado");
+    } catch (templateError) {
+      const message = templateError instanceof Error ? templateError.message : "No se pudo actualizar el template";
+      setError(message);
+      toast.error(message);
+    }
+  }
+
+  async function handleWaitlistCancel(entryId: string) {
+    setError(null);
+    try {
+      await authRequest(`/waitlist/${entryId}/cancel`, {
+        method: "PATCH"
+      });
+      await refresh();
+      toast.success("Entrada de lista de espera cancelada");
+    } catch (waitlistError) {
+      const message = waitlistError instanceof Error ? waitlistError.message : "No se pudo cancelar la entrada";
+      setError(message);
+      toast.error(message);
+    }
+  }
+
+  async function handleWaitlistOffer(offerId: string, action: "accept" | "reject") {
+    setError(null);
+    try {
+      await authRequest(`/waitlist-offers/${offerId}/${action}`, {
+        method: "PATCH"
+      });
+      await refresh();
+      toast.success(action === "accept" ? "Oferta aceptada y turno reasignado" : "Oferta rechazada");
+    } catch (offerError) {
+      const message = offerError instanceof Error ? offerError.message : "No se pudo actualizar la oferta";
+      setError(message);
+      toast.error(message);
+    }
+  }
+
+  async function handleCalendarStart() {
+    setError(null);
+    try {
+      const response = await authRequest<{ authUrl: string | null; configured: boolean }>("/calendar-connections/google/start", {
+        body: JSON.stringify({}),
+        method: "POST"
+      });
+      await refresh();
+
+      if (response.authUrl) {
+        window.location.href = response.authUrl;
+        return;
+      }
+
+      toast.info("Faltan credenciales OAuth para completar la conexion");
+    } catch (calendarError) {
+      const message = calendarError instanceof Error ? calendarError.message : "No se pudo iniciar la conexion";
+      setError(message);
+      toast.error(message);
+    }
+  }
+
+  async function handleCalendarDisconnect(connectionId: string) {
+    setError(null);
+    try {
+      await authRequest(`/calendar-connections/${connectionId}`, {
+        method: "DELETE"
+      });
+      await refresh();
+      toast.success("Google Calendar desconectado");
+    } catch (calendarError) {
+      const message = calendarError instanceof Error ? calendarError.message : "No se pudo desconectar Google Calendar";
+      setError(message);
+      toast.error(message);
+    }
+  }
+
+  async function handleCalendarSyncFuture(connectionId: string) {
+    setError(null);
+    try {
+      const response = await authRequest<{ queued: number }>(`/calendar-connections/${connectionId}/sync-future`, {
+        method: "POST"
+      });
+      await refresh();
+      toast.success(`${response.queued} turnos futuros encolados para Google Calendar`);
+    } catch (calendarError) {
+      const message = calendarError instanceof Error ? calendarError.message : "No se pudo sincronizar Google Calendar";
+      setError(message);
+      toast.error(message);
+    }
+  }
+
   function logout() {
     window.localStorage.removeItem("turnoflow.token");
     setAppointments([]);
     setBusiness(null);
+    setBusinessMembers([]);
+    setCalendarConnections([]);
     setCustomers([]);
     setMetrics(null);
     setNotificationHistory([]);
+    setNotificationTemplates([]);
     setReminderSettings(null);
     setToken(null);
+    setWaitlistEntries([]);
   }
 
   if (!token) {
@@ -472,12 +642,43 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
           />
         ) : null}
         {activeView === "customers" ? <CustomersView customers={customers} /> : null}
+        {activeView === "waitlist" ? (
+          <WaitlistView
+            entries={waitlistEntries}
+            onCancel={(entryId) => {
+              void handleWaitlistCancel(entryId);
+            }}
+            onOfferAction={(offerId, action) => {
+              void handleWaitlistOffer(offerId, action);
+            }}
+          />
+        ) : null}
+        {activeView === "team" ? (
+          <TeamView
+            business={business}
+            calendarConnections={calendarConnections}
+            members={businessMembers}
+            onCalendarDisconnect={(connectionId) => {
+              void handleCalendarDisconnect(connectionId);
+            }}
+            onCalendarStart={() => {
+              void handleCalendarStart();
+            }}
+            onCalendarSyncFuture={(connectionId) => {
+              void handleCalendarSyncFuture(connectionId);
+            }}
+          />
+        ) : null}
         {activeView === "reminders" ? (
           <RemindersView
             appointments={appointments}
             history={notificationHistory}
+            onTemplateUpdate={(templateId, input) => {
+              void handleNotificationTemplateUpdate(templateId, input);
+            }}
             settings={reminderSettings}
             onSubmit={(event) => void handleReminderSettings(event)}
+            templates={notificationTemplates}
           />
         ) : null}
         {activeView === "booking" ? <BookingAdminView business={business} /> : null}
@@ -661,6 +862,320 @@ function CustomersView({ customers }: { customers: CustomerProfile[] }) {
   );
 }
 
+function WaitlistView({
+  entries,
+  onCancel,
+  onOfferAction
+}: {
+  entries: WaitlistEntry[];
+  onCancel: (entryId: string) => void;
+  onOfferAction: (offerId: string, action: "accept" | "reject") => void;
+}) {
+  const [statusFilter, setStatusFilter] = useState<"all" | WaitlistEntry["status"]>("all");
+  const visibleEntries = entries.filter((entry) => statusFilter === "all" || entry.status === statusFilter);
+  const pendingOffers = entries.flatMap((entry) => entry.offers.filter((offer) => offer.status === "pending"));
+  const waitingEntries = entries.filter((entry) => entry.status === "waiting").length;
+
+  return (
+    <section className="stack">
+      <section className="appointments-command panel">
+        <div className="appointments-command-copy">
+          <span className="page-kicker">Lista de espera</span>
+          <h2>Reasigna huecos con candidatos compatibles y ofertas controladas.</h2>
+          <p>Monitorea clientes esperando, ofertas pendientes, vencimientos y acciones para aceptar, rechazar o cancelar entradas.</p>
+        </div>
+        <div className="dashboard-banner-stats">
+          <Metric icon={<Hourglass size={18} />} label="Esperando" value={waitingEntries} />
+          <Metric icon={<Mail size={18} />} label="Ofertas pendientes" value={pendingOffers.length} tone="warning" />
+          <Metric icon={<CalendarClock size={18} />} label="Total entradas" value={entries.length} />
+        </div>
+      </section>
+
+      <section className="panel stack">
+        <header className="panel-header">
+          <div>
+            <h2 className="inline">
+              <Hourglass size={20} />
+              Candidatos y ofertas
+            </h2>
+            <p>El worker avanza automaticamente cuando una oferta expira o se rechaza.</p>
+          </div>
+          <label className="compact-filter">
+            Estado
+            <select onChange={(event) => setStatusFilter(event.target.value as "all" | WaitlistEntry["status"])} value={statusFilter}>
+              <option value="all">Todos</option>
+              <option value="waiting">Esperando</option>
+              <option value="offered">Ofrecido</option>
+              <option value="booked">Reservado</option>
+              <option value="expired">Expirado</option>
+              <option value="cancelled">Cancelado</option>
+            </select>
+          </label>
+        </header>
+
+        {entries.length === 0 ? (
+          <EmptyState compact title="Sin lista de espera" description="Cuando un cliente no encuentre horario, su interes va a aparecer aca." />
+        ) : visibleEntries.length === 0 ? (
+          <EmptyState compact title="Sin resultados" description="No hay entradas con el estado seleccionado." />
+        ) : (
+          <div className="table-shell">
+            <table className="data-table appointments-table">
+              <thead>
+                <tr>
+                  <th>Cliente</th>
+                  <th>Preferencia</th>
+                  <th>Servicio</th>
+                  <th>Estado</th>
+                  <th>Ultima oferta</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleEntries.map((entry) => {
+                  const latestOffer = entry.offers[0] ?? null;
+                  const offerExpired = latestOffer ? new Date(latestOffer.expiresAt).getTime() <= Date.now() : false;
+
+                  return (
+                    <tr key={entry.id}>
+                      <td>
+                        <div className="table-primary">
+                          <strong>{capitalizeFirst(entry.customer.name)}</strong>
+                          <span>{entry.customer.email}</span>
+                          <span className={riskBadgeClass(entry.customer.riskLevel)}>Riesgo {entry.customer.riskLevel}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="table-primary">
+                          <strong>{formatDateOnly(entry.preferredDateStart)} a {formatDateOnly(entry.preferredDateEnd)}</strong>
+                          <span>{entry.earliestTime ?? "00:00"} - {entry.latestTime ?? "23:59"}</span>
+                        </div>
+                      </td>
+                      <td>{capitalizeFirst(entry.service.name)}</td>
+                      <td><span className={waitlistStatusClass(entry.status)}>{waitlistStatusLabel(entry.status)}</span></td>
+                      <td>
+                        {latestOffer ? (
+                          <div className="table-primary">
+                            <strong className={offerExpired && latestOffer.status === "pending" ? "danger-text" : undefined}>
+                              {waitlistOfferStatusLabel(latestOffer.status)}
+                            </strong>
+                            <span>Expira: {formatDateTime(latestOffer.expiresAt)}</span>
+                          </div>
+                        ) : (
+                          <span className="muted-text">Sin oferta creada</span>
+                        )}
+                      </td>
+                      <td>
+                        <div className="row-actions">
+                          {latestOffer?.status === "pending" && !offerExpired ? (
+                            <>
+                              <button className="button-muted" onClick={() => onOfferAction(latestOffer.id, "accept")} type="button">
+                                Aceptar
+                              </button>
+                              <button className="button-danger" onClick={() => onOfferAction(latestOffer.id, "reject")} type="button">
+                                Rechazar
+                              </button>
+                            </>
+                          ) : null}
+                          {entry.status === "waiting" || entry.status === "offered" ? (
+                            <button className="button-muted" onClick={() => onCancel(entry.id)} type="button">
+                              Cancelar
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </section>
+  );
+}
+
+function TeamView({
+  business,
+  calendarConnections,
+  members,
+  onCalendarDisconnect,
+  onCalendarStart,
+  onCalendarSyncFuture
+}: {
+  business: CurrentBusiness | null;
+  calendarConnections: CalendarConnection[];
+  members: BusinessMember[];
+  onCalendarDisconnect: (connectionId: string) => void;
+  onCalendarStart: () => void;
+  onCalendarSyncFuture: (connectionId: string) => void;
+}) {
+  if (!business) {
+    return <EmptyState title="Sin negocio configurado" description="Crea el negocio para habilitar equipo, permisos e integraciones." />;
+  }
+
+  return (
+    <section className="stack">
+      <section className="appointments-command panel">
+        <div className="appointments-command-copy">
+          <span className="page-kicker">Equipo y permisos</span>
+          <h2>Controla quien opera el negocio y prepara la sincronizacion de calendarios.</h2>
+          <p>Conecta una sola cuenta de Google Calendar para que todos los turnos del negocio se agenden automaticamente en ese calendario.</p>
+        </div>
+        <div className="dashboard-banner-stats">
+          <Metric icon={<ShieldCheck size={18} />} label="Miembros" value={members.length} />
+          <Metric icon={<Users size={18} />} label="Profesionales" value={business.staffMembers.filter((staff) => staff.active).length} />
+          <Metric icon={<Link2 size={18} />} label="Google Calendar" value={calendarConnections.some((connection) => connection.status === "connected") ? "Activo" : "Pendiente"} />
+        </div>
+      </section>
+
+      <section className="grid-2">
+        <section className="panel stack">
+          <header className="panel-header">
+            <div>
+              <h2 className="inline">
+                <ShieldCheck size={20} />
+                Miembros
+              </h2>
+              <p>Vista actual de permisos por usuario. La invitacion de nuevos miembros queda para el siguiente corte.</p>
+            </div>
+          </header>
+          {members.length === 0 ? (
+            <EmptyState compact title="Sin miembros visibles" description="El owner se crea automaticamente al crear el negocio." />
+          ) : (
+            <div className="management-list">
+              {members.map((member) => (
+                <article className="management-card" key={member.id}>
+                  <div className="management-card-header">
+                    <div className="management-card-copy">
+                      <strong>{capitalizeFirst(member.user.name)}</strong>
+                      <span>{member.user.email}</span>
+                      {member.staffMember ? <span>Asignado a {capitalizeFirst(member.staffMember.name)}</span> : null}
+                    </div>
+                    <span className="badge badge-soft">{businessRoleLabel(member.role)}</span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="panel stack">
+          <header className="panel-header">
+            <div>
+              <h2 className="inline">
+                <Link2 size={20} />
+                Google Calendar
+              </h2>
+              <p>Una unica cuenta Google recibe reservas, reprogramaciones y cancelaciones de todos los profesionales del negocio.</p>
+            </div>
+          </header>
+          <div className="management-list">
+            {(() => {
+              const google = calendarConnections.find((connection) => connection.provider === "google");
+
+              return (
+                <article className="management-card">
+                  <div className="management-card-header">
+                    <div className="management-card-copy">
+                      <strong>Calendario del negocio</strong>
+                      <span>
+                        {google?.accountEmail
+                          ? `Conectado con ${google.accountEmail}`
+                          : "Todavia no hay una cuenta Google autorizada"}
+                      </span>
+                    </div>
+                    <span className="badge badge-soft">{calendarStatusLabel(google?.status ?? "not_configured")}</span>
+                  </div>
+                  <div className="management-card-actions">
+                    {google?.status === "connected" ? (
+                      <>
+                        <button className="button-muted" onClick={() => onCalendarSyncFuture(google.id)} type="button">
+                          Sincronizar futuros
+                        </button>
+                        <button className="button-danger" onClick={() => onCalendarDisconnect(google.id)} type="button">
+                          Desconectar
+                        </button>
+                      </>
+                    ) : (
+                      <button className="button-muted" onClick={onCalendarStart} type="button">
+                        Conectar Google
+                      </button>
+                    )}
+                  </div>
+                  <div className="management-meta-grid">
+                    <span className="field-hint">Alcance: todos los turnos activos del negocio.</span>
+                    <span className="field-hint">
+                      Ultima sync: {google?.lastSyncedAt ? formatDateTime(google.lastSyncedAt) : "Todavia sin eventos sincronizados"}
+                    </span>
+                    {google?.lastError ? <span className="field-hint">Error: {google.lastError}</span> : null}
+                  </div>
+                </article>
+              );
+            })()}
+          </div>
+        </section>
+      </section>
+    </section>
+  );
+}
+
+function businessRoleLabel(role: BusinessMember["role"]) {
+  const labels: Record<BusinessMember["role"], string> = {
+    owner: "Owner",
+    professional: "Profesional",
+    receptionist: "Recepcion"
+  };
+
+  return labels[role];
+}
+
+function calendarStatusLabel(status: CalendarConnection["status"]) {
+  const labels: Record<CalendarConnection["status"], string> = {
+    connected: "Conectado",
+    error: "Requiere configuracion",
+    expired: "Vencido",
+    not_configured: "No configurado"
+  };
+
+  return labels[status];
+}
+
+function waitlistStatusClass(status: WaitlistEntry["status"]) {
+  if (status === "booked") {
+    return "badge";
+  }
+
+  if (status === "offered" || status === "waiting") {
+    return "badge badge-warning";
+  }
+
+  return "badge badge-danger";
+}
+
+function waitlistStatusLabel(status: WaitlistEntry["status"]) {
+  const labels: Record<WaitlistEntry["status"], string> = {
+    booked: "Reservado",
+    cancelled: "Cancelado",
+    expired: "Expirado",
+    offered: "Ofrecido",
+    waiting: "Esperando"
+  };
+
+  return labels[status];
+}
+
+function waitlistOfferStatusLabel(status: WaitlistEntry["offers"][number]["status"]) {
+  const labels: Record<WaitlistEntry["offers"][number]["status"], string> = {
+    accepted: "Aceptada",
+    expired: "Expirada",
+    pending: "Pendiente",
+    rejected: "Rechazada"
+  };
+
+  return labels[status];
+}
+
 function ScheduleView({
   business,
   onAvailabilityExceptionSubmit,
@@ -697,6 +1212,7 @@ function ScheduleView({
           <AvailabilityExceptionPanel business={business} onSubmit={onAvailabilityExceptionSubmit} />
         </aside>
         <section className="stack">
+          <AvailabilityMonthPanel business={business} />
           <SchedulePreview business={business} />
           <section className="grid-2">
             <AvailabilityRulesPanel business={business} onDeleteRule={onAvailabilityRuleDelete} />
@@ -940,6 +1456,46 @@ function AvailabilityExceptionsPanel({ business }: { business: CurrentBusiness }
           })}
         </div>
       )}
+    </section>
+  );
+}
+
+function AvailabilityMonthPanel({ business }: { business: CurrentBusiness }) {
+  const today = new Date();
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const monthDays = Array.from({ length: new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate() }, (_, index) => {
+    const date = new Date(monthStart);
+    date.setDate(index + 1);
+    return date;
+  });
+
+  return (
+    <section className="panel stack">
+      <header className="panel-header">
+        <div>
+          <h3>Calendario mensual</h3>
+          <p>Vista rapida de feriados, vacaciones, bloqueos y aperturas especiales cargadas como excepciones.</p>
+        </div>
+        <span className="badge badge-soft">{business.availabilityExceptions.length} excepciones</span>
+      </header>
+      <div className="monthly-availability-grid">
+        {monthDays.map((date) => {
+          const dateKey = date.toISOString().slice(0, 10);
+          const exceptions = business.availabilityExceptions.filter((exception) => exception.date.slice(0, 10) === dateKey);
+
+          return (
+            <article className={exceptions.length > 0 ? "month-day month-day-active" : "month-day"} key={dateKey}>
+              <strong>{date.getDate()}</strong>
+              <span>{weekdayName(date.getDay())}</span>
+              {exceptions.slice(0, 2).map((exception) => (
+                <small className={exception.type === "BLOCKED" ? "danger-text" : "warning-text"} key={exception.id}>
+                  {exception.type === "BLOCKED" ? "Bloqueo" : "Apertura"} {exception.startTime}
+                </small>
+              ))}
+            </article>
+          );
+        })}
+      </div>
     </section>
   );
 }
@@ -1799,7 +2355,7 @@ function SchedulePreview({ business }: { business: CurrentBusiness }) {
         {slots.map((slot) => (
           <div className="slot-chip" key={`${slot.staffMemberId}-${slot.startsAt}`}>
             <Clock size={16} />
-            {formatSlotTime(slot.startsAt)}
+            {formatSlotTime(slot.startsAt, business.timezone)}
           </div>
         ))}
       </div>

@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -248,8 +249,9 @@ func (repository *Repository) ClaimDueNotifications(ctx context.Context, now tim
 			attempts = n.attempts + 1,
 			next_attempt_at = $1 + INTERVAL '5 minutes',
 			updated_at = CURRENT_TIMESTAMP
-		FROM due
+		FROM due, businesses b
 		WHERE n.id = due.id
+			AND b.id = n.business_id
 		RETURNING
 			n.id,
 			n.business_id,
@@ -259,7 +261,8 @@ func (repository *Repository) ClaimDueNotifications(ctx context.Context, now tim
 			n.template,
 			n.due_at,
 			n.attempts,
-			n.payload
+			n.payload,
+			b.timezone
 	`, now, maxAttempts, limit)
 	if err != nil {
 		return nil, fmt.Errorf("claim due notifications: %w", err)
@@ -279,6 +282,7 @@ func (repository *Repository) ClaimDueNotifications(ctx context.Context, now tim
 			&notification.DueAt,
 			&notification.Attempts,
 			&notification.Payload,
+			&notification.Timezone,
 		); err != nil {
 			return nil, fmt.Errorf("scan due notification: %w", err)
 		}
@@ -484,19 +488,178 @@ func (repository *txRepository) GetReminderSettings(ctx context.Context, busines
 	return settings, nil
 }
 
+func (repository *txRepository) GetCalendarSyncTarget(ctx context.Context, appointmentID string) (*worker.CalendarSyncTarget, error) {
+	var target worker.CalendarSyncTarget
+	var connection worker.CalendarConnection
+	var staffMemberID sql.NullString
+	err := repository.tx.QueryRow(ctx, `
+		SELECT
+			a.id,
+			a.business_id,
+			b.timezone,
+			a.starts_at,
+			a.ends_at,
+			a.status::text,
+			c.name,
+			c.email,
+			c.phone,
+			s.name,
+			sm.name,
+			cc.id,
+			cc.business_id,
+			cc.staff_member_id,
+			cc.access_token_encrypted,
+			cc.refresh_token_encrypted,
+			cc.expires_at
+		FROM appointments a
+		JOIN businesses b ON b.id = a.business_id
+		JOIN customers c ON c.id = a.customer_id
+		JOIN services s ON s.id = a.service_id
+		JOIN staff_members sm ON sm.id = a.staff_member_id
+		JOIN calendar_connections cc
+			ON cc.business_id = a.business_id
+			AND cc.provider = 'google'
+			AND cc.status = 'connected'
+		WHERE a.id = $1
+		ORDER BY cc.updated_at DESC
+		LIMIT 1
+	`, appointmentID).Scan(
+		&target.Appointment.AppointmentID,
+		&target.Appointment.BusinessID,
+		&target.Appointment.Timezone,
+		&target.Appointment.StartsAt,
+		&target.Appointment.EndsAt,
+		&target.Appointment.Status,
+		&target.Appointment.CustomerName,
+		&target.Appointment.CustomerEmail,
+		&target.Appointment.CustomerPhone,
+		&target.Appointment.ServiceName,
+		&target.Appointment.StaffName,
+		&connection.ID,
+		&connection.BusinessID,
+		&staffMemberID,
+		&connection.AccessTokenEncrypted,
+		&connection.RefreshTokenEncrypted,
+		&connection.ExpiresAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("query calendar sync target: %w", err)
+	}
+	if staffMemberID.Valid {
+		connection.StaffMemberID = &staffMemberID.String
+	}
+	target.Connection = &connection
+
+	lockKey := target.Appointment.AppointmentID + ":" + connection.ID
+	if _, err := repository.tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, lockKey); err != nil {
+		return nil, fmt.Errorf("lock calendar sync target: %w", err)
+	}
+
+	var googleEventID sql.NullString
+	err = repository.tx.QueryRow(ctx, `
+		SELECT google_event_id
+		FROM calendar_event_syncs
+		WHERE appointment_id = $1
+			AND calendar_connection_id = $2
+	`, target.Appointment.AppointmentID, connection.ID).Scan(&googleEventID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		googleEventID = sql.NullString{}
+	} else if err != nil {
+		return nil, fmt.Errorf("query calendar event sync: %w", err)
+	}
+	if googleEventID.Valid {
+		target.GoogleEventID = &googleEventID.String
+	}
+
+	return &target, nil
+}
+
+func (repository *txRepository) UpdateCalendarConnectionToken(ctx context.Context, update worker.CalendarConnectionTokenUpdate) error {
+	_, err := repository.tx.Exec(ctx, `
+		UPDATE calendar_connections
+		SET
+			access_token_encrypted = $2,
+			expires_at = $3,
+			last_error = NULL,
+			status = 'connected',
+			updated_at = CURRENT_TIMESTAMP
+		WHERE id = $1
+	`, update.ConnectionID, update.AccessTokenEncrypted, update.ExpiresAt)
+	if err != nil {
+		return fmt.Errorf("update calendar connection token: %w", err)
+	}
+
+	return nil
+}
+
+func (repository *txRepository) MarkCalendarConnectionError(ctx context.Context, connectionID string, status string, lastError string) error {
+	_, err := repository.tx.Exec(ctx, `
+		UPDATE calendar_connections
+		SET
+			status = $2::calendar_connection_status,
+			last_error = $3,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE id = $1
+	`, connectionID, status, lastError)
+	if err != nil {
+		return fmt.Errorf("mark calendar connection error: %w", err)
+	}
+
+	return nil
+}
+
+func (repository *txRepository) RecordCalendarEventSync(ctx context.Context, result worker.CalendarEventSyncResult) error {
+	_, err := repository.tx.Exec(ctx, `
+		INSERT INTO calendar_event_syncs (
+			business_id,
+			appointment_id,
+			calendar_connection_id,
+			google_event_id,
+			status,
+			last_error,
+			last_synced_at,
+			updated_at
+		)
+		VALUES (
+			$1,
+			$2,
+			$3,
+			$4,
+			$5::calendar_event_sync_status,
+			$6,
+			CASE WHEN $5::text IN ('synced', 'deleted') THEN CURRENT_TIMESTAMP ELSE NULL END,
+			CURRENT_TIMESTAMP
+		)
+		ON CONFLICT (appointment_id, calendar_connection_id)
+		DO UPDATE SET
+			google_event_id = COALESCE(EXCLUDED.google_event_id, calendar_event_syncs.google_event_id),
+			status = EXCLUDED.status,
+			last_error = EXCLUDED.last_error,
+			last_synced_at = CASE
+				WHEN EXCLUDED.status IN ('synced', 'deleted') THEN CURRENT_TIMESTAMP
+				ELSE calendar_event_syncs.last_synced_at
+			END,
+			updated_at = CURRENT_TIMESTAMP
+	`, result.BusinessID, result.AppointmentID, result.CalendarConnectionID, result.GoogleEventID, result.Status, result.LastError)
+	if err != nil {
+		return fmt.Errorf("record calendar event sync: %w", err)
+	}
+
+	return nil
+}
+
 func (repository *txRepository) RecalculateBusinessMetricsDaily(
 	ctx context.Context,
 	businessID string,
 	metricDate time.Time,
 ) (worker.BusinessMetricsDailySnapshot, error) {
 	startDate, endDate := businessMetricsDayBounds(metricDate)
-
-	if _, err := repository.tx.Exec(ctx, `
-		DELETE FROM business_metrics_daily
-		WHERE business_id = $1 AND date = $2::date
-	`, businessID, startDate); err != nil {
-		return worker.BusinessMetricsDailySnapshot{}, fmt.Errorf("delete existing business metrics: %w", err)
-	}
 
 	var snapshot worker.BusinessMetricsDailySnapshot
 	err := repository.tx.QueryRow(ctx, `
@@ -546,6 +709,16 @@ func (repository *txRepository) RecalculateBusinessMetricsDaily(
 			estimated_revenue_cents,
 			lost_revenue_cents
 		FROM source
+		ON CONFLICT (business_id, date)
+		DO UPDATE SET
+			total_appointments = EXCLUDED.total_appointments,
+			active_appointments = EXCLUDED.active_appointments,
+			completed_appointments = EXCLUDED.completed_appointments,
+			cancelled_appointments = EXCLUDED.cancelled_appointments,
+			no_show_appointments = EXCLUDED.no_show_appointments,
+			estimated_revenue_cents = EXCLUDED.estimated_revenue_cents,
+			lost_revenue_cents = EXCLUDED.lost_revenue_cents,
+			updated_at = CURRENT_TIMESTAMP
 		RETURNING
 			business_id,
 			date,

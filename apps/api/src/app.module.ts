@@ -6,6 +6,7 @@ import { AppointmentsModule } from "./appointments/appointments.module";
 import { AuditModule } from "./audit/audit.module";
 import { AuthModule } from "./auth/auth.module";
 import { BusinessesModule } from "./businesses/businesses.module";
+import { CalendarModule } from "./calendar/calendar.module";
 import { CustomersModule } from "./customers/customers.module";
 import { DashboardModule } from "./dashboard/dashboard.module";
 import { EventsModule } from "./events/events.module";
@@ -21,6 +22,7 @@ import { PublicModule } from "./public/public.module";
     AuditModule,
     AuthModule,
     BusinessesModule,
+    CalendarModule,
     CustomersModule,
     AppointmentsModule,
     DashboardModule,

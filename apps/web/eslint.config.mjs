@@ -21,6 +21,6 @@ export default tseslint.config(
     }
   },
   {
-    ignores: [".next/**", "eslint.config.mjs", "node_modules/**", "vitest.config.ts"]
+    ignores: [".next/**", "eslint.config.mjs", "node_modules/**", "public/sw.js", "vitest.config.ts"]
   }
 );

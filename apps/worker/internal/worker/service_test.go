@@ -53,6 +53,9 @@ func TestHandleEventCreatesWaitlistOfferOnlyOnce(t *testing.T) {
 	if !strings.Contains(sender.messages[0].Text, "/reject") {
 		t.Fatalf("expected waitlist offer email to include reject link, got %q", sender.messages[0].Text)
 	}
+	if !strings.Contains(sender.messages[0].Text, "17/06/2026 07:00 (America/Argentina/Buenos_Aires)") {
+		t.Fatalf("expected waitlist offer email to use business local time, got %q", sender.messages[0].Text)
+	}
 }
 
 func TestHandleEventCreatesNextOfferAfterWaitlistOfferRejected(t *testing.T) {
@@ -73,6 +76,61 @@ func TestHandleEventCreatesNextOfferAfterWaitlistOfferRejected(t *testing.T) {
 	}
 	if len(sender.messages) != 1 {
 		t.Fatalf("expected one waitlist email, got %d", len(sender.messages))
+	}
+}
+
+func TestHandleEventSendsEmailWhenBusinessCancelsAppointment(t *testing.T) {
+	ctx := context.Background()
+	repository := newFakeRepository()
+	repository.candidate = nil
+	sender := &fakeSender{}
+	service := NewService(repository, sender, "http://localhost:3000", "noreply@example.test")
+	event := cancellationEvent(t)
+	event.Payload = appointmentEventPayload(t, "cancelled_by_business")
+
+	if err := service.HandleEvent(ctx, event); err != nil {
+		t.Fatalf("handle business cancellation event: %v", err)
+	}
+
+	if len(sender.messages) != 1 {
+		t.Fatalf("expected one cancellation email, got %d", len(sender.messages))
+	}
+	message := sender.messages[0]
+	for _, expected := range []string{
+		"Tu turno fue cancelado",
+		"Hola Original Customer",
+		"Corte",
+		"17/06/2026 07:00 (America/Argentina/Buenos_Aires)",
+	} {
+		if !strings.Contains(message.Subject+" "+message.Text, expected) {
+			t.Fatalf("expected cancellation email to contain %q, got subject=%q text=%q", expected, message.Subject, message.Text)
+		}
+	}
+	if len(repository.notificationLogs) != 1 {
+		t.Fatalf("expected one notification log, got %d", len(repository.notificationLogs))
+	}
+	log := repository.notificationLogs[0]
+	if log.Template != "appointment_cancelled_by_business" || log.Status != NotificationSent {
+		t.Fatalf("unexpected cancellation log %#v", log)
+	}
+}
+
+func TestHandleEventDoesNotSendCancellationEmailWhenCustomerCancelsAppointment(t *testing.T) {
+	ctx := context.Background()
+	repository := newFakeRepository()
+	repository.candidate = nil
+	sender := &fakeSender{}
+	service := NewService(repository, sender, "http://localhost:3000", "noreply@example.test")
+
+	if err := service.HandleEvent(ctx, cancellationEvent(t)); err != nil {
+		t.Fatalf("handle customer cancellation event: %v", err)
+	}
+
+	if len(sender.messages) != 0 {
+		t.Fatalf("expected no cancellation email for customer cancellation, got %d", len(sender.messages))
+	}
+	if len(repository.notificationLogs) != 0 {
+		t.Fatalf("expected no notification log for customer cancellation, got %d", len(repository.notificationLogs))
 	}
 }
 
@@ -121,6 +179,102 @@ func TestHandleEventSchedulesReminderOnlyOnceForAppointmentBooked(t *testing.T) 
 	}
 	if len(sender.messages) != 0 {
 		t.Fatalf("expected no immediate email sends, got %d", len(sender.messages))
+	}
+}
+
+func TestHandleEventSyncsGoogleCalendarForAppointmentBooked(t *testing.T) {
+	ctx := context.Background()
+	repository := newFakeRepository()
+	accessToken := "access-token"
+	repository.calendarSyncTarget = &CalendarSyncTarget{
+		Appointment: CalendarAppointment{
+			AppointmentID: "appointment-1",
+			BusinessID:    "business-1",
+			CustomerEmail: "original@example.test",
+			CustomerName:  "Original Customer",
+			EndsAt:        time.Date(2026, 6, 17, 10, 30, 0, 0, time.UTC),
+			ServiceName:   "Corte",
+			StaffName:     "Lucas",
+			StartsAt:      time.Date(2026, 6, 17, 10, 0, 0, 0, time.UTC),
+			Status:        "confirmed",
+			Timezone:      "America/Argentina/Buenos_Aires",
+		},
+		Connection: &CalendarConnection{
+			AccessTokenEncrypted: &accessToken,
+			BusinessID:           "business-1",
+			ExpiresAt:            timePointer(time.Now().UTC().Add(time.Hour)),
+			ID:                   "calendar-connection-1",
+			StaffMemberID:        stringPointer("staff-1"),
+		},
+	}
+	calendar := &fakeCalendarClient{createdEventID: "google-event-1"}
+	service := NewService(repository, &fakeSender{}, "http://localhost:3000", "noreply@example.test").
+		WithCalendarSync(calendar, fakeTokenCodec{})
+
+	if err := service.HandleEvent(ctx, bookedEvent(t)); err != nil {
+		t.Fatalf("handle booked event: %v", err)
+	}
+
+	if len(calendar.createdEvents) != 1 {
+		t.Fatalf("expected one google calendar event creation, got %d", len(calendar.createdEvents))
+	}
+	if len(repository.calendarSyncResults) != 1 {
+		t.Fatalf("expected one calendar sync result, got %d", len(repository.calendarSyncResults))
+	}
+	result := repository.calendarSyncResults[0]
+	if result.Status != "synced" {
+		t.Fatalf("expected synced status, got %q", result.Status)
+	}
+	if result.GoogleEventID == nil || *result.GoogleEventID != "google-event-1" {
+		t.Fatalf("expected google event id to be recorded, got %#v", result.GoogleEventID)
+	}
+}
+
+func TestHandleEventDeduplicatesExistingGoogleCalendarEvents(t *testing.T) {
+	ctx := context.Background()
+	repository := newFakeRepository()
+	accessToken := "access-token"
+	repository.calendarSyncTarget = &CalendarSyncTarget{
+		Appointment: CalendarAppointment{
+			AppointmentID: "appointment-1",
+			BusinessID:    "business-1",
+			CustomerEmail: "original@example.test",
+			CustomerName:  "Original Customer",
+			EndsAt:        time.Date(2026, 6, 17, 10, 30, 0, 0, time.UTC),
+			ServiceName:   "Corte",
+			StaffName:     "Lucas",
+			StartsAt:      time.Date(2026, 6, 17, 10, 0, 0, 0, time.UTC),
+			Status:        "confirmed",
+			Timezone:      "America/Argentina/Buenos_Aires",
+		},
+		Connection: &CalendarConnection{
+			AccessTokenEncrypted: &accessToken,
+			BusinessID:           "business-1",
+			ExpiresAt:            timePointer(time.Now().UTC().Add(time.Hour)),
+			ID:                   "calendar-connection-1",
+			StaffMemberID:        stringPointer("staff-1"),
+		},
+	}
+	calendar := &fakeCalendarClient{listedEventIDs: []string{"google-event-1", "google-event-duplicate"}}
+	service := NewService(repository, &fakeSender{}, "http://localhost:3000", "noreply@example.test").
+		WithCalendarSync(calendar, fakeTokenCodec{})
+
+	if err := service.HandleEvent(ctx, bookedEvent(t)); err != nil {
+		t.Fatalf("handle booked event: %v", err)
+	}
+
+	if len(calendar.createdEvents) != 0 {
+		t.Fatalf("expected no google calendar event creation, got %d", len(calendar.createdEvents))
+	}
+	if len(calendar.updatedEvents) != 1 {
+		t.Fatalf("expected one google calendar event update, got %d", len(calendar.updatedEvents))
+	}
+	if len(calendar.deletedEventIDs) != 1 || calendar.deletedEventIDs[0] != "google-event-duplicate" {
+		t.Fatalf("expected duplicate event deletion, got %#v", calendar.deletedEventIDs)
+	}
+	result := repository.calendarSyncResults[0]
+	if result.GoogleEventID == nil || *result.GoogleEventID != "google-event-1" {
+		t.Fatalf("expected primary google event id to be recorded, got %#v", result.GoogleEventID)
 	}
 }
 
@@ -296,9 +450,11 @@ func TestSendDueRemindersMarksNotificationSentAndLogsAttempt(t *testing.T) {
 				"cancelUrl": "http://localhost:3000/cancel/appointment-1?token=token",
 				"customerName": "Ana",
 				"serviceName": "Corte clasico",
-				"startsAt": "2026-06-17T14:00:00Z"
+				"startsAt": "2026-06-17T14:00:00Z",
+				"timezone": "America/Argentina/Buenos_Aires"
 			}`),
 			Template: reminderTemplate24Hours,
+			Timezone: "UTC",
 		},
 	}
 	sender := &fakeSender{}
@@ -315,7 +471,7 @@ func TestSendDueRemindersMarksNotificationSentAndLogsAttempt(t *testing.T) {
 	for _, expected := range []string{
 		"Hola Ana",
 		"Corte clasico",
-		"Wed, 17 Jun 2026 14:00:00 UTC",
+		"17/06/2026 11:00 (America/Argentina/Buenos_Aires)",
 		"http://localhost:3000/cancel/appointment-1?token=token",
 	} {
 		if !strings.Contains(message.Text, expected) {
@@ -330,6 +486,18 @@ func TestSendDueRemindersMarksNotificationSentAndLogsAttempt(t *testing.T) {
 	}
 	if repository.notificationLogs[0].Template != reminderTemplate24Hours {
 		t.Fatalf("unexpected template %q", repository.notificationLogs[0].Template)
+	}
+}
+
+func TestFormatReminderStartTimeFallsBackToNotificationTimezone(t *testing.T) {
+	startsAt := formatReminderStartTime(
+		"2026-06-17T14:00:00Z",
+		time.Date(2026, 6, 16, 10, 0, 0, 0, time.UTC),
+		"America/Argentina/Buenos_Aires",
+	)
+
+	if startsAt != "17/06/2026 11:00 (America/Argentina/Buenos_Aires)" {
+		t.Fatalf("expected local reminder time, got %q", startsAt)
 	}
 }
 
@@ -368,6 +536,10 @@ type fakeRepository struct {
 	attendanceAlertRuns         []attendanceAlertRun
 	candidate                   *domain.WaitlistCandidate
 	customerRiskUpdates         []CustomerRiskSnapshot
+	calendarConnectionErrors    []calendarConnectionError
+	calendarSyncResults         []CalendarEventSyncResult
+	calendarSyncTarget          *CalendarSyncTarget
+	calendarTokenUpdates        []CalendarConnectionTokenUpdate
 	dueNotifications            []DueNotification
 	failedNotifications         []failedNotification
 	metricsRecalculated         []BusinessMetricsDailySnapshot
@@ -380,6 +552,12 @@ type fakeRepository struct {
 	scheduledNotifications      []ScheduledNotificationInput
 	lastDueNotificationLimit    int
 	lastMaxNotificationAttempts int
+}
+
+type calendarConnectionError struct {
+	connectionID string
+	lastError    string
+	status       string
 }
 
 type failedNotification struct {
@@ -501,6 +679,10 @@ func (repository *fakeRepository) CreateWaitlistOffer(_ context.Context, _ Waitl
 	return "waitlist-offer-1", nil
 }
 
+func (repository *fakeRepository) GetCalendarSyncTarget(_ context.Context, _ string) (*CalendarSyncTarget, error) {
+	return repository.calendarSyncTarget, nil
+}
+
 func (repository *fakeRepository) FindWaitlistCandidate(_ context.Context, _ domain.AppointmentPayload) (*domain.WaitlistCandidate, error) {
 	return repository.candidate, nil
 }
@@ -517,6 +699,15 @@ func (repository *fakeRepository) MarkWaitlistEntryOffered(_ context.Context, _ 
 	return nil
 }
 
+func (repository *fakeRepository) MarkCalendarConnectionError(_ context.Context, connectionID string, status string, lastError string) error {
+	repository.calendarConnectionErrors = append(repository.calendarConnectionErrors, calendarConnectionError{
+		connectionID: connectionID,
+		lastError:    lastError,
+		status:       status,
+	})
+	return nil
+}
+
 func (repository *fakeRepository) RecalculateBusinessMetricsDaily(
 	_ context.Context,
 	businessID string,
@@ -530,9 +721,65 @@ func (repository *fakeRepository) RecalculateBusinessMetricsDaily(
 	return snapshot, nil
 }
 
+func (repository *fakeRepository) RecordCalendarEventSync(_ context.Context, result CalendarEventSyncResult) error {
+	repository.calendarSyncResults = append(repository.calendarSyncResults, result)
+	return nil
+}
+
+func (repository *fakeRepository) UpdateCalendarConnectionToken(_ context.Context, update CalendarConnectionTokenUpdate) error {
+	repository.calendarTokenUpdates = append(repository.calendarTokenUpdates, update)
+	return nil
+}
+
 func (repository *fakeRepository) UpdateCustomerRisk(_ context.Context, risk CustomerRiskSnapshot) error {
 	repository.customerRiskUpdates = append(repository.customerRiskUpdates, risk)
 	return nil
+}
+
+type fakeCalendarClient struct {
+	createdEventID  string
+	createdEvents   []CalendarEvent
+	deletedEventIDs []string
+	listedEventIDs  []string
+	refreshedTokens []string
+	updatedEvents   []CalendarEvent
+}
+
+func (client *fakeCalendarClient) CreateEvent(_ context.Context, _ string, event CalendarEvent) (string, error) {
+	client.createdEvents = append(client.createdEvents, event)
+	return client.createdEventID, nil
+}
+
+func (client *fakeCalendarClient) DeleteEvent(_ context.Context, _ string, eventID string) error {
+	client.deletedEventIDs = append(client.deletedEventIDs, eventID)
+	return nil
+}
+
+func (client *fakeCalendarClient) ListEventsByAppointment(_ context.Context, _ string, _ string) ([]string, error) {
+	return client.listedEventIDs, nil
+}
+
+func (client *fakeCalendarClient) RefreshAccessToken(_ context.Context, refreshToken string) (CalendarToken, error) {
+	client.refreshedTokens = append(client.refreshedTokens, refreshToken)
+	return CalendarToken{
+		AccessToken: "refreshed-access-token",
+		ExpiresAt:   time.Now().UTC().Add(time.Hour),
+	}, nil
+}
+
+func (client *fakeCalendarClient) UpdateEvent(_ context.Context, _ string, _ string, event CalendarEvent) error {
+	client.updatedEvents = append(client.updatedEvents, event)
+	return nil
+}
+
+type fakeTokenCodec struct{}
+
+func (fakeTokenCodec) Decrypt(value string) (string, error) {
+	return value, nil
+}
+
+func (fakeTokenCodec) Encrypt(value string) (string, error) {
+	return value, nil
 }
 
 type fakeSender struct {
@@ -548,22 +795,28 @@ func (sender *fakeSender) Send(_ context.Context, message email.Message) error {
 func cancellationEvent(t *testing.T) domain.Event {
 	t.Helper()
 
+	return domain.Event{
+		AggregateID: "appointment-1",
+		BusinessID:  "business-1",
+		EventID:     "00000000-0000-0000-0000-000000000001",
+		OccurredAt:  time.Now().UTC(),
+		Payload:     appointmentEventPayload(t, "cancelled_by_customer"),
+		Type:        domain.EventAppointmentCancelled,
+		Version:     1,
+	}
+}
+
+func appointmentEventPayload(t *testing.T, status string) json.RawMessage {
+	t.Helper()
+
 	payload := appointmentPayload()
-	payload.Status = "cancelled_by_customer"
+	payload.Status = status
 	body, err := json.Marshal(payload)
 	if err != nil {
 		t.Fatalf("marshal payload: %v", err)
 	}
 
-	return domain.Event{
-		AggregateID: payload.AppointmentID,
-		BusinessID:  payload.BusinessID,
-		EventID:     "00000000-0000-0000-0000-000000000001",
-		OccurredAt:  time.Now().UTC(),
-		Payload:     body,
-		Type:        domain.EventAppointmentCancelled,
-		Version:     1,
-	}
+	return body
 }
 
 func bookedEvent(t *testing.T) domain.Event {
@@ -612,13 +865,18 @@ func appointmentPayload() domain.AppointmentPayload {
 			ID:   "staff-1",
 			Name: "Lucas",
 		},
-		Status: "confirmed",
+		Status:   "confirmed",
+		Timezone: "America/Argentina/Buenos_Aires",
 	}
 
 	return payload
 }
 
 func stringPointer(value string) *string {
+	return &value
+}
+
+func timePointer(value time.Time) *time.Time {
 	return &value
 }
 

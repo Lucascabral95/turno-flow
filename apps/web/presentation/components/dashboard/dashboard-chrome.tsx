@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, BellRing, CalendarClock, CalendarDays, ClipboardList, ExternalLink, Home, LogIn, RefreshCcw, Settings2, UserPlus, Users } from "lucide-react";
+import { BarChart3, BellRing, CalendarClock, CalendarDays, ClipboardList, ExternalLink, Home, Hourglass, LogIn, RefreshCcw, Settings2, ShieldCheck, UserPlus, Users } from "lucide-react";
 import Link from "next/link";
 import type { FormEvent, ReactNode } from "react";
 
@@ -161,6 +161,8 @@ function DashboardTabs({ activeView }: { activeView: DashboardView }) {
       <TabLink active={activeView === "schedule"} href="/dashboard/disponibilidad" icon={<CalendarDays size={18} />} label="Disponibilidad" />
       <TabLink active={activeView === "appointments"} href="/dashboard/turnos" icon={<ClipboardList size={18} />} label="Turnos" />
       <TabLink active={activeView === "customers"} href="/dashboard/clientes" icon={<Users size={18} />} label="Clientes" />
+      <TabLink active={activeView === "waitlist"} href="/dashboard/lista-espera" icon={<Hourglass size={18} />} label="Lista de espera" />
+      <TabLink active={activeView === "team"} href="/dashboard/equipo" icon={<ShieldCheck size={18} />} label="Equipo" />
       <TabLink active={activeView === "reminders"} href="/dashboard/recordatorios" icon={<BellRing size={18} />} label="Recordatorios" />
       <TabLink active={activeView === "booking"} href="/dashboard/reservar" icon={<CalendarClock size={18} />} label="Reservar" />
       <TabLink active={activeView === "metrics"} href="/dashboard/metricas" icon={<BarChart3 size={18} />} label="Metricas" />
@@ -200,6 +202,14 @@ function viewMeta(view: DashboardView): { description: string; title: string } {
     customers: {
       description: "Historial, recurrencia, gasto estimado y riesgo por cliente.",
       title: "Clientes"
+    },
+    waitlist: {
+      description: "Gestiona candidatos, ofertas pendientes y reasignaciones de huecos.",
+      title: "Lista de espera"
+    },
+    team: {
+      description: "Administra permisos e integraciones calendario por profesional.",
+      title: "Equipo"
     },
     metrics: {
       description: "Mide ocupacion, no-shows, ingresos estimados y clientes riesgosos.",

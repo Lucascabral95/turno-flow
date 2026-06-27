@@ -41,6 +41,21 @@ export class MetricsController {
     return this.dashboard.getRevenueLossMetrics(user);
   }
 
+  @Get("revenue")
+  getRevenue(@CurrentUser() user: AuthenticatedUser) {
+    return this.dashboard.getRevenueMetrics(user);
+  }
+
+  @Get("services")
+  getServices(@CurrentUser() user: AuthenticatedUser) {
+    return this.dashboard.getServiceMetrics(user);
+  }
+
+  @Get("customers")
+  getCustomers(@CurrentUser() user: AuthenticatedUser) {
+    return this.dashboard.getCustomerMetrics(user);
+  }
+
   @Get("occupancy")
   getOccupancy(@CurrentUser() user: AuthenticatedUser) {
     return this.dashboard.getOccupancyMetrics(user);

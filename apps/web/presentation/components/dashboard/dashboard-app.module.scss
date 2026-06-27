@@ -114,6 +114,13 @@
   }
 }
 
+:global(.management-meta-grid) {
+  border-top: 1px solid $border;
+  display: grid;
+  gap: 6px;
+  padding-top: 12px;
+}
+
 .scheduleView {
   :global(.weekday-board) {
     display: grid;
@@ -217,6 +224,42 @@
       color: $muted;
       font-size: 0.88rem;
     }
+  }
+
+  :global(.monthly-availability-grid) {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+
+  :global(.month-day) {
+    background: #fff;
+    border: 1px solid $border;
+    border-radius: 12px;
+    display: grid;
+    gap: 4px;
+    min-height: 88px;
+    padding: 10px;
+
+    strong {
+      font-size: 0.95rem;
+    }
+
+    span,
+    small {
+      color: $muted;
+      font-size: 0.76rem;
+      line-height: 1.35;
+    }
+  }
+
+  :global(.month-day-active) {
+    background: linear-gradient(180deg, #fff 0%, #f1f0ff 100%);
+    border-color: #c4b5fd;
+  }
+
+  :global(.warning-text) {
+    color: $warning;
   }
 }
 

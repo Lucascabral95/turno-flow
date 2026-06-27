@@ -12,6 +12,9 @@ const (
 	EventAppointmentCompleted      = "AppointmentCompleted"
 	EventAppointmentMarkedAsNoShow = "AppointmentMarkedAsNoShow"
 	EventAppointmentMarkedNoShow   = "AppointmentMarkedNoShow"
+	EventAppointmentRescheduled    = "AppointmentRescheduled"
+	EventCalendarSyncFailed        = "CalendarSyncFailed"
+	EventCalendarSyncSucceeded     = "CalendarSyncSucceeded"
 	EventCustomerRiskScoreUpdated  = "CustomerRiskScoreUpdated"
 	EventDailyMetricsCalculated    = "DailyMetricsCalculated"
 	EventReminderFailed            = "ReminderFailed"
@@ -47,6 +50,7 @@ type AppointmentPayload struct {
 	StaffMember       Staff     `json:"staffMember"`
 	StartsAt          time.Time `json:"startsAt"`
 	Status            string    `json:"status"`
+	Timezone          string    `json:"timezone"`
 }
 
 type Customer struct {

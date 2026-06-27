@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Toaster } from "sonner";
 
 import "./globals.scss";
+import { PwaRegister } from "./pwa-register";
 
 export const metadata: Metadata = {
   description: "Turnos online para profesionales y negocios chicos",
@@ -14,6 +15,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="es">
       <body>
         {children}
+        <PwaRegister />
         <Toaster closeButton={false} duration={3200} expand={false} position="top-right" richColors />
       </body>
     </html>

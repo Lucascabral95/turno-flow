@@ -20,12 +20,12 @@ export function formatPercent(value: number): string {
   }).format(value * 100);
 }
 
-export function formatSlotTime(value: string): string {
+export function formatSlotTime(value: string, timeZone?: string): string {
   const date = new Date(value);
 
   return new Intl.DateTimeFormat("es-AR", {
     hour: "2-digit",
     minute: "2-digit",
-    timeZone: "UTC"
+    ...(timeZone ? { timeZone } : {})
   }).format(date);
 }

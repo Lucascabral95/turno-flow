@@ -1,6 +1,6 @@
-import { dateAtUtcMinutes, minutesSinceMidnight } from "../common/time";
+import { dateAtZonedMinutes, dateOnlyInTimeZone, minutesSinceMidnight } from "../common/time";
 
-const SLOT_STEP_MINUTES = 15;
+const SLOT_STEP_MINUTES = 30;
 
 export type AvailabilityRuleInput = {
   staffMemberId: string;
@@ -35,8 +35,18 @@ export function calculateAvailability(input: {
   exceptions: AvailabilityExceptionInput[];
   busySlots: BusySlotInput[];
   activeStaffMemberIds: string[];
+  timezone?: string;
+  now?: Date;
 }): AvailabilitySlot[] {
   const requiredMinutes = input.durationMinutes + input.bufferMinutes;
+  const timezone = input.timezone ?? "UTC";
+  const now = input.now ?? new Date();
+  const currentDate = dateOnlyInTimeZone(now, timezone);
+
+  if (input.date < currentDate) {
+    return [];
+  }
+
   const slots = new Map<string, AvailabilitySlot>();
   const windows = [
     ...input.rules.map((rule) => ({
@@ -63,8 +73,12 @@ export function calculateAvailability(input: {
     const windowEnd = minutesSinceMidnight(window.endTime);
 
     for (let start = windowStart; start + requiredMinutes <= windowEnd; start += SLOT_STEP_MINUTES) {
-      const startsAt = dateAtUtcMinutes(input.date, start);
-      const endsAt = dateAtUtcMinutes(input.date, start + requiredMinutes);
+      const startsAt = dateAtZonedMinutes(input.date, start, timezone);
+      const endsAt = dateAtZonedMinutes(input.date, start + requiredMinutes, timezone);
+
+      if (input.date === currentDate && startsAt <= now) {
+        continue;
+      }
 
       const overlaps = input.busySlots.some((busySlot) => {
         return (
@@ -79,8 +93,8 @@ export function calculateAvailability(input: {
           return false;
         }
 
-        const blockedStart = dateAtUtcMinutes(input.date, minutesSinceMidnight(blockedWindow.startTime));
-        const blockedEnd = dateAtUtcMinutes(input.date, minutesSinceMidnight(blockedWindow.endTime));
+        const blockedStart = dateAtZonedMinutes(input.date, minutesSinceMidnight(blockedWindow.startTime), timezone);
+        const blockedEnd = dateAtZonedMinutes(input.date, minutesSinceMidnight(blockedWindow.endTime), timezone);
 
         return startsAt < blockedEnd && endsAt > blockedStart;
       });

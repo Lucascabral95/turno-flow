@@ -7,6 +7,10 @@ func TestLoadUsesDefaultsWhenEnvironmentIsEmpty(t *testing.T) {
 	t.Setenv("DATABASE_URL", "")
 	t.Setenv("EMAIL_FROM", "")
 	t.Setenv("EMAIL_TRANSPORT", "")
+	t.Setenv("GOOGLE_CALENDAR_CLIENT_ID", "")
+	t.Setenv("GOOGLE_CALENDAR_CLIENT_SECRET", "")
+	t.Setenv("GOOGLE_CALENDAR_TIMEOUT_SECONDS", "")
+	t.Setenv("CALENDAR_TOKEN_ENCRYPTION_KEY", "")
 	t.Setenv("MAX_NOTIFICATION_ATTEMPTS", "")
 	t.Setenv("RABBITMQ_URL", "")
 	t.Setenv("RABBITMQ_PREFETCH", "")
@@ -34,6 +38,12 @@ func TestLoadUsesDefaultsWhenEnvironmentIsEmpty(t *testing.T) {
 	}
 	if cfg.EmailTransport != "json" {
 		t.Fatalf("unexpected email transport %q", cfg.EmailTransport)
+	}
+	if cfg.HasGoogleCalendarSync() {
+		t.Fatal("google calendar sync should be disabled by default")
+	}
+	if cfg.GoogleCalendarTimeoutSeconds != 10 {
+		t.Fatalf("unexpected google calendar timeout %d", cfg.GoogleCalendarTimeoutSeconds)
 	}
 	if cfg.RabbitMQURL != "amqp://guest:guest@localhost:5672/" {
 		t.Fatalf("unexpected rabbitmq url %q", cfg.RabbitMQURL)
@@ -81,6 +91,10 @@ func TestLoadUsesEnvironmentOverrides(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://db.example/turnoflow")
 	t.Setenv("EMAIL_FROM", "TurnoFlow <mail@example.test>")
 	t.Setenv("EMAIL_TRANSPORT", "smtp")
+	t.Setenv("GOOGLE_CALENDAR_CLIENT_ID", "google-client-id")
+	t.Setenv("GOOGLE_CALENDAR_CLIENT_SECRET", "google-client-secret")
+	t.Setenv("GOOGLE_CALENDAR_TIMEOUT_SECONDS", "7")
+	t.Setenv("CALENDAR_TOKEN_ENCRYPTION_KEY", "calendar-key")
 	t.Setenv("MAX_NOTIFICATION_ATTEMPTS", "5")
 	t.Setenv("RABBITMQ_URL", "amqp://rabbit.example:5672/")
 	t.Setenv("RABBITMQ_PREFETCH", "12")
@@ -108,6 +122,21 @@ func TestLoadUsesEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.EmailTransport != "smtp" {
 		t.Fatalf("unexpected email transport %q", cfg.EmailTransport)
+	}
+	if !cfg.HasGoogleCalendarSync() {
+		t.Fatal("google calendar sync should be enabled")
+	}
+	if cfg.GoogleCalendarClientID != "google-client-id" {
+		t.Fatalf("unexpected google calendar client id %q", cfg.GoogleCalendarClientID)
+	}
+	if cfg.GoogleCalendarClientSecret != "google-client-secret" {
+		t.Fatalf("unexpected google calendar client secret %q", cfg.GoogleCalendarClientSecret)
+	}
+	if cfg.GoogleCalendarTimeoutSeconds != 7 {
+		t.Fatalf("unexpected google calendar timeout %d", cfg.GoogleCalendarTimeoutSeconds)
+	}
+	if cfg.CalendarTokenEncryptionKey != "calendar-key" {
+		t.Fatalf("unexpected calendar token encryption key %q", cfg.CalendarTokenEncryptionKey)
 	}
 	if cfg.RabbitMQURL != "amqp://rabbit.example:5672/" {
 		t.Fatalf("unexpected rabbitmq url %q", cfg.RabbitMQURL)
@@ -174,6 +203,17 @@ func TestValidateRejectsInvalidWorkerMode(t *testing.T) {
 
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected invalid worker mode error")
+	}
+}
+
+func TestValidateRejectsIncompleteGoogleCalendarConfig(t *testing.T) {
+	cfg := Load()
+	cfg.GoogleCalendarClientID = "client-id"
+	cfg.GoogleCalendarClientSecret = ""
+	cfg.CalendarTokenEncryptionKey = "key"
+
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected incomplete google calendar config error")
 	}
 }
 
