@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, BellRing, CalendarClock, CalendarDays, ClipboardList, ExternalLink, Home, Hourglass, LogIn, RefreshCcw, Settings2, ShieldCheck, UserPlus, Users } from "lucide-react";
+import { BarChart3, BellRing, CalendarClock, CalendarDays, ClipboardList, ExternalLink, Home, Hourglass, LogIn, RefreshCcw, Settings2, ShieldCheck, UserPlus, Users, Wand2 } from "lucide-react";
 import Link from "next/link";
 import type { FormEvent, ReactNode } from "react";
 
@@ -157,6 +157,7 @@ function DashboardTabs({ activeView }: { activeView: DashboardView }) {
   return (
     <nav className="sidebar-nav" aria-label="Dashboard">
       <TabLink active={activeView === "home"} href="/dashboard" icon={<Home size={18} />} label="Inicio" />
+      <TabLink active={activeView === "onboarding"} href="/dashboard/onboarding" icon={<Wand2 size={18} />} label="Onboarding" />
       <TabLink active={activeView === "setup"} href="/dashboard/configuracion" icon={<Settings2 size={18} />} label="Configuracion" />
       <TabLink active={activeView === "schedule"} href="/dashboard/disponibilidad" icon={<CalendarDays size={18} />} label="Disponibilidad" />
       <TabLink active={activeView === "appointments"} href="/dashboard/turnos" icon={<ClipboardList size={18} />} label="Turnos" />
@@ -222,6 +223,10 @@ function viewMeta(view: DashboardView): { description: string; title: string } {
     booking: {
       description: "Accesos y checklist para publicar el flujo de reservas.",
       title: "Reservar"
+    },
+    onboarding: {
+      description: "Completa el setup minimo vendible y deja la agenda lista para compartir.",
+      title: "Onboarding"
     },
     schedule: {
       description: "Define reglas semanales, excepciones y valida slots visibles.",

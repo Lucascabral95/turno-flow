@@ -14,6 +14,7 @@ import type { CreateAvailabilityExceptionDto, UpdateAvailabilityExceptionDto } f
 import type { CreateAvailabilityRuleDto, UpdateAvailabilityRuleDto } from "./dto/availability-rule.dto";
 import type { CreateBusinessDto, UpdateBusinessDto } from "./dto/business.dto";
 import type { CreateNotificationTemplateDto, UpdateNotificationTemplateDto } from "./dto/notification-template.dto";
+import { BusinessOnboardingService } from "./onboarding.service";
 import type { UpdateReminderSettingsDto } from "./dto/reminder-settings.dto";
 import type { CreateServiceDto, UpdateServiceDto } from "./dto/service.dto";
 import type { CreateStaffMemberDto, UpdateStaffMemberDto } from "./dto/staff-member.dto";
@@ -23,19 +24,46 @@ export class BusinessesService {
   constructor(
     private readonly audit: AuditService,
     private readonly outbox: OutboxService,
-    private readonly prisma: PrismaService
+    private readonly prisma: PrismaService,
+    private readonly onboarding: BusinessOnboardingService
   ) {}
 
   async getCurrent(user: AuthenticatedUser) {
-    return this.prisma.business.findFirst({
+    const business = await this.prisma.business.findFirst({
       include: {
         availabilityExceptions: { orderBy: [{ date: "asc" }, { startTime: "asc" }] },
         availabilityRules: { orderBy: [{ weekday: "asc" }, { startTime: "asc" }] },
         services: { orderBy: { createdAt: "asc" } },
         staffMembers: { orderBy: { createdAt: "asc" } }
       },
-      where: { ownerId: user.id }
+      where: {
+        OR: [
+          { ownerId: user.id },
+          {
+            members: {
+              some: {
+                active: true,
+                userId: user.id
+              }
+            }
+          }
+        ]
+      }
     });
+
+    if (!business) {
+      return null;
+    }
+
+    return {
+      ...business,
+      onboarding: await this.onboarding.getStatusForBusinessSnapshot({
+        ...business,
+        availabilityRules: business.availabilityRules.filter((rule) => rule.active),
+        services: business.services.filter((service) => service.active),
+        staffMembers: business.staffMembers.filter((staffMember) => staffMember.active)
+      })
+    };
   }
 
   async createCurrent(user: AuthenticatedUser, input: CreateBusinessDto) {

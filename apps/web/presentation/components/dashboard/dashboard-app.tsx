@@ -33,6 +33,7 @@ import type {
   DashboardMetrics,
   NotificationHistoryItem,
   NotificationTemplate,
+  OnboardingStatus,
   ReminderSettings,
   WaitlistEntry
 } from "../../../lib/api";
@@ -52,6 +53,7 @@ import {
 import { zodResolver } from "@hookform/resolvers/zod";
 import { createLocalDateString } from "../../../lib/booking-forms";
 import { formNumber, formString } from "../../../lib/form";
+import { shouldAutoOpenOnboarding } from "../../../lib/onboarding";
 import { AppointmentsView } from "./dashboard-appointments";
 import { AuthView, DashboardShell, PageHeader } from "./dashboard-chrome";
 import { CustomersView } from "./dashboard-customers";
@@ -66,11 +68,13 @@ import {
   weekdayOptions
 } from "./dashboard-helpers";
 import { BookingAdminView, HomeView, MetricsPanel } from "./dashboard-overview";
+import { OnboardingChecklistCard, OnboardingWizard } from "./dashboard-onboarding";
 import { RemindersView } from "./dashboard-reminders";
 import { Alert, EmptyState, InventoryList, LoadingState, Metric, SummaryValue } from "./dashboard-shared";
 import styles from "./dashboard-app.module.scss";
 export type DashboardView =
   | "home"
+  | "onboarding"
   | "setup"
   | "schedule"
   | "appointments"
@@ -97,6 +101,7 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [notificationHistory, setNotificationHistory] = useState<NotificationHistoryItem[]>([]);
   const [notificationTemplates, setNotificationTemplates] = useState<NotificationTemplate[]>([]);
+  const [onboardingStatus, setOnboardingStatus] = useState<OnboardingStatus | null>(null);
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [waitlistEntries, setWaitlistEntries] = useState<WaitlistEntry[]>([]);
@@ -167,7 +172,8 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
         currentNotificationTemplates,
         currentWaitlistEntries,
         currentBusinessMembers,
-        currentCalendarConnections
+        currentCalendarConnections,
+        currentOnboardingStatus
       ] = await Promise.all([
         requestJson<CurrentBusiness | null>("/businesses/current", {
           headers: { Authorization: `Bearer ${activeToken}` }
@@ -198,7 +204,10 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
         }).catch(() => []),
         requestJson<CalendarConnection[]>("/calendar-connections", {
           headers: { Authorization: `Bearer ${activeToken}` }
-        }).catch(() => [])
+        }).catch(() => []),
+        requestJson<OnboardingStatus>("/onboarding/status", {
+          headers: { Authorization: `Bearer ${activeToken}` }
+        }).catch(() => null)
       ]);
       setBusiness(currentBusiness);
       setBusinessMembers(currentBusinessMembers);
@@ -209,6 +218,7 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
       setReminderSettings(currentReminderSettings);
       setNotificationHistory(currentNotificationHistory);
       setNotificationTemplates(currentNotificationTemplates);
+      setOnboardingStatus(currentOnboardingStatus ?? currentBusiness?.onboarding ?? null);
       setWaitlistEntries(currentWaitlistEntries);
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : "No se pudo cargar el dashboard");
@@ -366,6 +376,37 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
 
   async function handleAvailability(input: AvailabilityRuleFormValues): SubmitResult {
     return submitAndRefresh("/availability-rules", input, "Disponibilidad agregada");
+  }
+
+  async function handleAvailabilityPreset(input: {
+    endTime: string;
+    staffMemberId: string;
+    startTime: string;
+    weekdays: number[];
+  }): SubmitResult {
+    setError(null);
+    try {
+      for (const weekday of input.weekdays) {
+        await authRequest("/availability-rules", {
+          body: JSON.stringify({
+            endTime: input.endTime,
+            staffMemberId: input.staffMemberId,
+            startTime: input.startTime,
+            weekday
+          }),
+          method: "POST"
+        });
+      }
+
+      await refresh();
+      toast.success("Cobertura semanal creada");
+      return true;
+    } catch (availabilityError) {
+      const message = availabilityError instanceof Error ? availabilityError.message : "No se pudo guardar la cobertura";
+      setError(message);
+      toast.error(message);
+      return false;
+    }
   }
 
   async function handleAvailabilityDelete(ruleId: string): Promise<void> {
@@ -645,6 +686,40 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
     }
   }
 
+  const handleOnboardingProgress = useCallback(async (input: {
+    completed?: boolean;
+    currentStep?: OnboardingStatus["currentStep"];
+    dismissed?: boolean;
+    eventType?: "public_page_opened" | "share_clicked" | "test_booking_clicked" | "viewed";
+    metadata?: Record<string, boolean | number | string | null>;
+    subtaskCompleted?: boolean;
+    subtaskKey?: string;
+  }) => {
+    try {
+      const response = await authRequest<OnboardingStatus>("/onboarding/progress", {
+        body: JSON.stringify(input),
+        method: "PATCH"
+      });
+      setOnboardingStatus(response);
+      return response;
+    } catch (progressError) {
+      const message = progressError instanceof Error ? progressError.message : "No se pudo actualizar el onboarding";
+      setError(message);
+      toast.error(message);
+      return null;
+    }
+  }, [token]);
+
+  const trackOnboardingEvent = useCallback(async (input: {
+    currentStep?: OnboardingStatus["currentStep"];
+    eventType: "public_page_opened" | "share_clicked" | "test_booking_clicked" | "viewed";
+    metadata?: Record<string, boolean | number | string | null>;
+    subtaskCompleted?: boolean;
+    subtaskKey?: string;
+  }) => {
+    await handleOnboardingProgress(input);
+  }, [handleOnboardingProgress]);
+
   function logout() {
     window.localStorage.removeItem("turnoflow.token");
     setAppointments([]);
@@ -655,6 +730,7 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
     setMetrics(null);
     setNotificationHistory([]);
     setNotificationTemplates([]);
+    setOnboardingStatus(null);
     setReminderSettings(null);
     setToken(null);
     setWaitlistEntries([]);
@@ -668,6 +744,9 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
       </main>
     );
   }
+
+  const effectiveOnboarding = onboardingStatus ?? business?.onboarding ?? null;
+  const showAutomaticOnboarding = activeView === "home" && shouldAutoOpenOnboarding(effectiveOnboarding);
 
   return (
     <DashboardShell activeView={activeView} business={business} loading={loading}>
@@ -683,7 +762,62 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
       {loading && !business ? <LoadingState /> : null}
 
       <section className="dashboard-content">
-        {activeView === "home" ? <HomeView appointments={appointments} business={business} metrics={metrics} /> : null}
+        {activeView === "home" ? (
+          <>
+            {showAutomaticOnboarding && effectiveOnboarding ? (
+              <OnboardingWizard
+                business={business}
+                onAvailabilityPresetSubmit={handleAvailabilityPreset}
+                onAdvance={async (step) => {
+                  await handleOnboardingProgress({ currentStep: step, dismissed: false });
+                }}
+                onBusinessSubmit={handleBusiness}
+                onComplete={async () => {
+                  await handleOnboardingProgress({ completed: true, currentStep: "public_page", dismissed: false });
+                  await refresh();
+                }}
+                onDismiss={async () => {
+                  await handleOnboardingProgress({ dismissed: true });
+                }}
+                onResume={async () => {
+                  await handleOnboardingProgress({ dismissed: false });
+                  await refresh();
+                }}
+                onTrackEvent={trackOnboardingEvent}
+                onServiceSubmit={handleService}
+                onStaffSubmit={handleStaff}
+                status={effectiveOnboarding}
+              />
+            ) : null}
+            {effectiveOnboarding ? <OnboardingChecklistCard business={business} status={effectiveOnboarding} /> : null}
+            <HomeView appointments={appointments} business={business} metrics={metrics} />
+          </>
+        ) : null}
+        {activeView === "onboarding" && effectiveOnboarding ? (
+          <OnboardingWizard
+            business={business}
+            onAvailabilityPresetSubmit={handleAvailabilityPreset}
+            onAdvance={async (step) => {
+              await handleOnboardingProgress({ currentStep: step, dismissed: false });
+            }}
+            onBusinessSubmit={handleBusiness}
+            onComplete={async () => {
+              await handleOnboardingProgress({ completed: true, currentStep: "public_page", dismissed: false });
+              await refresh();
+            }}
+            onDismiss={async () => {
+              await handleOnboardingProgress({ dismissed: true });
+            }}
+            onResume={async () => {
+              await handleOnboardingProgress({ dismissed: false });
+              await refresh();
+            }}
+            onTrackEvent={trackOnboardingEvent}
+            onServiceSubmit={handleService}
+            onStaffSubmit={handleStaff}
+            status={effectiveOnboarding}
+          />
+        ) : null}
         {activeView === "setup" ? (
           <SetupView
             business={business}
@@ -772,7 +906,12 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
             templates={notificationTemplates}
           />
         ) : null}
-        {activeView === "booking" ? <BookingAdminView business={business} /> : null}
+        {activeView === "booking" ? (
+          <>
+            {effectiveOnboarding ? <OnboardingChecklistCard business={business} status={effectiveOnboarding} /> : null}
+            <BookingAdminView business={business} />
+          </>
+        ) : null}
         {activeView === "metrics" ? <MetricsPanel metrics={metrics} /> : null}
       </section>
     </DashboardShell>

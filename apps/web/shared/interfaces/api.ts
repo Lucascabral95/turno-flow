@@ -6,6 +6,53 @@ export type Business = {
   timezone: string;
 };
 
+export type OnboardingStepKey = "business" | "service" | "staff" | "availability" | "public_page";
+
+export type OnboardingTaskStatus = {
+  completed: boolean;
+  key: string;
+  required: boolean;
+  title: string;
+};
+
+export type OnboardingAnalyticsStep = {
+  abandonmentCount: number;
+  completedAt: string | null;
+  eventCount: number;
+  key: OnboardingStepKey;
+  lastActivityAt: string | null;
+  lastViewedAt: string | null;
+};
+
+export type OnboardingAnalytics = {
+  currentStepEnteredAt: string | null;
+  dismissCount: number;
+  lastActivityAt: string | null;
+  lastDismissedAt: string | null;
+  lastSharedAt: string | null;
+  lastTestBookingAt: string | null;
+  stalledStep: OnboardingStepKey | null;
+  steps: OnboardingAnalyticsStep[];
+};
+
+export type OnboardingStatus = {
+  analytics: OnboardingAnalytics;
+  completedAt: string | null;
+  currentStep: OnboardingStepKey;
+  dismissedAt: string | null;
+  isReadyToSell: boolean;
+  nextStep: OnboardingStepKey;
+  progressPercent: number;
+  steps: Array<{
+    completed: boolean;
+    description: string;
+    key: OnboardingStepKey;
+    progressPercent: number;
+    tasks: OnboardingTaskStatus[];
+    title: string;
+  }>;
+};
+
 export type Service = {
   active: boolean;
   bufferMinutes: number;
@@ -286,6 +333,7 @@ export type CalendarConnection = {
 export type CurrentBusiness = Business & {
   availabilityExceptions: AvailabilityException[];
   availabilityRules: AvailabilityRule[];
+  onboarding?: OnboardingStatus;
   services: Service[];
   staffMembers: StaffMember[];
 };
