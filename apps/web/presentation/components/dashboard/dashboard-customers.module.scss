@@ -1,0 +1,285 @@
+@use "../../../app/styles/tokens" as *;
+
+.customersView {
+  :global(.appointments-command) {
+    align-items: stretch;
+    display: grid;
+    gap: 18px;
+    grid-template-columns: minmax(0, 1fr) minmax(420px, 1fr);
+    padding: 22px;
+  }
+
+  :global(.dashboard-banner-stats) {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.customerWorkspace {
+  align-items: start;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1.25fr) minmax(380px, 0.75fr);
+}
+
+.customerToolbar {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.customerList {
+  display: grid;
+  gap: 10px;
+}
+
+.customerRow {
+  align-items: center;
+  background: linear-gradient(180deg, #fff 0%, $surface-soft 100%);
+  border: 1px solid $border;
+  border-radius: $radius;
+  box-shadow: $shadow-soft;
+  color: $ink;
+  cursor: pointer;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, auto) auto;
+  padding: 14px;
+  text-align: left;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+
+  &:hover,
+  &:focus-visible {
+    border-color: rgb(99 102 241 / 45%);
+    box-shadow: $shadow-card;
+    outline: none;
+    transform: translateY(-1px);
+  }
+}
+
+.customerRowActive {
+  background: linear-gradient(135deg, rgb(99 102 241 / 10%), #fff);
+  border-color: rgb(99 102 241 / 55%);
+  box-shadow: 0 0 0 3px rgb(99 102 241 / 12%);
+}
+
+.customerIdentity,
+.customerStats {
+  display: grid;
+  gap: 4px;
+
+  strong {
+    font-size: 0.98rem;
+  }
+
+  span {
+    color: $muted;
+    font-size: 0.84rem;
+  }
+}
+
+.customerStats {
+  justify-items: end;
+}
+
+.paginationBar {
+  align-items: center;
+  background: $surface-soft;
+  border: 1px solid $border;
+  border-radius: $radius;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 12px;
+
+  span,
+  label {
+    color: $muted;
+    font-size: 0.86rem;
+    font-weight: 780;
+  }
+
+  label,
+  div {
+    align-items: center;
+    display: flex;
+    gap: 8px;
+  }
+
+  select {
+    min-height: 36px;
+    min-width: 76px;
+    padding: 6px 28px 6px 10px;
+  }
+}
+
+.customerDetail {
+  position: sticky;
+  top: 20px;
+}
+
+.detailHeader {
+  align-items: start;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+
+  h2 {
+    font-size: 1.45rem;
+    margin: 4px 0;
+  }
+
+  p {
+    color: $muted;
+    margin: 0;
+  }
+}
+
+.detailMetrics {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.summaryItem {
+  background: $surface-soft;
+  border: 1px solid $border;
+  border-radius: $radius;
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+
+  span {
+    color: $muted;
+    font-size: 0.78rem;
+    font-weight: 780;
+  }
+
+  strong {
+    font-size: 1rem;
+  }
+}
+
+.editBox,
+.insightBox,
+.timelineSection {
+  border-top: 1px solid $border;
+  display: grid;
+  gap: 12px;
+  padding-top: 16px;
+
+  h3 {
+    font-size: 1rem;
+    margin: 0;
+  }
+
+  p {
+    color: $muted;
+    line-height: 1.5;
+    margin: 0;
+  }
+}
+
+.checkboxRow {
+  align-items: center;
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+
+  input {
+    width: auto;
+  }
+}
+
+.serviceChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+
+  span {
+    background: rgb(99 102 241 / 10%);
+    border: 1px solid rgb(99 102 241 / 18%);
+    border-radius: 999px;
+    color: $primary;
+    font-size: 0.78rem;
+    font-weight: 820;
+    padding: 7px 10px;
+  }
+}
+
+.timeline {
+  display: grid;
+  gap: 10px;
+}
+
+.timelineItem {
+  align-items: start;
+  background: #fff;
+  border: 1px solid $border;
+  border-radius: $radius;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+  padding: 12px;
+
+  svg {
+    color: $primary;
+    margin-top: 2px;
+  }
+
+  div {
+    display: grid;
+    gap: 3px;
+  }
+
+  strong {
+    font-size: 0.9rem;
+  }
+
+  span {
+    color: $muted;
+    font-size: 0.8rem;
+  }
+
+  p {
+    color: $ink;
+    font-size: 0.84rem;
+    margin: 0;
+  }
+}
+
+@media (max-width: 1120px) {
+  .customersView {
+    :global(.appointments-command),
+    :global(.dashboard-banner-stats) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .customerWorkspace {
+    grid-template-columns: 1fr;
+  }
+
+  .customerDetail {
+    position: static;
+  }
+}
+
+@media (max-width: 720px) {
+  .customerRow {
+    align-items: start;
+    grid-template-columns: 1fr;
+  }
+
+  .customerStats {
+    justify-items: start;
+  }
+
+  .detailMetrics {
+    grid-template-columns: 1fr;
+  }
+}

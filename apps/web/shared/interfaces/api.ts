@@ -154,22 +154,76 @@ export type NotificationHistoryItem = {
 
 export type CustomerProfile = {
   appointments: Appointment[];
+  attendanceRate: number;
+  cancelledAppointments: number;
   completedAppointments: number;
   email: string;
   estimatedSpendCents: number;
+  favoriteServices: Array<{
+    bookings: number;
+    name: string;
+    serviceId: string;
+  }>;
   id: string;
   lastAppointmentAt: string | null;
+  lastNotePreview: string | null;
   lastRiskCalculatedAt: string | null;
   name: string;
   nextAppointmentAt: string | null;
   noShowCount: number;
+  noShowRate: number;
+  notesCount: number;
   phone: string | null;
   recurrenceRate: number;
   requiresDeposit: boolean;
   riskLevel: "low" | "medium" | "high";
   riskScore: number;
   totalAppointments: number;
-  waitlistEntries: unknown[];
+  waitlistEntries: CustomerWaitlistEntry[];
+};
+
+export type CustomerNote = {
+  author: {
+    email: string;
+    id: string;
+    name: string;
+  } | null;
+  content: string;
+  createdAt: string;
+  id: string;
+  updatedAt: string;
+};
+
+export type CustomerWaitlistEntry = {
+  createdAt: string;
+  earliestTime: string | null;
+  id: string;
+  latestTime: string | null;
+  offers: Array<{
+    appointmentId: string;
+    createdAt: string;
+    expiresAt: string;
+    id: string;
+    status: "pending" | "accepted" | "expired" | "rejected";
+  }>;
+  preferredDateEnd: string;
+  preferredDateStart: string;
+  priorityScore: number;
+  service: Service;
+  status: "waiting" | "offered" | "booked" | "expired" | "cancelled";
+};
+
+export type CustomerDetail = CustomerProfile & {
+  appointments: Appointment[];
+  notes: CustomerNote[];
+  waitlistEntries: CustomerWaitlistEntry[];
+};
+
+export type CustomerListResponse = {
+  items: CustomerProfile[];
+  page: number;
+  pageSize: number;
+  total: number;
 };
 
 export type BusinessMember = {
