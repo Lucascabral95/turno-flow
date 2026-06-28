@@ -37,6 +37,20 @@ export class PublicController {
     return this.appointments.createPublicAppointment(slug, input);
   }
 
+  @Get("appointments/:id")
+  getAppointment(@Param("id", ParseUUIDPipe) id: string, @Query("token") token: string) {
+    return this.appointments.getPublicAppointment(id, { token });
+  }
+
+  @Get("appointments/:id/reschedule-slots")
+  getAppointmentRescheduleSlots(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Query("token") token: string,
+    @Query("date") date: string
+  ) {
+    return this.appointments.getPublicRescheduleSlots(id, { token }, date);
+  }
+
   @Post("appointments/:id/cancel")
   cancelAppointment(@Param("id", ParseUUIDPipe) id: string, @Body() input: CancelAppointmentDto) {
     return this.appointments.cancelPublicAppointment(id, input);

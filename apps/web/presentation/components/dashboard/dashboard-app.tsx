@@ -425,20 +425,24 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
     }
   }
 
-  async function rescheduleAppointment(appointmentId: string, startsAt: string) {
+  async function rescheduleAppointment(appointmentId: string, startsAt: string, staffMemberId?: string) {
     setError(null);
     try {
       await authRequest(`/appointments/${appointmentId}/reschedule`, {
-        body: JSON.stringify({ startsAt }),
+        body: JSON.stringify({ staffMemberId, startsAt }),
         method: "PATCH"
       });
       await refresh();
-      toast.success("Turno reprogramado");
+      toast.success("Turno reprogramado y cliente notificado");
     } catch (rescheduleError) {
       const message = rescheduleError instanceof Error ? rescheduleError.message : "No se pudo reprogramar el turno";
       setError(message);
       toast.error(message);
     }
+  }
+
+  async function fetchRescheduleSlots(appointmentId: string, date: string): Promise<AvailabilitySlot[]> {
+    return authRequest<AvailabilitySlot[]>(`/appointments/${appointmentId}/reschedule-slots?date=${date}`);
   }
 
   async function handleReminderSettings(event: FormEvent<HTMLFormElement>) {
@@ -633,8 +637,9 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
             appointments={appointments}
             business={business}
             metrics={metrics}
-            onReschedule={(appointmentId, startsAt) => {
-              void rescheduleAppointment(appointmentId, startsAt);
+            onFetchRescheduleSlots={fetchRescheduleSlots}
+            onReschedule={(appointmentId, startsAt, staffMemberId) => {
+              void rescheduleAppointment(appointmentId, startsAt, staffMemberId);
             }}
             onStatus={(appointmentId, status) => {
               void updateAppointmentStatus(appointmentId, status);

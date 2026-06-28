@@ -262,6 +262,55 @@ export class AppointmentsService {
     });
   }
 
+  async getPublicAppointment(appointmentId: string, input: CancelAppointmentDto) {
+    const appointment = await this.prisma.appointment.findUnique({
+      include: {
+        business: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            timezone: true
+          }
+        },
+        customer: true,
+        service: true,
+        staffMember: true
+      },
+      where: { id: appointmentId }
+    });
+
+    if (!appointment || appointment.cancellationToken !== input.token) {
+      throw new NotFoundException("Appointment not found");
+    }
+
+    return {
+      ...this.serializeAppointment(appointment),
+      business: appointment.business
+    };
+  }
+
+  async getPublicRescheduleSlots(appointmentId: string, input: CancelAppointmentDto, date: string): Promise<AvailabilitySlot[]> {
+    const appointment = await this.prisma.appointment.findUnique({
+      select: {
+        businessId: true,
+        cancellationToken: true,
+        endsAt: true,
+        id: true,
+        serviceId: true,
+        startsAt: true,
+        status: true
+      },
+      where: { id: appointmentId }
+    });
+
+    if (!appointment || appointment.cancellationToken !== input.token) {
+      throw new NotFoundException("Appointment not found");
+    }
+
+    return this.getRescheduleSlotsForAppointment(appointment, date);
+  }
+
   async createWaitlistEntry(slug: string, input: CreateWaitlistEntryDto) {
     const business = await this.getPublicBusiness(slug);
     return this.createWaitlistEntryForBusiness(business.id, input);
@@ -378,6 +427,27 @@ export class AppointmentsService {
       staffMemberId: input.staffMemberId,
       startsAt: input.startsAt
     });
+  }
+
+  async getPrivateRescheduleSlots(user: AuthenticatedUser, appointmentId: string, date: string): Promise<AvailabilitySlot[]> {
+    const business = await this.businesses.requireCurrentBusiness(user);
+    const appointment = await this.prisma.appointment.findFirst({
+      select: {
+        businessId: true,
+        endsAt: true,
+        id: true,
+        serviceId: true,
+        startsAt: true,
+        status: true
+      },
+      where: { businessId: business.id, id: appointmentId }
+    });
+
+    if (!appointment) {
+      throw new NotFoundException("Appointment not found");
+    }
+
+    return this.getRescheduleSlotsForAppointment(appointment, date);
   }
 
   async listPrivateWaitlistEntries(user: AuthenticatedUser) {
@@ -710,6 +780,10 @@ export class AppointmentsService {
           throw new ConflictException("Only active appointments can be rescheduled");
         }
 
+        if (startsAt.getTime() === current.startsAt.getTime()) {
+          throw new ConflictException("Choose a different appointment time");
+        }
+
         const business = await tx.business.findUniqueOrThrow({
           select: { timezone: true },
           where: { id: current.businessId }
@@ -726,6 +800,8 @@ export class AppointmentsService {
         );
 
         const endsAt = new Date(startsAt.getTime() + (current.service.durationMinutes + current.service.bufferMinutes) * 60_000);
+        await this.assertBusinessSlotIsFree(tx, current.businessId, startsAt, endsAt, current.id);
+
         const updated = await tx.appointment.update({
           data: {
             endsAt,
@@ -973,6 +1049,93 @@ export class AppointmentsService {
 
     if (!matchingSlot) {
       throw new ConflictException("Staff member is not available at the requested time");
+    }
+  }
+
+  private async getRescheduleSlotsForAppointment(
+    appointment: {
+      businessId: string;
+      endsAt: Date;
+      id: string;
+      serviceId: string;
+      startsAt: Date;
+      status: AppointmentStatus;
+    },
+    date: string
+  ): Promise<AvailabilitySlot[]> {
+    if (!activeAppointmentStatuses.includes(appointment.status)) {
+      throw new ConflictException("Only active appointments can be rescheduled");
+    }
+
+    const now = new Date();
+    const { occupiedAppointments, slots } = await this.prisma.$transaction(async (tx) => {
+      const business = await tx.business.findUniqueOrThrow({
+        select: { timezone: true },
+        where: { id: appointment.businessId }
+      });
+      const dayBounds = zonedDayBounds(date, business.timezone);
+      const availableSlots = await this.getAvailabilityForTransaction(tx, appointment.businessId, appointment.serviceId, date, appointment.id);
+      const activeAppointments = await tx.appointment.findMany({
+        select: {
+          endsAt: true,
+          startsAt: true
+        },
+        where: {
+          businessId: appointment.businessId,
+          startsAt: { lt: dayBounds.end },
+          status: { in: activeAppointmentStatuses },
+          endsAt: { gt: dayBounds.start }
+        }
+      });
+
+      return {
+        occupiedAppointments: activeAppointments,
+        slots: availableSlots
+      };
+    });
+
+    const availableBusinessSlots = slots.filter((slot) => {
+      return slot.startsAt > now && !occupiedAppointments.some((occupiedAppointment) => (
+        slot.startsAt < occupiedAppointment.endsAt &&
+        slot.endsAt > occupiedAppointment.startsAt
+      ));
+    });
+
+    return this.uniqueSlotsByStartTime(availableBusinessSlots);
+  }
+
+  private uniqueSlotsByStartTime(slots: AvailabilitySlot[]): AvailabilitySlot[] {
+    const uniqueSlots = new Map<number, AvailabilitySlot>();
+
+    for (const slot of slots) {
+      if (!uniqueSlots.has(slot.startsAt.getTime())) {
+        uniqueSlots.set(slot.startsAt.getTime(), slot);
+      }
+    }
+
+    return [...uniqueSlots.values()];
+  }
+
+  private async assertBusinessSlotIsFree(
+    tx: Prisma.TransactionClient,
+    businessId: string,
+    startsAt: Date,
+    endsAt: Date,
+    excludeAppointmentId: string
+  ): Promise<void> {
+    const overlappingAppointment = await tx.appointment.findFirst({
+      select: { id: true },
+      where: {
+        businessId,
+        id: { not: excludeAppointmentId },
+        startsAt: { lt: endsAt },
+        status: { in: activeAppointmentStatuses },
+        endsAt: { gt: startsAt }
+      }
+    });
+
+    if (overlappingAppointment) {
+      throw new ConflictException("Appointment slot is already occupied");
     }
   }
 

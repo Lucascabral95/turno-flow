@@ -56,6 +56,101 @@ describe("AppointmentsService", () => {
     create: vi.fn()
   };
 
+  it("does not offer the current appointment time or occupied same-day times when rescheduling", async () => {
+    const currentAppointment = {
+      businessId: "business-1",
+      cancellationToken: "cancel-token",
+      endsAt: new Date("2026-06-29T19:00:00.000Z"),
+      id: "appointment-current",
+      serviceId: "service-1",
+      startsAt: new Date("2026-06-29T18:30:00.000Z"),
+      status: AppointmentStatus.CONFIRMED
+    };
+    const tx = {
+      appointment: {
+        findMany: vi
+          .fn()
+          .mockResolvedValueOnce([
+            {
+              endsAt: new Date("2026-06-29T16:30:00.000Z"),
+              staffMemberId: "staff-1",
+              startsAt: new Date("2026-06-29T16:00:00.000Z")
+            },
+            {
+              endsAt: new Date("2026-06-29T18:30:00.000Z"),
+              staffMemberId: "staff-2",
+              startsAt: new Date("2026-06-29T17:30:00.000Z")
+            }
+          ])
+          .mockResolvedValueOnce([
+            {
+              endsAt: new Date("2026-06-29T19:00:00.000Z"),
+              startsAt: new Date("2026-06-29T18:30:00.000Z")
+            },
+            {
+              endsAt: new Date("2026-06-29T16:30:00.000Z"),
+              startsAt: new Date("2026-06-29T16:00:00.000Z")
+            },
+            {
+              endsAt: new Date("2026-06-29T18:30:00.000Z"),
+              startsAt: new Date("2026-06-29T17:30:00.000Z")
+            }
+          ])
+      },
+      availabilityException: {
+        findMany: vi.fn().mockResolvedValue([])
+      },
+      availabilityRule: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            endTime: "16:00",
+            staffMemberId: "staff-1",
+            startTime: "12:00"
+          },
+          {
+            endTime: "16:00",
+            staffMemberId: "staff-2",
+            startTime: "12:00"
+          }
+        ])
+      },
+      business: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({ timezone: "America/Argentina/Buenos_Aires" })
+      },
+      service: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          bufferMinutes: 0,
+          durationMinutes: 30,
+          id: "service-1"
+        })
+      },
+      staffMember: {
+        findMany: vi.fn().mockResolvedValue([{ id: "staff-1" }, { id: "staff-2" }])
+      }
+    };
+    const prisma = {
+      appointment: {
+        findUnique: vi.fn().mockResolvedValue(currentAppointment)
+      },
+      $transaction: vi.fn((fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx))
+    };
+    const service = new AppointmentsService(audit as never, {} as never, new OutboxService(), prisma as never);
+
+    const slots = await service.getPublicRescheduleSlots("appointment-current", { token: "cancel-token" }, "2026-06-29");
+    const startsAt = slots.map((slot) => slot.startsAt.toISOString());
+
+    expect(startsAt).toEqual([
+      "2026-06-29T15:00:00.000Z",
+      "2026-06-29T15:30:00.000Z",
+      "2026-06-29T16:30:00.000Z",
+      "2026-06-29T17:00:00.000Z"
+    ]);
+    expect(startsAt).not.toContain("2026-06-29T16:00:00.000Z");
+    expect(startsAt).not.toContain("2026-06-29T17:30:00.000Z");
+    expect(startsAt).not.toContain("2026-06-29T18:00:00.000Z");
+    expect(startsAt).not.toContain("2026-06-29T18:30:00.000Z");
+  });
+
   it("rejects a pending waitlist offer and emits a reassignment event", async () => {
     const offer = {
       appointmentId: "00000000-0000-0000-0000-000000000002",

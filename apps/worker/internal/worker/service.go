@@ -178,6 +178,10 @@ func (service *Service) handleAppointmentRescheduledEvent(ctx context.Context, t
 		return err
 	}
 
+	if err := service.sendAppointmentRescheduledNotification(ctx, tx, appointment); err != nil {
+		return err
+	}
+
 	return service.recalculateBusinessMetrics(ctx, tx, appointment)
 }
 
@@ -220,6 +224,51 @@ func (service *Service) sendBusinessCancellationNotification(
 		Email:         appointment.Customer.Email,
 		Status:        NotificationSent,
 		Template:      "appointment_cancelled_by_business",
+	}
+
+	if err := service.sender.Send(ctx, message); err != nil {
+		errorMessage := err.Error()
+		logInput.LastError = &errorMessage
+		logInput.Status = NotificationFailed
+	}
+
+	return tx.CreateNotificationLog(ctx, logInput)
+}
+
+func (service *Service) sendAppointmentRescheduledNotification(
+	ctx context.Context,
+	tx Tx,
+	appointment domain.AppointmentPayload,
+) error {
+	previousLine := ""
+	if !appointment.PreviousStartsAt.IsZero() {
+		previousLine = fmt.Sprintf(
+			"\nHorario anterior: %s",
+			formatBusinessDateTime(appointment.PreviousStartsAt, appointment.Timezone),
+		)
+	}
+
+	manageURL := fmt.Sprintf("%s/cancel/%s?token=%s", service.appBaseURL, appointment.AppointmentID, appointment.CancellationToken)
+	message := email.Message{
+		From:    service.emailFrom,
+		To:      appointment.Customer.Email,
+		Subject: "Tu turno fue reprogramado",
+		Text: fmt.Sprintf(
+			"Hola %s,\n\nTu turno para %s fue reprogramado.\nNuevo horario: %s%s\n\nSi no podes asistir, podes gestionar tu turno desde: %s",
+			appointment.Customer.Name,
+			appointment.Service.Name,
+			formatBusinessDateTime(appointment.StartsAt, appointment.Timezone),
+			previousLine,
+			manageURL,
+		),
+	}
+
+	logInput := NotificationLog{
+		AppointmentID: &appointment.AppointmentID,
+		BusinessID:    appointment.BusinessID,
+		Email:         appointment.Customer.Email,
+		Status:        NotificationSent,
+		Template:      "appointment_rescheduled",
 	}
 
 	if err := service.sender.Send(ctx, message); err != nil {

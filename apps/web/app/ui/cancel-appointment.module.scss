@@ -8,6 +8,91 @@
   padding: 28px;
 }
 
+.appointmentSummary {
+  background:
+    linear-gradient(135deg, rgb(99 102 241 / 10%), rgb(14 165 233 / 8%)),
+    $surface;
+  border: 1px solid rgb(99 102 241 / 20%);
+  border-radius: $radius;
+  box-shadow: $shadow-soft;
+  display: grid;
+  gap: 6px;
+  padding: 18px;
+
+  span {
+    color: $primary;
+    font-size: 0.78rem;
+    font-weight: 850;
+    text-transform: uppercase;
+  }
+
+  strong {
+    color: $ink;
+    font-size: 1.2rem;
+  }
+
+  p {
+    color: $muted;
+    margin: 0;
+  }
+}
+
+.slotGrid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+
+  span {
+    background: $surface-soft;
+    border: 1px dashed $border;
+    border-radius: $radius;
+    color: $muted;
+    font-weight: 760;
+    grid-column: 1 / -1;
+    padding: 12px;
+  }
+
+  button {
+    background: $surface;
+    border: 1px solid $border;
+    border-radius: 12px;
+    box-shadow: $shadow-soft;
+    color: $ink;
+    cursor: pointer;
+    font-weight: 850;
+    min-height: 44px;
+    transition:
+      border-color 0.18s ease,
+      box-shadow 0.18s ease,
+      color 0.18s ease,
+      transform 0.18s ease;
+
+    &:hover:not(:disabled) {
+      border-color: rgb(99 102 241 / 48%);
+      box-shadow: $shadow-card;
+      color: $primary;
+      transform: translateY(-1px);
+    }
+
+    &:focus-visible {
+      outline: 3px solid rgb(99 102 241 / 22%);
+      outline-offset: 2px;
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+  }
+}
+
+.selectedSlot {
+  background: rgb(99 102 241 / 10%) !important;
+  border-color: rgb(99 102 241 / 64%) !important;
+  box-shadow: 0 0 0 3px rgb(99 102 241 / 12%) !important;
+  color: $primary !important;
+}
+
 @media (max-width: 860px) {
   .cancelAppointment {
     padding: 16px;
