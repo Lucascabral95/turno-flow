@@ -101,6 +101,16 @@ enum CalendarEventSyncStatus {
   @@map("calendar_event_sync_status")
 }
 
+enum OnboardingStep {
+  BUSINESS     @map("business")
+  SERVICE      @map("service")
+  STAFF        @map("staff")
+  AVAILABILITY @map("availability")
+  PUBLIC_PAGE  @map("public_page")
+
+  @@map("onboarding_step")
+}
+
 model User {
   id           String     @id @default(uuid()) @db.Uuid
   email        String     @unique
@@ -161,8 +171,37 @@ model Business {
   calendarConnections CalendarConnection[]
   calendarEventSyncs CalendarEventSync[]
   customerNotes     CustomerNote[]
+  onboarding        BusinessOnboarding?
+  onboardingEvents  BusinessOnboardingEvent[]
 
   @@map("businesses")
+}
+
+model BusinessOnboarding {
+  businessId   String         @id @map("business_id") @db.Uuid
+  business     Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  currentStep  OnboardingStep @default(BUSINESS) @map("current_step")
+  progressData Json?          @map("progress_data")
+  completedAt  DateTime?      @map("completed_at") @db.Timestamptz(3)
+  dismissedAt  DateTime?      @map("dismissed_at") @db.Timestamptz(3)
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  @@map("business_onboarding")
+}
+
+model BusinessOnboardingEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  step       OnboardingStep? @map("step")
+  eventType  String   @map("event_type")
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([businessId, createdAt])
+  @@index([businessId, step, createdAt])
+  @@map("business_onboarding_events")
 }
 
 model BusinessMember {

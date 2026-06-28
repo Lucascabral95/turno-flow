@@ -7,6 +7,9 @@ describe("BusinessesService", () => {
   const audit = {
     create: vi.fn()
   };
+  const onboarding = {
+    getStatusForBusinessSnapshot: vi.fn()
+  };
   const outbox = {
     create: vi.fn()
   };
@@ -51,6 +54,24 @@ describe("BusinessesService", () => {
       id: "business-1",
       ownerId: user.id
     });
+    onboarding.getStatusForBusinessSnapshot.mockResolvedValue({
+      analytics: {
+        currentStepEnteredAt: null,
+        dismissCount: 0,
+        lastActivityAt: null,
+        lastDismissedAt: null,
+        lastSharedAt: null,
+        lastTestBookingAt: null,
+        stalledStep: null,
+        steps: []
+      },
+      currentStep: "service",
+      dismissedAt: null,
+      isReadyToSell: false,
+      nextStep: "service",
+      progressPercent: 20,
+      steps: []
+    });
     prisma.staffMember.findFirst.mockResolvedValue({
       businessId: "business-1",
       id: "staff-1"
@@ -80,7 +101,7 @@ describe("BusinessesService", () => {
     prisma.availabilityRule.findFirst.mockResolvedValueOnce({
       id: "rule-existing"
     });
-    const service = new BusinessesService(audit as never, outbox, prisma as never);
+    const service = new BusinessesService(audit as never, outbox, prisma as never, onboarding as never);
 
     await expect(
       service.createAvailabilityRule(user, {
@@ -108,7 +129,7 @@ describe("BusinessesService", () => {
       .mockResolvedValueOnce({
         id: "rule-existing"
       });
-    const service = new BusinessesService(audit as never, outbox, prisma as never);
+    const service = new BusinessesService(audit as never, outbox, prisma as never, onboarding as never);
 
     await expect(
       service.updateAvailabilityRule(user, "rule-current", {
@@ -117,5 +138,32 @@ describe("BusinessesService", () => {
     ).rejects.toBeInstanceOf(ConflictException);
 
     expect(prisma.availabilityRule.update).not.toHaveBeenCalled();
+  });
+
+  it("includes onboarding summary in current business response", async () => {
+    prisma.business.findFirst.mockResolvedValueOnce({
+      availabilityExceptions: [],
+      availabilityRules: [{ active: true, id: "rule-1", staffMemberId: "staff-1", weekday: 1 }],
+      email: null,
+      id: "business-1",
+      ownerId: user.id,
+      services: [{ active: true, bufferMinutes: 10, durationMinutes: 30, id: "service-1", priceCents: 1200 }],
+      slug: "lucas-barber",
+      staffMembers: [{ active: true, email: "staff@turnoflow.local", id: "staff-1", name: "Lucas" }],
+      timezone: "America/Argentina/Buenos_Aires"
+    });
+    const service = new BusinessesService(audit as never, outbox, prisma as never, onboarding as never);
+
+    const result = await service.getCurrent(user);
+
+    expect(onboarding.getStatusForBusinessSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "business-1"
+      })
+    );
+    expect(result?.id).toBe("business-1");
+    expect(result?.onboarding).toMatchObject({
+      currentStep: "service"
+    });
   });
 });
