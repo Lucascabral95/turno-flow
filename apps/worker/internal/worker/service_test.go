@@ -134,6 +134,44 @@ func TestHandleEventDoesNotSendCancellationEmailWhenCustomerCancelsAppointment(t
 	}
 }
 
+func TestHandleEventSendsEmailWhenAppointmentIsRescheduled(t *testing.T) {
+	ctx := context.Background()
+	repository := newFakeRepository()
+	sender := &fakeSender{}
+	service := NewService(repository, sender, "http://localhost:3000", "noreply@example.test")
+
+	if err := service.HandleEvent(ctx, rescheduledEvent(t)); err != nil {
+		t.Fatalf("handle rescheduled appointment event: %v", err)
+	}
+
+	if len(sender.messages) != 1 {
+		t.Fatalf("expected one reschedule email, got %d", len(sender.messages))
+	}
+	message := sender.messages[0]
+	for _, expected := range []string{
+		"Tu turno fue reprogramado",
+		"Hola Original Customer",
+		"Corte",
+		"Nuevo horario: 17/06/2026 09:00 (America/Argentina/Buenos_Aires)",
+		"Horario anterior: 17/06/2026 07:00 (America/Argentina/Buenos_Aires)",
+		"http://localhost:3000/cancel/appointment-1?token=cancel-token",
+	} {
+		if !strings.Contains(message.Subject+" "+message.Text, expected) {
+			t.Fatalf("expected reschedule email to contain %q, got subject=%q text=%q", expected, message.Subject, message.Text)
+		}
+	}
+	if len(repository.notificationLogs) != 1 {
+		t.Fatalf("expected one notification log, got %d", len(repository.notificationLogs))
+	}
+	log := repository.notificationLogs[0]
+	if log.Template != "appointment_rescheduled" || log.Status != NotificationSent {
+		t.Fatalf("unexpected reschedule log %#v", log)
+	}
+	if len(repository.metricsRecalculated) != 1 {
+		t.Fatalf("expected one metrics recalculation, got %d", len(repository.metricsRecalculated))
+	}
+}
+
 func TestHandleEventSchedulesReminderOnlyOnceForAppointmentBooked(t *testing.T) {
 	ctx := context.Background()
 	repository := newFakeRepository()
@@ -275,6 +313,57 @@ func TestHandleEventDeduplicatesExistingGoogleCalendarEvents(t *testing.T) {
 	result := repository.calendarSyncResults[0]
 	if result.GoogleEventID == nil || *result.GoogleEventID != "google-event-1" {
 		t.Fatalf("expected primary google event id to be recorded, got %#v", result.GoogleEventID)
+	}
+}
+
+func TestHandleEventUpdatesGoogleCalendarForAppointmentRescheduled(t *testing.T) {
+	ctx := context.Background()
+	repository := newFakeRepository()
+	accessToken := "access-token"
+	googleEventID := "google-event-1"
+	repository.calendarSyncTarget = &CalendarSyncTarget{
+		Appointment: CalendarAppointment{
+			AppointmentID: "appointment-1",
+			BusinessID:    "business-1",
+			CustomerEmail: "original@example.test",
+			CustomerName:  "Original Customer",
+			EndsAt:        time.Date(2026, 6, 17, 12, 30, 0, 0, time.UTC),
+			ServiceName:   "Corte",
+			StaffName:     "Lucas",
+			StartsAt:      time.Date(2026, 6, 17, 12, 0, 0, 0, time.UTC),
+			Status:        "confirmed",
+			Timezone:      "America/Argentina/Buenos_Aires",
+		},
+		Connection: &CalendarConnection{
+			AccessTokenEncrypted: &accessToken,
+			BusinessID:           "business-1",
+			ExpiresAt:            timePointer(time.Now().UTC().Add(time.Hour)),
+			ID:                   "calendar-connection-1",
+			StaffMemberID:        stringPointer("staff-1"),
+		},
+		GoogleEventID: &googleEventID,
+	}
+	calendar := &fakeCalendarClient{}
+	sender := &fakeSender{}
+	service := NewService(repository, sender, "http://localhost:3000", "noreply@example.test").
+		WithCalendarSync(calendar, fakeTokenCodec{})
+
+	if err := service.HandleEvent(ctx, rescheduledEvent(t)); err != nil {
+		t.Fatalf("handle rescheduled appointment event: %v", err)
+	}
+
+	if len(calendar.updatedEvents) != 1 {
+		t.Fatalf("expected one google calendar event update, got %d", len(calendar.updatedEvents))
+	}
+	event := calendar.updatedEvents[0]
+	if !event.StartsAt.Equal(time.Date(2026, 6, 17, 12, 0, 0, 0, time.UTC)) {
+		t.Fatalf("expected updated event start, got %s", event.StartsAt)
+	}
+	if event.Timezone != "America/Argentina/Buenos_Aires" {
+		t.Fatalf("expected business timezone, got %q", event.Timezone)
+	}
+	if len(sender.messages) != 1 {
+		t.Fatalf("expected one reschedule email, got %d", len(sender.messages))
 	}
 }
 
@@ -835,6 +924,31 @@ func bookedEvent(t *testing.T) domain.Event {
 		OccurredAt:  time.Now().UTC(),
 		Payload:     body,
 		Type:        domain.EventAppointmentBooked,
+		Version:     1,
+	}
+}
+
+func rescheduledEvent(t *testing.T) domain.Event {
+	t.Helper()
+
+	payload := appointmentPayload()
+	payload.PreviousEndsAt = payload.EndsAt
+	payload.PreviousStartsAt = payload.StartsAt
+	payload.EndsAt = time.Date(2026, 6, 17, 12, 30, 0, 0, time.UTC)
+	payload.StartsAt = time.Date(2026, 6, 17, 12, 0, 0, 0, time.UTC)
+	payload.Source = "dashboard"
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	return domain.Event{
+		AggregateID: payload.AppointmentID,
+		BusinessID:  payload.BusinessID,
+		EventID:     "00000000-0000-0000-0000-000000000003",
+		OccurredAt:  time.Now().UTC(),
+		Payload:     body,
+		Type:        domain.EventAppointmentRescheduled,
 		Version:     1,
 	}
 }

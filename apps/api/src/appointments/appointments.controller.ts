@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
 
 import { AuthGuard } from "../auth/auth.guard";
 import type { AuthenticatedUser } from "../common/authenticated-user";
@@ -38,6 +38,15 @@ export class AppointmentsController {
     @Body() input: RescheduleAppointmentDto
   ) {
     return this.appointments.reschedulePrivateAppointment(user, id, input);
+  }
+
+  @Get(":id/reschedule-slots")
+  getRescheduleSlots(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Query("date") date: string
+  ) {
+    return this.appointments.getPrivateRescheduleSlots(user, id, date);
   }
 
   @Patch(":id/complete")

@@ -34,7 +34,7 @@
     align-items: end;
     display: grid;
     gap: 12px;
-    grid-template-columns: minmax(260px, 1fr) repeat(2, minmax(180px, 240px));
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   }
 
   :global(.appointments-table) {
@@ -42,14 +42,16 @@
 
     td:last-child,
     th:last-child {
+      max-width: 380px;
       text-align: right;
+      width: 380px;
     }
   }
 }
 
 .operationsPanel {
   :global(.appointments-toolbar) {
-    grid-template-columns: minmax(260px, 1fr) minmax(220px, 280px);
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   }
 
   :global(.appointment-actions) {
@@ -62,6 +64,58 @@
       min-height: 34px;
       padding: 7px 10px;
     }
+  }
+}
+
+.paginationBar {
+  align-items: center;
+  background: $surface-soft;
+  border: 1px solid $border;
+  border-radius: $radius;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding: 12px;
+
+  div:first-child {
+    color: $muted;
+    font-size: 0.88rem;
+
+    strong {
+      color: $ink;
+    }
+  }
+
+  label {
+    align-items: center;
+    color: $muted;
+    display: flex;
+    font-size: 0.82rem;
+    font-weight: 780;
+    gap: 8px;
+
+    select {
+      min-height: 36px;
+      min-width: 76px;
+      padding: 6px 28px 6px 10px;
+    }
+  }
+}
+
+.paginationActions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+
+  span {
+    color: $muted;
+    font-size: 0.84rem;
+    font-weight: 760;
+    padding: 0 4px;
   }
 }
 
@@ -111,15 +165,42 @@
   }
 }
 
+.rescheduleBackdrop {
+  background: rgb(15 23 42 / 34%);
+  border: 0;
+  cursor: pointer;
+  inset: 0;
+  padding: 0;
+  position: fixed;
+  z-index: 79;
+}
+
 .rescheduleForm {
-  background: $surface-soft;
+  background: $surface;
   border: 1px solid $border;
-  border-radius: $radius;
+  border-radius: 14px;
+  box-shadow: 0 24px 70px rgb(15 23 42 / 22%);
   display: grid;
-  gap: 10px;
-  margin-top: 10px;
-  padding: 12px;
+  gap: 14px;
+  left: 50%;
+  margin: 0;
+  max-height: min(78vh, 680px);
+  max-width: calc(100vw - 32px);
+  overflow: auto;
+  padding: 18px;
+  position: fixed;
   text-align: left;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(720px, calc(100vw - 32px));
+  z-index: 80;
+
+  &::before {
+    color: $ink;
+    content: "Reprogramar turno";
+    font-size: 1.05rem;
+    font-weight: 860;
+  }
 
   label {
     color: $muted;
@@ -131,13 +212,119 @@
 
   input {
     min-width: 220px;
+    width: 100%;
   }
 
-  div {
-    display: flex;
-    gap: 8px;
-    justify-content: flex-end;
+}
+
+.rescheduleSummary {
+  background: linear-gradient(135deg, rgb(99 91 255 / 10%), rgb(37 99 235 / 8%));
+  border: 1px solid rgb(99 91 255 / 18%);
+  border-radius: $radius;
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+
+  span {
+    color: $primary;
+    font-size: 0.74rem;
+    font-weight: 840;
+    text-transform: uppercase;
   }
+
+  strong {
+    color: $ink;
+    font-size: 1rem;
+  }
+
+  p {
+    color: $muted;
+    font-size: 0.86rem;
+    margin: 0;
+  }
+}
+
+.rescheduleActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.rescheduleSlots {
+  align-items: center;
+  background: $surface-soft;
+  border: 1px solid $border;
+  border-radius: $radius;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-start;
+  max-width: 100%;
+  min-width: 0;
+  padding: 12px;
+
+  &::before {
+    color: $muted;
+    content: "Horarios disponibles";
+    flex: 1 0 100%;
+    font-size: 0.78rem;
+    font-weight: 820;
+  }
+
+  button {
+    background: $surface;
+    border: 1px solid $border;
+    border-radius: 10px;
+    color: $ink;
+    cursor: pointer;
+    flex: 0 0 auto;
+    font-weight: 800;
+    min-height: 38px;
+    min-width: 86px;
+    padding: 8px 10px;
+    transition:
+      border-color 0.18s ease,
+      box-shadow 0.18s ease,
+      color 0.18s ease,
+      transform 0.18s ease;
+
+    &:hover {
+      border-color: rgb(99 102 241 / 45%);
+      box-shadow: 0 10px 22px rgb(15 23 42 / 8%);
+      color: $primary;
+      transform: translateY(-1px);
+    }
+
+    &:focus-visible {
+      outline: 3px solid rgb(99 102 241 / 20%);
+      outline-offset: 2px;
+    }
+  }
+}
+
+.selectedSlot {
+  background: rgb(99 102 241 / 10%) !important;
+  border-color: rgb(99 102 241 / 64%) !important;
+  box-shadow: 0 0 0 3px rgb(99 102 241 / 12%);
+  color: $primary !important;
+}
+
+.rescheduleState,
+.rescheduleError {
+  background: $surface;
+  border: 1px dashed $border;
+  border-radius: 10px;
+  color: $muted;
+  flex: 1 0 100%;
+  font-size: 0.84rem;
+  font-weight: 760;
+  padding: 10px 12px;
+}
+
+.rescheduleError {
+  background: rgb(239 68 68 / 8%);
+  border-color: rgb(239 68 68 / 24%);
+  color: $danger;
 }
 
 @media (max-width: 860px) {
@@ -169,7 +356,7 @@
         width: 100%;
       }
 
-      div {
+      .rescheduleActions {
         display: grid;
       }
     }

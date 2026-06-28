@@ -161,6 +161,48 @@ describe("calculateAvailability", () => {
     ]);
   });
 
+  it("keeps today's free future slots while excluding occupied same-day appointments", () => {
+    const slots = calculateAvailability({
+      activeStaffMemberIds: ["staff-1"],
+      bufferMinutes: 0,
+      busySlots: [
+        {
+          endsAt: new Date("2026-06-28T16:30:00.000Z"),
+          staffMemberId: "staff-1",
+          startsAt: new Date("2026-06-28T16:00:00.000Z")
+        },
+        {
+          endsAt: new Date("2026-06-28T18:30:00.000Z"),
+          staffMemberId: "staff-1",
+          startsAt: new Date("2026-06-28T17:30:00.000Z")
+        }
+      ],
+      date: "2026-06-28",
+      durationMinutes: 30,
+      exceptions: [],
+      now: new Date("2026-06-28T14:00:00.000Z"),
+      rules: [
+        {
+          endTime: "16:00",
+          staffMemberId: "staff-1",
+          startTime: "12:00"
+        }
+      ],
+      timezone: "America/Argentina/Buenos_Aires"
+    });
+
+    expect(slots.map((slot) => slot.startsAt.toISOString())).toEqual([
+      "2026-06-28T15:00:00.000Z",
+      "2026-06-28T15:30:00.000Z",
+      "2026-06-28T16:30:00.000Z",
+      "2026-06-28T17:00:00.000Z",
+      "2026-06-28T18:30:00.000Z"
+    ]);
+    expect(slots.map((slot) => slot.startsAt.toISOString())).not.toContain("2026-06-28T16:00:00.000Z");
+    expect(slots.map((slot) => slot.startsAt.toISOString())).not.toContain("2026-06-28T17:30:00.000Z");
+    expect(slots.map((slot) => slot.startsAt.toISOString())).not.toContain("2026-06-28T18:00:00.000Z");
+  });
+
   it("does not return slots for past business dates", () => {
     const slots = calculateAvailability({
       activeStaffMemberIds: ["staff-1"],

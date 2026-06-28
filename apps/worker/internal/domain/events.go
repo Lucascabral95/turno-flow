@@ -46,10 +46,13 @@ type AppointmentPayload struct {
 	CancellationToken string    `json:"cancellationToken"`
 	Customer          Customer  `json:"customer"`
 	EndsAt            time.Time `json:"endsAt"`
+	PreviousEndsAt    time.Time `json:"previousEndsAt"`
+	PreviousStartsAt  time.Time `json:"previousStartsAt"`
 	Service           Service   `json:"service"`
 	StaffMember       Staff     `json:"staffMember"`
 	StartsAt          time.Time `json:"startsAt"`
 	Status            string    `json:"status"`
+	Source            string    `json:"source"`
 	Timezone          string    `json:"timezone"`
 }
 
