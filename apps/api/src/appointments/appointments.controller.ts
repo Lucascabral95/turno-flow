@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { ApiTags } from "@nestjs/swagger";
 
 import { AuthGuard } from "../auth/auth.guard";
 import type { AuthenticatedUser } from "../common/authenticated-user";
@@ -6,6 +7,7 @@ import { CurrentUser } from "../common/current-user.decorator";
 import { AppointmentsService } from "./appointments.service";
 import { CreateWaitlistEntryDto, RescheduleAppointmentDto, UpdateAppointmentStatusDto } from "./dto/appointment.dto";
 
+@ApiTags("appointments")
 @UseGuards(AuthGuard)
 @Controller("appointments")
 export class AppointmentsController {
@@ -69,6 +71,7 @@ export class AppointmentsController {
   }
 }
 
+@ApiTags("waitlist")
 @UseGuards(AuthGuard)
 @Controller("waitlist")
 export class WaitlistController {
@@ -90,6 +93,7 @@ export class WaitlistController {
   }
 }
 
+@ApiTags("waitlist-offers")
 @UseGuards(AuthGuard)
 @Controller("waitlist-offers")
 export class WaitlistOffersController {

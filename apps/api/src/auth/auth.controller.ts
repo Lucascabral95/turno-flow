@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
+import { ApiTags } from "@nestjs/swagger";
 
 import type { AuthenticatedUser } from "../common/authenticated-user";
 import { CurrentUser } from "../common/current-user.decorator";
@@ -8,6 +9,7 @@ import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
 import { RefreshTokenDto } from "./dto/refresh-token.dto";
 
+@ApiTags("auth")
 @Controller("auth")
 export class AuthController {
   constructor(private readonly auth: AuthService) {}

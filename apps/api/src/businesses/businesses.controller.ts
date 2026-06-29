@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { ApiTags } from "@nestjs/swagger";
 
 import type { AuthenticatedUser } from "../common/authenticated-user";
 import { CurrentUser } from "../common/current-user.decorator";
@@ -12,6 +13,7 @@ import { UpdateReminderSettingsDto } from "./dto/reminder-settings.dto";
 import { CreateServiceDto, UpdateServiceDto } from "./dto/service.dto";
 import { CreateStaffMemberDto, UpdateStaffMemberDto } from "./dto/staff-member.dto";
 
+@ApiTags("businesses")
 @UseGuards(AuthGuard)
 @Controller()
 export class BusinessesController {

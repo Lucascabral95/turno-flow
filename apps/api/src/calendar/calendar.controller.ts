@@ -1,10 +1,12 @@
 import { Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query, Redirect, UseGuards } from "@nestjs/common";
+import { ApiTags } from "@nestjs/swagger";
 
 import { AuthGuard } from "../auth/auth.guard";
 import type { AuthenticatedUser } from "../common/authenticated-user";
 import { CurrentUser } from "../common/current-user.decorator";
 import { CalendarService } from "./calendar.service";
 
+@ApiTags("calendar")
 @Controller("calendar-connections")
 export class CalendarController {
   constructor(private readonly calendar: CalendarService) {}

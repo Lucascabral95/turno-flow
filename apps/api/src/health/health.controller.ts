@@ -1,4 +1,5 @@
 import { Controller, Get, ServiceUnavailableException } from "@nestjs/common";
+import { ApiTags } from "@nestjs/swagger";
 
 import { EventPublisherService } from "../events/event-publisher.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -9,6 +10,7 @@ type ReadinessResponse = {
   status: "degraded" | "ok";
 };
 
+@ApiTags("health")
 @Controller("health")
 export class HealthController {
   constructor(

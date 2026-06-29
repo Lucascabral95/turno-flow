@@ -10,6 +10,7 @@ import (
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
+	"github.com/getsentry/sentry-go"
 
 	"github.com/turnoflow/turnoflow/apps/worker/internal/config"
 	"github.com/turnoflow/turnoflow/apps/worker/internal/domain"
@@ -191,6 +192,7 @@ func handleDelivery(ctx context.Context, service *worker.Service, delivery amqp.
 	)
 	if err := service.HandleEvent(ctx, event); err != nil {
 		logger.Error("event processing failed", "error", err, "duration_ms", time.Since(startedAt).Milliseconds())
+		sentry.CaptureException(err)
 		_ = delivery.Nack(false, true)
 		return
 	}

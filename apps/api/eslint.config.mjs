@@ -20,6 +20,6 @@ export default tseslint.config(
     }
   },
   {
-    ignores: ["dist/**", "eslint.config.mjs", "node_modules/**", "vitest.config.ts"]
+    ignores: ["dist/**", "eslint.config.mjs", "node_modules/**", "vitest.config.ts", "vitest.integration.config.ts"]
   }
 );

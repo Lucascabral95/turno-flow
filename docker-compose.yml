@@ -61,6 +61,7 @@ services:
       GOOGLE_CALENDAR_CLIENT_SECRET: ${GOOGLE_CALENDAR_CLIENT_SECRET:-}
       GOOGLE_CALENDAR_REDIRECT_URI: ${GOOGLE_CALENDAR_REDIRECT_URI:-http://localhost:3001/calendar-connections/google/callback}
       OAUTH_STATE_SECRET: ${OAUTH_STATE_SECRET:-change-me-calendar-state-secret}
+      SENTRY_DSN: ${SENTRY_DSN:-}
     ports:
       - "3001:3001"
     depends_on:
@@ -118,6 +119,7 @@ services:
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_TIMEOUT_SECONDS: ${SMTP_TIMEOUT_SECONDS:-10}
       SMTP_USER: ${SMTP_USER:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
     depends_on:
       postgres:
         condition: service_healthy

@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from "@nestjs/common";
+import { ApiTags } from "@nestjs/swagger";
 
 import { AppointmentsService } from "../appointments/appointments.service";
 import {
@@ -8,6 +9,7 @@ import {
   RescheduleAppointmentDto
 } from "../appointments/dto/appointment.dto";
 
+@ApiTags("public")
 @Controller("public")
 export class PublicController {
   constructor(private readonly appointments: AppointmentsService) {}
