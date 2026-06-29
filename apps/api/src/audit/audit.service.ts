@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 
+import { getCorrelationId } from "../common/correlation-id";
 import type { AuthenticatedUser } from "../common/authenticated-user";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -33,7 +34,7 @@ export class AuditService {
         entity: input.entity,
         entityId: input.entityId,
         metadata: input.metadata,
-        requestId: input.requestId ?? null,
+        requestId: input.requestId ?? getCorrelationId() ?? null,
         userId: input.user?.id ?? null
       }
     });

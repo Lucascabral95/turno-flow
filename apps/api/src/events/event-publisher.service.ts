@@ -100,11 +100,22 @@ export class EventPublisherService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit(): Promise<void> {
+    try {
+      await this.getConnection();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown RabbitMQ connection error";
+      this.logger.warn(`Initial RabbitMQ connection failed: ${message}`);
+    }
+
     this.interval = setInterval(() => {
       void this.publishPending();
     }, PUBLISH_INTERVAL_MS);
 
     await this.publishPending();
+  }
+
+  isConnected(): boolean {
+    return this.connection !== undefined;
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -192,6 +203,7 @@ export class EventPublisherService implements OnModuleInit, OnModuleDestroy {
     const message = {
       aggregateId: event.aggregateId,
       businessId: event.businessId,
+      correlationId: event.correlationId,
       eventId: event.id,
       occurredAt: event.createdAt.toISOString(),
       payload: event.payload,

@@ -178,6 +178,7 @@ function makeEvent(): EventOutbox {
     aggregateId: "00000000-0000-0000-0000-000000000002",
     attempts: 0,
     businessId: "00000000-0000-0000-0000-000000000001",
+    correlationId: null,
     createdAt: new Date("2026-06-18T12:00:00.000Z"),
     id: "00000000-0000-0000-0000-000000000003",
     lastError: null,

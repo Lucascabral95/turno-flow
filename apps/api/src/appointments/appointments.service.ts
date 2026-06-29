@@ -368,7 +368,8 @@ export class AppointmentsService {
     const business = await this.businesses.requireCurrentBusiness(user);
     const appointments = await this.prisma.appointment.findMany({
       include: { customer: true, service: true, staffMember: true },
-      orderBy: { startsAt: "asc" },
+      orderBy: { startsAt: "desc" },
+      take: 200,
       where: { businessId: business.id }
     });
 
@@ -462,6 +463,7 @@ export class AppointmentsService {
         service: true
       },
       orderBy: { createdAt: "desc" },
+      take: 100,
       where: { businessId: business.id }
     });
 

@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 
+import { getCorrelationId } from "../common/correlation-id";
 import type { EventRoutingKey, EventType } from "./event-types";
 
 type TransactionClient = Prisma.TransactionClient;
@@ -22,6 +23,7 @@ export class OutboxService {
       data: {
         aggregateId: input.aggregateId,
         businessId: input.businessId,
+        correlationId: getCorrelationId(),
         payload: input.payload,
         routingKey: input.routingKey,
         type: input.type,

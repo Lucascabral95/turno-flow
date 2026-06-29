@@ -570,20 +570,21 @@ model AuditLog {
 }
 
 model EventOutbox {
-  id          String            @id @default(uuid()) @db.Uuid
-  type        String
-  version     Int
-  businessId  String            @map("business_id") @db.Uuid
-  business    Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  aggregateId String            @map("aggregate_id") @db.Uuid
-  routingKey  String            @map("routing_key")
-  payload     Json
-  status      EventOutboxStatus @default(PENDING)
-  attempts    Int               @default(0)
-  lastError   String?           @map("last_error")
-  publishedAt DateTime?         @map("published_at") @db.Timestamptz(3)
-  createdAt   DateTime          @default(now()) @map("created_at")
-  updatedAt   DateTime          @updatedAt @map("updated_at")
+  id            String            @id @default(uuid()) @db.Uuid
+  type          String
+  version       Int
+  businessId    String            @map("business_id") @db.Uuid
+  business      Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  aggregateId   String            @map("aggregate_id") @db.Uuid
+  routingKey    String            @map("routing_key")
+  payload       Json
+  correlationId String?           @map("correlation_id")
+  status        EventOutboxStatus @default(PENDING)
+  attempts      Int               @default(0)
+  lastError     String?           @map("last_error")
+  publishedAt   DateTime?         @map("published_at") @db.Timestamptz(3)
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
 
   @@index([status, createdAt])
   @@map("outbox_events")
