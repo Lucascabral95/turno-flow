@@ -34,7 +34,7 @@ describe("AuthService", () => {
     prisma.refreshToken.updateMany.mockResolvedValue({ count: 1 });
   });
 
-  it("registers a user and stores only a hashed refresh token", async () => {
+  it("registers a user and stores only a hashed refresh token with a family id", async () => {
     prisma.user.findUnique.mockResolvedValue(null);
     prisma.user.create.mockResolvedValue({
       email: "lucas@turnoflow.local",
@@ -58,11 +58,12 @@ describe("AuthService", () => {
     expect(userCreateInput?.data.name).toBe("Lucas");
 
     const refreshTokenCreateInput = prisma.refreshToken.create.mock.calls[0]?.[0] as
-      | { data: { expiresAt: Date; tokenHash: string; userId: string } }
+      | { data: { expiresAt: Date; familyId: string; tokenHash: string; userId: string } }
       | undefined;
     expect(refreshTokenCreateInput?.data.expiresAt).toBeInstanceOf(Date);
     expect(refreshTokenCreateInput?.data.tokenHash).not.toContain(result.refreshToken);
     expect(refreshTokenCreateInput?.data.userId).toBe("user-1");
+    expect(refreshTokenCreateInput?.data.familyId).toEqual(expect.any(String));
   });
 
   it("rejects duplicate registration emails", async () => {
@@ -78,9 +79,10 @@ describe("AuthService", () => {
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
-  it("rotates a valid refresh token", async () => {
+  it("rotates a valid refresh token preserving the family id", async () => {
     prisma.refreshToken.findUnique.mockResolvedValue({
       expiresAt: new Date(Date.now() + 60_000),
+      familyId: "family-1",
       id: "refresh-token-1",
       revokedAt: null,
       user: {
@@ -100,11 +102,16 @@ describe("AuthService", () => {
     expect(refreshTokenUpdateInput?.data.revokedAt).toBeInstanceOf(Date);
     expect(refreshTokenUpdateInput?.where.id).toBe("refresh-token-1");
     expect(prisma.refreshToken.create).toHaveBeenCalledTimes(1);
+    const refreshTokenCreateInput = prisma.refreshToken.create.mock.calls[0]?.[0] as
+      | { data: { familyId: string } }
+      | undefined;
+    expect(refreshTokenCreateInput?.data.familyId).toBe("family-1");
   });
 
-  it("rejects revoked refresh tokens", async () => {
+  it("revokes entire family on refresh token reuse", async () => {
     prisma.refreshToken.findUnique.mockResolvedValue({
       expiresAt: new Date(Date.now() + 60_000),
+      familyId: "family-1",
       id: "refresh-token-1",
       revokedAt: new Date(),
       user: {
@@ -114,7 +121,34 @@ describe("AuthService", () => {
     });
     const service = new AuthService(config as never, jwt as never, prisma as never);
 
-    await expect(service.refresh({ refreshToken: "raw-refresh-token" })).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(service.refresh({ refreshToken: "raw-refresh-token" })).rejects.toBeInstanceOf(
+      UnauthorizedException
+    );
+
+    const revokeFamilyInput = prisma.refreshToken.updateMany.mock.calls[0]?.[0] as
+      | { data: { revokedAt: Date }; where: { familyId: string; revokedAt: null } }
+      | undefined;
+    expect(revokeFamilyInput?.data.revokedAt).toBeInstanceOf(Date);
+    expect(revokeFamilyInput?.where.familyId).toBe("family-1");
+    expect(revokeFamilyInput?.where.revokedAt).toBeNull();
+  });
+
+  it("rejects expired refresh tokens", async () => {
+    prisma.refreshToken.findUnique.mockResolvedValue({
+      expiresAt: new Date(Date.now() - 60_000),
+      familyId: "family-1",
+      id: "refresh-token-1",
+      revokedAt: null,
+      user: {
+        email: "lucas@turnoflow.local",
+        id: "user-1"
+      }
+    });
+    const service = new AuthService(config as never, jwt as never, prisma as never);
+
+    await expect(service.refresh({ refreshToken: "raw-refresh-token" })).rejects.toBeInstanceOf(
+      UnauthorizedException
+    );
   });
 
   it("revokes refresh token on logout without exposing missing tokens", async () => {

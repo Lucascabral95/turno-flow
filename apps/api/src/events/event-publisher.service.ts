@@ -8,6 +8,9 @@ import { PrismaService } from "../prisma/prisma.service";
 const EXCHANGE_NAME = "turnoflow.events";
 const DEAD_LETTER_EXCHANGE = "turnoflow.events.dlx";
 const APPOINTMENTS_DEAD_LETTER_ROUTING_KEY = "worker.appointments.dead";
+const WAITLIST_DEAD_LETTER_ROUTING_KEY = "worker.waitlist.dead";
+const NOTIFICATIONS_DEAD_LETTER_ROUTING_KEY = "worker.notifications.dead";
+const METRICS_DEAD_LETTER_ROUTING_KEY = "worker.metrics.dead";
 const MAX_ATTEMPTS = 5;
 const PUBLISH_INTERVAL_MS = 5_000;
 const QUEUE_BINDINGS = [
@@ -37,6 +40,10 @@ const QUEUE_BINDINGS = [
   {
     name: "worker.waitlist",
     options: {
+      arguments: {
+        "x-dead-letter-exchange": DEAD_LETTER_EXCHANGE,
+        "x-dead-letter-routing-key": WAITLIST_DEAD_LETTER_ROUTING_KEY
+      },
       durable: true
     },
     routingKeys: [
@@ -52,6 +59,10 @@ const QUEUE_BINDINGS = [
   {
     name: "worker.notifications",
     options: {
+      arguments: {
+        "x-dead-letter-exchange": DEAD_LETTER_EXCHANGE,
+        "x-dead-letter-routing-key": NOTIFICATIONS_DEAD_LETTER_ROUTING_KEY
+      },
       durable: true
     },
     routingKeys: [
@@ -68,6 +79,10 @@ const QUEUE_BINDINGS = [
   {
     name: "worker.metrics",
     options: {
+      arguments: {
+        "x-dead-letter-exchange": DEAD_LETTER_EXCHANGE,
+        "x-dead-letter-routing-key": METRICS_DEAD_LETTER_ROUTING_KEY
+      },
       durable: true
     },
     routingKeys: [
@@ -190,6 +205,12 @@ export class EventPublisherService implements OnModuleInit, OnModuleDestroy {
   private async assertQueues(channel: ConfirmChannel): Promise<void> {
     await channel.assertQueue("worker.appointments.dlq", { durable: true });
     await channel.bindQueue("worker.appointments.dlq", DEAD_LETTER_EXCHANGE, APPOINTMENTS_DEAD_LETTER_ROUTING_KEY);
+    await channel.assertQueue("worker.waitlist.dlq", { durable: true });
+    await channel.bindQueue("worker.waitlist.dlq", DEAD_LETTER_EXCHANGE, WAITLIST_DEAD_LETTER_ROUTING_KEY);
+    await channel.assertQueue("worker.notifications.dlq", { durable: true });
+    await channel.bindQueue("worker.notifications.dlq", DEAD_LETTER_EXCHANGE, NOTIFICATIONS_DEAD_LETTER_ROUTING_KEY);
+    await channel.assertQueue("worker.metrics.dlq", { durable: true });
+    await channel.bindQueue("worker.metrics.dlq", DEAD_LETTER_EXCHANGE, METRICS_DEAD_LETTER_ROUTING_KEY);
 
     for (const queue of QUEUE_BINDINGS) {
       await channel.assertQueue(queue.name, queue.options);

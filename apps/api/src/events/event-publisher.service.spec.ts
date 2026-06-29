@@ -129,6 +129,12 @@ describe("EventPublisherService", () => {
     expect(rabbit.channel.assertExchange).toHaveBeenCalledWith("turnoflow.events.dlx", "direct", { durable: true });
     expect(rabbit.channel.assertQueue).toHaveBeenCalledWith("worker.appointments.dlq", { durable: true });
     expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.appointments.dlq", "turnoflow.events.dlx", "worker.appointments.dead");
+    expect(rabbit.channel.assertQueue).toHaveBeenCalledWith("worker.waitlist.dlq", { durable: true });
+    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.waitlist.dlq", "turnoflow.events.dlx", "worker.waitlist.dead");
+    expect(rabbit.channel.assertQueue).toHaveBeenCalledWith("worker.notifications.dlq", { durable: true });
+    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.notifications.dlq", "turnoflow.events.dlx", "worker.notifications.dead");
+    expect(rabbit.channel.assertQueue).toHaveBeenCalledWith("worker.metrics.dlq", { durable: true });
+    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.metrics.dlq", "turnoflow.events.dlx", "worker.metrics.dead");
     expect(rabbit.channel.assertQueue).toHaveBeenCalledWith("worker.appointments", {
       arguments: {
         "x-dead-letter-exchange": "turnoflow.events.dlx",
@@ -136,9 +142,27 @@ describe("EventPublisherService", () => {
       },
       durable: true
     });
-    expect(rabbit.channel.assertQueue).toHaveBeenCalledWith("worker.waitlist", { durable: true });
-    expect(rabbit.channel.assertQueue).toHaveBeenCalledWith("worker.notifications", { durable: true });
-    expect(rabbit.channel.assertQueue).toHaveBeenCalledWith("worker.metrics", { durable: true });
+    expect(rabbit.channel.assertQueue).toHaveBeenCalledWith("worker.waitlist", {
+      arguments: {
+        "x-dead-letter-exchange": "turnoflow.events.dlx",
+        "x-dead-letter-routing-key": "worker.waitlist.dead"
+      },
+      durable: true
+    });
+    expect(rabbit.channel.assertQueue).toHaveBeenCalledWith("worker.notifications", {
+      arguments: {
+        "x-dead-letter-exchange": "turnoflow.events.dlx",
+        "x-dead-letter-routing-key": "worker.notifications.dead"
+      },
+      durable: true
+    });
+    expect(rabbit.channel.assertQueue).toHaveBeenCalledWith("worker.metrics", {
+      arguments: {
+        "x-dead-letter-exchange": "turnoflow.events.dlx",
+        "x-dead-letter-routing-key": "worker.metrics.dead"
+      },
+      durable: true
+    });
     expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.appointments", "turnoflow.events", "appointment.booked");
     expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.appointments", "turnoflow.events", "appointment.confirmed");
     expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.appointments", "turnoflow.events", "appointment.completed");

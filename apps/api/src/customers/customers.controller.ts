@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { ApiTags } from "@nestjs/swagger";
 
 import { AuthGuard } from "../auth/auth.guard";
 import type { AuthenticatedUser } from "../common/authenticated-user";
@@ -6,6 +7,7 @@ import { CurrentUser } from "../common/current-user.decorator";
 import { CustomersService } from "./customers.service";
 import { CreateCustomerNoteDto, ListCustomersQueryDto, UpdateCustomerDto } from "./dto/customer.dto";
 
+@ApiTags("customers")
 @UseGuards(AuthGuard)
 @Controller("customers")
 export class CustomersController {

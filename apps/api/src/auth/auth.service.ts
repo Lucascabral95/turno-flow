@@ -3,7 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import type { Prisma } from "@prisma/client";
 import { compare, hash } from "bcryptjs";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import { PrismaService } from "../prisma/prisma.service";
 import type { LoginDto } from "./dto/login.dto";
@@ -87,8 +87,19 @@ export class AuthService {
       where: { tokenHash }
     });
 
-    if (!storedToken || storedToken.revokedAt || storedToken.expiresAt <= new Date()) {
+    if (!storedToken || storedToken.expiresAt <= new Date()) {
       throw new UnauthorizedException("Invalid refresh token");
+    }
+
+    if (storedToken.revokedAt) {
+      await this.prisma.refreshToken.updateMany({
+        data: { revokedAt: new Date() },
+        where: {
+          familyId: storedToken.familyId,
+          revokedAt: null
+        }
+      });
+      throw new UnauthorizedException("Refresh token reuse detected");
     }
 
     const refreshToken = this.createRefreshToken();
@@ -98,7 +109,7 @@ export class AuthService {
         data: { revokedAt: new Date() },
         where: { id: storedToken.id }
       });
-      await this.createRefreshTokenRecord(tx, storedToken.user.id, refreshToken);
+      await this.createRefreshTokenRecord(tx, storedToken.user.id, refreshToken, storedToken.familyId);
     });
 
     return {
@@ -122,7 +133,8 @@ export class AuthService {
   private async createRefreshTokenRecord(
     client: Pick<Prisma.TransactionClient, "refreshToken"> | Pick<PrismaService, "refreshToken">,
     userId: string,
-    refreshToken: string
+    refreshToken: string,
+    familyId: string
   ): Promise<void> {
     const expiresAt = new Date();
     expiresAt.setUTCDate(expiresAt.getUTCDate() + 30);
@@ -130,6 +142,7 @@ export class AuthService {
     await client.refreshToken.create({
       data: {
         expiresAt,
+        familyId,
         tokenHash: this.hashRefreshToken(refreshToken),
         userId
       }
@@ -138,8 +151,9 @@ export class AuthService {
 
   private async createSession(userId: string, email: string): Promise<AuthTokens> {
     const refreshToken = this.createRefreshToken();
+    const familyId = randomUUID();
 
-    await this.createRefreshTokenRecord(this.prisma, userId, refreshToken);
+    await this.createRefreshTokenRecord(this.prisma, userId, refreshToken, familyId);
 
     return {
       accessToken: await this.sign(userId, email),

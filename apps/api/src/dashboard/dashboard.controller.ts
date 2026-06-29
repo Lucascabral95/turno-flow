@@ -1,10 +1,12 @@
 import { Controller, Get, UseGuards } from "@nestjs/common";
+import { ApiTags } from "@nestjs/swagger";
 
 import { AuthGuard } from "../auth/auth.guard";
 import type { AuthenticatedUser } from "../common/authenticated-user";
 import { CurrentUser } from "../common/current-user.decorator";
 import { DashboardService } from "./dashboard.service";
 
+@ApiTags("dashboard")
 @UseGuards(AuthGuard)
 @Controller("dashboard")
 export class DashboardController {
@@ -21,6 +23,7 @@ export class DashboardController {
   }
 }
 
+@ApiTags("metrics")
 @UseGuards(AuthGuard)
 @Controller("metrics")
 export class MetricsController {

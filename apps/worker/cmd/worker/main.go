@@ -10,6 +10,7 @@ import (
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
+	"github.com/getsentry/sentry-go"
 
 	"github.com/turnoflow/turnoflow/apps/worker/internal/config"
 	"github.com/turnoflow/turnoflow/apps/worker/internal/email"
@@ -51,6 +52,13 @@ func main() {
 	if err := cfg.Validate(); err != nil {
 		logger.Error("invalid worker config", "error", err)
 		os.Exit(1)
+	}
+
+	if dsn := os.Getenv("SENTRY_DSN"); dsn != "" {
+		if err := sentry.Init(sentry.ClientOptions{Dsn: dsn}); err != nil {
+			logger.Warn("sentry init failed", "error", err)
+		}
+		defer sentry.Flush(2 * time.Second)
 	}
 
 	repository, err := connectPostgres(ctx, cfg.DatabaseURL)
