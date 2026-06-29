@@ -23,6 +23,10 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
+      - name: Repair rolldown native binding on Linux
+        run: |
+          ROLLDOWN_BINDING_VERSION=$(node -p "require('./package-lock.json').packages['node_modules/rolldown'].optionalDependencies['@rolldown/binding-linux-x64-gnu']")
+          npm install --no-save "@rolldown/binding-linux-x64-gnu@${ROLLDOWN_BINDING_VERSION}"
       - run: npm --workspace apps/api run prisma:generate
       - run: npm run lint
       - run: npm run typecheck
@@ -38,6 +42,10 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
+      - name: Repair rolldown native binding on Linux
+        run: |
+          ROLLDOWN_BINDING_VERSION=$(node -p "require('./package-lock.json').packages['node_modules/rolldown'].optionalDependencies['@rolldown/binding-linux-x64-gnu']")
+          npm install --no-save "@rolldown/binding-linux-x64-gnu@${ROLLDOWN_BINDING_VERSION}"
       - run: npm --workspace apps/api run prisma:generate
       - run: npm --workspace apps/api run build
       - run: npm --workspace apps/web run build
@@ -73,5 +81,9 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
+      - name: Repair rolldown native binding on Linux
+        run: |
+          ROLLDOWN_BINDING_VERSION=$(node -p "require('./package-lock.json').packages['node_modules/rolldown'].optionalDependencies['@rolldown/binding-linux-x64-gnu']")
+          npm install --no-save "@rolldown/binding-linux-x64-gnu@${ROLLDOWN_BINDING_VERSION}"
       - run: npm --workspace apps/api run prisma:generate
       - run: npm --workspace apps/api run test:integration
