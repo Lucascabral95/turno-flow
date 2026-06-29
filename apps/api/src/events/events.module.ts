@@ -5,7 +5,7 @@ import { OutboxService } from "./outbox.service";
 
 @Global()
 @Module({
-  exports: [OutboxService],
+  exports: [EventPublisherService, OutboxService],
   providers: [EventPublisherService, OutboxService]
 })
 export class EventsModule {}

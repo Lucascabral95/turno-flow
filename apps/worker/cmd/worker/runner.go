@@ -186,6 +186,7 @@ func handleDelivery(ctx context.Context, service *worker.Service, delivery amqp.
 		"event_id", event.EventID,
 		"event_type", event.Type,
 		"business_id", event.BusinessID,
+		"correlation_id", event.CorrelationID,
 		"queue", workerQueue,
 	)
 	if err := service.HandleEvent(ctx, event); err != nil {

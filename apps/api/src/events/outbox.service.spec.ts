@@ -24,6 +24,7 @@ describe("OutboxService", () => {
       data: {
         aggregateId: "00000000-0000-0000-0000-000000000002",
         businessId: "00000000-0000-0000-0000-000000000001",
+        correlationId: undefined,
         payload: { serviceId: "00000000-0000-0000-0000-000000000002" },
         routingKey: "service.created",
         type: "ServiceCreated",

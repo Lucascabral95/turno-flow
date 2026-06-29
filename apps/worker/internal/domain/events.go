@@ -30,14 +30,15 @@ const (
 )
 
 type Event struct {
-	AggregateID string          `json:"aggregateId"`
-	BusinessID  string          `json:"businessId"`
-	EventID     string          `json:"eventId"`
-	OccurredAt  time.Time       `json:"occurredAt"`
-	Payload     json.RawMessage `json:"payload"`
-	RoutingKey  string          `json:"routingKey"`
-	Type        string          `json:"type"`
-	Version     int             `json:"version"`
+	AggregateID   string          `json:"aggregateId"`
+	BusinessID    string          `json:"businessId"`
+	CorrelationID string          `json:"correlationId"`
+	EventID       string          `json:"eventId"`
+	OccurredAt    time.Time       `json:"occurredAt"`
+	Payload       json.RawMessage `json:"payload"`
+	RoutingKey    string          `json:"routingKey"`
+	Type          string          `json:"type"`
+	Version       int             `json:"version"`
 }
 
 type AppointmentPayload struct {
