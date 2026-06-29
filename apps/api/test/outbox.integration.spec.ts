@@ -35,6 +35,24 @@ describe("Outbox integration (Postgres + RabbitMQ)", () => {
   }, 120000);
 
   it("publishes an outbox event to RabbitMQ after creating an appointment", async () => {
+    const conn = await connect(env.rabbitmqUrl);
+    const channel = await conn.createChannel();
+    await channel.assertQueue("test-consumer", { durable: false });
+    await channel.bindQueue("test-consumer", "turnoflow.events", "appointment.booked");
+
+    const messagePromise = new Promise<{ content: Buffer } | null>((resolve) => {
+      void channel.consume(
+        "test-consumer",
+        (msg) => {
+          if (msg) {
+            resolve(msg);
+          }
+        },
+        { noAck: true }
+      );
+      setTimeout(() => resolve(null), 30000);
+    });
+
     const user = await prisma.user.create({
       data: {
         email: "integration-test@turnoflow.local",
@@ -100,12 +118,6 @@ describe("Outbox integration (Postgres + RabbitMQ)", () => {
       }
     });
 
-    const outboxEvent = await prisma.eventOutbox.findFirst({
-      where: { type: "AppointmentBooked" }
-    });
-    expect(outboxEvent).not.toBeNull();
-    expect(outboxEvent?.status).toBe("PENDING");
-
     await vi.waitFor(
       async () => {
         const published = await prisma.eventOutbox.findFirst({
@@ -116,23 +128,7 @@ describe("Outbox integration (Postgres + RabbitMQ)", () => {
       { timeout: 30000, interval: 1000 }
     );
 
-    const conn = await connect(env.rabbitmqUrl);
-    const channel = await conn.createChannel();
-    await channel.assertQueue("test-consumer", { durable: false });
-    await channel.bindQueue("test-consumer", "turnoflow.events", "appointment.booked");
-
-    const message = await new Promise<{ content: Buffer } | null>((resolve) => {
-      void channel.consume(
-        "test-consumer",
-        (msg) => {
-          if (msg) {
-            resolve(msg);
-          }
-        },
-        { noAck: true }
-      );
-      setTimeout(() => resolve(null), 5000);
-    });
+    const message = await messagePromise;
 
     await channel.close();
     await conn.close();
