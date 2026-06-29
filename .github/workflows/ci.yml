@@ -22,7 +22,7 @@ jobs:
           node-version: 20
           cache: npm
           cache-dependency-path: package-lock.json
-      - run: npm ci
+      - run: npm install
       - run: npm --workspace apps/api run prisma:generate
       - run: npm run lint
       - run: npm run typecheck
@@ -37,7 +37,7 @@ jobs:
           node-version: 20
           cache: npm
           cache-dependency-path: package-lock.json
-      - run: npm ci
+      - run: npm install
       - run: npm --workspace apps/api run prisma:generate
       - run: npm --workspace apps/api run build
       - run: npm --workspace apps/web run build
