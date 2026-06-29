@@ -442,7 +442,18 @@ func (repository *txRepository) CreateScheduledNotification(ctx context.Context,
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $7, $8::jsonb)
 		ON CONFLICT (appointment_id, template) WHERE appointment_id IS NOT NULL
-		DO UPDATE SET updated_at = CURRENT_TIMESTAMP
+		DO UPDATE SET
+			channel = EXCLUDED.channel,
+			customer_id = EXCLUDED.customer_id,
+			due_at = EXCLUDED.due_at,
+			email = EXCLUDED.email,
+			last_error = NULL,
+			next_attempt_at = EXCLUDED.next_attempt_at,
+			payload = EXCLUDED.payload,
+			sent_at = NULL,
+			status = 'pending',
+			attempts = 0,
+			updated_at = CURRENT_TIMESTAMP
 		RETURNING id
 	`, input.BusinessID, input.AppointmentID, input.CustomerID, input.Channel, input.Email, input.Template, input.DueAt, string(input.Payload)).Scan(&notificationID)
 	if err != nil {

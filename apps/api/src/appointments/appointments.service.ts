@@ -1084,6 +1084,7 @@ export class AppointmentsService {
         },
         where: {
           businessId: appointment.businessId,
+          id: { not: appointment.id },
           startsAt: { lt: dayBounds.end },
           status: { in: activeAppointmentStatuses },
           endsAt: { gt: dayBounds.start }

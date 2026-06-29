@@ -8,7 +8,12 @@ import { AuthModule } from "./auth/auth.module";
 import { BusinessesModule } from "./businesses/businesses.module";
 import { CalendarModule } from "./calendar/calendar.module";
 import { CorrelationIdMiddleware } from "./common/correlation-id.middleware";
-import { publicReadLimiter, publicWriteLimiter } from "./common/rate-limit.middleware";
+import {
+  PublicAppointmentReadRateLimitMiddleware,
+  PublicAppointmentWriteRateLimitMiddleware,
+  PublicReadRateLimitMiddleware,
+  PublicWriteRateLimitMiddleware,
+} from "./common/rate-limit.middleware";
 import { CustomersModule } from "./customers/customers.module";
 import { DashboardModule } from "./dashboard/dashboard.module";
 import { EventsModule } from "./events/events.module";
@@ -40,23 +45,33 @@ export class AppModule implements NestModule {
       .forRoutes("*");
 
     consumer
-      .apply(publicWriteLimiter)
+      .apply(PublicWriteRateLimitMiddleware)
       .forRoutes(
         { path: "public/businesses/:slug/appointments", method: RequestMethod.POST },
         { path: "public/businesses/:slug/waitlist", method: RequestMethod.POST },
-        { path: "public/appointments/:id/cancel", method: RequestMethod.POST },
-        { path: "public/appointments/:id/reschedule", method: RequestMethod.POST },
         { path: "public/waitlist-offers/:token/accept", method: RequestMethod.POST },
         { path: "public/waitlist-offers/:token/reject", method: RequestMethod.POST }
       );
 
     consumer
-      .apply(publicReadLimiter)
+      .apply(PublicAppointmentWriteRateLimitMiddleware)
+      .forRoutes(
+        { path: "public/appointments/:id/cancel", method: RequestMethod.POST },
+        { path: "public/appointments/:id/reschedule", method: RequestMethod.POST }
+      );
+
+    consumer
+      .apply(PublicReadRateLimitMiddleware)
       .forRoutes(
         { path: "public/businesses/:slug", method: RequestMethod.GET },
         { path: "public/businesses/:slug/services", method: RequestMethod.GET },
         { path: "public/businesses/:slug/availability", method: RequestMethod.GET },
-        { path: "public/businesses/:slug/slots", method: RequestMethod.GET },
+        { path: "public/businesses/:slug/slots", method: RequestMethod.GET }
+      );
+
+    consumer
+      .apply(PublicAppointmentReadRateLimitMiddleware)
+      .forRoutes(
         { path: "public/appointments/:id", method: RequestMethod.GET },
         { path: "public/appointments/:id/reschedule-slots", method: RequestMethod.GET }
       );

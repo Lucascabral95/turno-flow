@@ -170,6 +170,17 @@ func TestHandleEventSendsEmailWhenAppointmentIsRescheduled(t *testing.T) {
 	if len(repository.metricsRecalculated) != 1 {
 		t.Fatalf("expected one metrics recalculation, got %d", len(repository.metricsRecalculated))
 	}
+	if len(repository.scheduledNotifications) != 1 {
+		t.Fatalf("expected updated reminder schedule, got %d", len(repository.scheduledNotifications))
+	}
+	notification := repository.scheduledNotifications[0]
+	expectedDueAt := time.Date(2026, 6, 16, 12, 0, 0, 0, time.UTC)
+	if !notification.DueAt.Equal(expectedDueAt) {
+		t.Fatalf("expected updated reminder due at %s, got %s", expectedDueAt, notification.DueAt)
+	}
+	if !hasOutboxEvent(repository.outboxEvents, domain.EventReminderScheduled, reminderScheduledRoutingKey) {
+		t.Fatal("expected reminder scheduled outbox event")
+	}
 }
 
 func TestHandleEventSchedulesReminderOnlyOnceForAppointmentBooked(t *testing.T) {
@@ -215,8 +226,26 @@ func TestHandleEventSchedulesReminderOnlyOnceForAppointmentBooked(t *testing.T) 
 	if len(repository.metricsRecalculated) != 1 {
 		t.Fatalf("expected one metrics recalculation, got %d", len(repository.metricsRecalculated))
 	}
-	if len(sender.messages) != 0 {
-		t.Fatalf("expected no immediate email sends, got %d", len(sender.messages))
+	if len(sender.messages) != 1 {
+		t.Fatalf("expected one immediate booking confirmation email, got %d", len(sender.messages))
+	}
+	message := sender.messages[0]
+	for _, expected := range []string{
+		"Tu turno fue confirmado",
+		"Hola Original Customer",
+		"Corte",
+		"17/06/2026 07:00 (America/Argentina/Buenos_Aires)",
+		"http://localhost:3000/cancel/appointment-1?token=cancel-token",
+	} {
+		if !strings.Contains(message.Subject+" "+message.Text, expected) {
+			t.Fatalf("expected booking confirmation email to contain %q, got subject=%q text=%q", expected, message.Subject, message.Text)
+		}
+	}
+	if len(repository.notificationLogs) != 1 {
+		t.Fatalf("expected one notification log, got %d", len(repository.notificationLogs))
+	}
+	if repository.notificationLogs[0].Template != "appointment_booked_confirmation" {
+		t.Fatalf("unexpected notification template %q", repository.notificationLogs[0].Template)
 	}
 }
 

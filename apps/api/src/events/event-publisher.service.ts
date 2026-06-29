@@ -6,102 +6,8 @@ import { connect, type ChannelModel, type ConfirmChannel } from "amqplib";
 import { PrismaService } from "../prisma/prisma.service";
 
 const EXCHANGE_NAME = "turnoflow.events";
-const DEAD_LETTER_EXCHANGE = "turnoflow.events.dlx";
-const APPOINTMENTS_DEAD_LETTER_ROUTING_KEY = "worker.appointments.dead";
-const WAITLIST_DEAD_LETTER_ROUTING_KEY = "worker.waitlist.dead";
-const NOTIFICATIONS_DEAD_LETTER_ROUTING_KEY = "worker.notifications.dead";
-const METRICS_DEAD_LETTER_ROUTING_KEY = "worker.metrics.dead";
 const MAX_ATTEMPTS = 5;
 const PUBLISH_INTERVAL_MS = 5_000;
-const QUEUE_BINDINGS = [
-  {
-    name: "worker.appointments",
-    options: {
-      arguments: {
-        "x-dead-letter-exchange": DEAD_LETTER_EXCHANGE,
-        "x-dead-letter-routing-key": APPOINTMENTS_DEAD_LETTER_ROUTING_KEY
-      },
-      durable: true
-    },
-    routingKeys: [
-      "appointment.booked",
-      "appointment.confirmed",
-      "appointment.cancelled",
-      "appointment.completed",
-      "appointment.no_show",
-      "appointment.marked_no_show",
-      "appointment.rescheduled",
-      "slot.released",
-      "slot.reassigned",
-      "waitlist.offer_expired",
-      "waitlist.offer_rejected"
-    ]
-  },
-  {
-    name: "worker.waitlist",
-    options: {
-      arguments: {
-        "x-dead-letter-exchange": DEAD_LETTER_EXCHANGE,
-        "x-dead-letter-routing-key": WAITLIST_DEAD_LETTER_ROUTING_KEY
-      },
-      durable: true
-    },
-    routingKeys: [
-      "appointment.cancelled",
-      "slot.released",
-      "slot.reassigned",
-      "waitlist.candidate_matched",
-      "waitlist.entry_created",
-      "waitlist.offer_expired",
-      "waitlist.offer_rejected"
-    ]
-  },
-  {
-    name: "worker.notifications",
-    options: {
-      arguments: {
-        "x-dead-letter-exchange": DEAD_LETTER_EXCHANGE,
-        "x-dead-letter-routing-key": NOTIFICATIONS_DEAD_LETTER_ROUTING_KEY
-      },
-      durable: true
-    },
-    routingKeys: [
-      "appointment.booked",
-      "appointment.cancelled",
-      "appointment.reminder_due",
-      "notification.reminder_due",
-      "reminder.failed",
-      "reminder.scheduled",
-      "reminder.sent",
-      "waitlist.offer_created"
-    ]
-  },
-  {
-    name: "worker.metrics",
-    options: {
-      arguments: {
-        "x-dead-letter-exchange": DEAD_LETTER_EXCHANGE,
-        "x-dead-letter-routing-key": METRICS_DEAD_LETTER_ROUTING_KEY
-      },
-      durable: true
-    },
-    routingKeys: [
-      "appointment.booked",
-      "appointment.cancelled",
-      "appointment.completed",
-      "appointment.no_show",
-      "appointment.marked_no_show",
-      "appointment.rescheduled",
-      "customer.risk_score_updated",
-      "metrics.daily_calculated",
-      "metrics.recalculate",
-      "waitlist.offer_created",
-      "waitlist.offer_accepted",
-      "waitlist.offer_expired",
-      "waitlist.offer_rejected"
-    ]
-  }
-] as const;
 
 @Injectable()
 export class EventPublisherService implements OnModuleInit, OnModuleDestroy {
@@ -197,27 +103,7 @@ export class EventPublisherService implements OnModuleInit, OnModuleDestroy {
     const connection = await this.getConnection();
     const channel = await connection.createConfirmChannel();
     await channel.assertExchange(EXCHANGE_NAME, "topic", { durable: true });
-    await channel.assertExchange(DEAD_LETTER_EXCHANGE, "direct", { durable: true });
-    await this.assertQueues(channel);
     return channel;
-  }
-
-  private async assertQueues(channel: ConfirmChannel): Promise<void> {
-    await channel.assertQueue("worker.appointments.dlq", { durable: true });
-    await channel.bindQueue("worker.appointments.dlq", DEAD_LETTER_EXCHANGE, APPOINTMENTS_DEAD_LETTER_ROUTING_KEY);
-    await channel.assertQueue("worker.waitlist.dlq", { durable: true });
-    await channel.bindQueue("worker.waitlist.dlq", DEAD_LETTER_EXCHANGE, WAITLIST_DEAD_LETTER_ROUTING_KEY);
-    await channel.assertQueue("worker.notifications.dlq", { durable: true });
-    await channel.bindQueue("worker.notifications.dlq", DEAD_LETTER_EXCHANGE, NOTIFICATIONS_DEAD_LETTER_ROUTING_KEY);
-    await channel.assertQueue("worker.metrics.dlq", { durable: true });
-    await channel.bindQueue("worker.metrics.dlq", DEAD_LETTER_EXCHANGE, METRICS_DEAD_LETTER_ROUTING_KEY);
-
-    for (const queue of QUEUE_BINDINGS) {
-      await channel.assertQueue(queue.name, queue.options);
-      for (const routingKey of queue.routingKeys) {
-        await channel.bindQueue(queue.name, EXCHANGE_NAME, routingKey);
-      }
-    }
   }
 
   private publishEvent(channel: ConfirmChannel, event: EventOutbox): Promise<void> {

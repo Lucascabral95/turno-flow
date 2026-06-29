@@ -18,8 +18,6 @@ const rabbit = vi.hoisted(() => {
   const publishCallbacks: Array<(error: Error | null) => void> = [];
   const channel = {
     assertExchange: vi.fn().mockResolvedValue({}),
-    assertQueue: vi.fn().mockResolvedValue({}),
-    bindQueue: vi.fn().mockResolvedValue({}),
     close: vi.fn().mockResolvedValue(undefined),
     publish: vi.fn((_exchange, _routingKey, _content, _options, callback: (error: Error | null) => void) => {
       publishCallbacks.push(callback);
@@ -47,8 +45,6 @@ vi.mock("amqplib", () => ({
 describe("EventPublisherService", () => {
   beforeEach(() => {
     rabbit.channel.assertExchange.mockClear();
-    rabbit.channel.assertQueue.mockClear();
-    rabbit.channel.bindQueue.mockClear();
     rabbit.channel.close.mockClear();
     rabbit.channel.publish.mockClear();
     rabbit.connection.createConfirmChannel.mockClear();
@@ -103,7 +99,7 @@ describe("EventPublisherService", () => {
     });
   });
 
-  it("declares durable worker queues with the initial routing keys", async () => {
+  it("asserts the events exchange before publishing", async () => {
     const prisma = {
       eventOutbox: {
         findMany: vi.fn().mockResolvedValue([]),
@@ -126,74 +122,6 @@ describe("EventPublisherService", () => {
     await publishPromise;
 
     expect(rabbit.channel.assertExchange).toHaveBeenCalledWith("turnoflow.events", "topic", { durable: true });
-    expect(rabbit.channel.assertExchange).toHaveBeenCalledWith("turnoflow.events.dlx", "direct", { durable: true });
-    expect(rabbit.channel.assertQueue).toHaveBeenCalledWith("worker.appointments.dlq", { durable: true });
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.appointments.dlq", "turnoflow.events.dlx", "worker.appointments.dead");
-    expect(rabbit.channel.assertQueue).toHaveBeenCalledWith("worker.waitlist.dlq", { durable: true });
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.waitlist.dlq", "turnoflow.events.dlx", "worker.waitlist.dead");
-    expect(rabbit.channel.assertQueue).toHaveBeenCalledWith("worker.notifications.dlq", { durable: true });
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.notifications.dlq", "turnoflow.events.dlx", "worker.notifications.dead");
-    expect(rabbit.channel.assertQueue).toHaveBeenCalledWith("worker.metrics.dlq", { durable: true });
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.metrics.dlq", "turnoflow.events.dlx", "worker.metrics.dead");
-    expect(rabbit.channel.assertQueue).toHaveBeenCalledWith("worker.appointments", {
-      arguments: {
-        "x-dead-letter-exchange": "turnoflow.events.dlx",
-        "x-dead-letter-routing-key": "worker.appointments.dead"
-      },
-      durable: true
-    });
-    expect(rabbit.channel.assertQueue).toHaveBeenCalledWith("worker.waitlist", {
-      arguments: {
-        "x-dead-letter-exchange": "turnoflow.events.dlx",
-        "x-dead-letter-routing-key": "worker.waitlist.dead"
-      },
-      durable: true
-    });
-    expect(rabbit.channel.assertQueue).toHaveBeenCalledWith("worker.notifications", {
-      arguments: {
-        "x-dead-letter-exchange": "turnoflow.events.dlx",
-        "x-dead-letter-routing-key": "worker.notifications.dead"
-      },
-      durable: true
-    });
-    expect(rabbit.channel.assertQueue).toHaveBeenCalledWith("worker.metrics", {
-      arguments: {
-        "x-dead-letter-exchange": "turnoflow.events.dlx",
-        "x-dead-letter-routing-key": "worker.metrics.dead"
-      },
-      durable: true
-    });
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.appointments", "turnoflow.events", "appointment.booked");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.appointments", "turnoflow.events", "appointment.confirmed");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.appointments", "turnoflow.events", "appointment.completed");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.appointments", "turnoflow.events", "appointment.no_show");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.appointments", "turnoflow.events", "appointment.marked_no_show");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.appointments", "turnoflow.events", "slot.released");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.appointments", "turnoflow.events", "slot.reassigned");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.appointments", "turnoflow.events", "waitlist.offer_expired");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.appointments", "turnoflow.events", "waitlist.offer_rejected");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.waitlist", "turnoflow.events", "slot.released");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.waitlist", "turnoflow.events", "slot.reassigned");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.waitlist", "turnoflow.events", "waitlist.candidate_matched");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.waitlist", "turnoflow.events", "waitlist.entry_created");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.waitlist", "turnoflow.events", "waitlist.offer_expired");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.waitlist", "turnoflow.events", "waitlist.offer_rejected");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.notifications", "turnoflow.events", "appointment.reminder_due");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.notifications", "turnoflow.events", "notification.reminder_due");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.notifications", "turnoflow.events", "reminder.failed");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.notifications", "turnoflow.events", "reminder.scheduled");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.notifications", "turnoflow.events", "reminder.sent");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.notifications", "turnoflow.events", "waitlist.offer_created");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.metrics", "turnoflow.events", "appointment.completed");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.metrics", "turnoflow.events", "appointment.no_show");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.metrics", "turnoflow.events", "appointment.marked_no_show");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.metrics", "turnoflow.events", "customer.risk_score_updated");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.metrics", "turnoflow.events", "metrics.daily_calculated");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.metrics", "turnoflow.events", "metrics.recalculate");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.metrics", "turnoflow.events", "waitlist.offer_created");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.metrics", "turnoflow.events", "waitlist.offer_accepted");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.metrics", "turnoflow.events", "waitlist.offer_expired");
-    expect(rabbit.channel.bindQueue).toHaveBeenCalledWith("worker.metrics", "turnoflow.events", "waitlist.offer_rejected");
   });
 });
 

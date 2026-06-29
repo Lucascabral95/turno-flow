@@ -51,6 +51,27 @@ type TransactionMock = {
   };
 };
 
+type AppointmentFindManyInput = {
+  select?: {
+    endsAt?: boolean;
+    staffMemberId?: boolean;
+    startsAt?: boolean;
+  };
+  where?: {
+    businessId?: string;
+    endsAt?: { gt: Date };
+    id?: { not: string };
+    startsAt?: { lt: Date };
+    status?: { in: AppointmentStatus[] };
+  };
+};
+
+type AppointmentFindManyOutput = Array<{
+  endsAt: Date;
+  staffMemberId?: string;
+  startsAt: Date;
+}>;
+
 describe("AppointmentsService", () => {
   const audit = {
     create: vi.fn()
@@ -69,7 +90,7 @@ describe("AppointmentsService", () => {
     const tx = {
       appointment: {
         findMany: vi
-          .fn()
+          .fn<(input: AppointmentFindManyInput) => Promise<AppointmentFindManyOutput>>()
           .mockResolvedValueOnce([
             {
               endsAt: new Date("2026-06-29T16:30:00.000Z"),
@@ -149,6 +170,8 @@ describe("AppointmentsService", () => {
     expect(startsAt).not.toContain("2026-06-29T17:30:00.000Z");
     expect(startsAt).not.toContain("2026-06-29T18:00:00.000Z");
     expect(startsAt).not.toContain("2026-06-29T18:30:00.000Z");
+    const lastFindManyInput = tx.appointment.findMany.mock.calls.at(-1)?.[0];
+    expect(lastFindManyInput?.where?.id).toEqual({ not: "appointment-current" });
   });
 
   it("rejects a pending waitlist offer and emits a reassignment event", async () => {

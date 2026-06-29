@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { AppointmentStatus, CustomerRiskLevel, Prisma } from "@prisma/client";
 
+import { AuditService } from "../audit/audit.service";
 import { BusinessesService } from "../businesses/businesses.service";
 import type { AuthenticatedUser } from "../common/authenticated-user";
 import { PrismaService } from "../prisma/prisma.service";
@@ -15,6 +16,7 @@ const cancelledAppointmentStatuses: AppointmentStatus[] = [
 @Injectable()
 export class CustomersService {
   constructor(
+    private readonly audit: AuditService,
     private readonly businesses: BusinessesService,
     private readonly prisma: PrismaService
   ) {}
@@ -57,7 +59,15 @@ export class CustomersService {
 
   async update(user: AuthenticatedUser, customerId: string, input: UpdateCustomerDto) {
     const business = await this.businesses.requireCurrentBusiness(user);
-    await this.requireCustomer(business.id, customerId);
+    const existing = await this.prisma.customer.findFirst({
+      include: this.customerDetailInclude(),
+      where: { businessId: business.id, id: customerId }
+    });
+
+    if (!existing) {
+      throw new NotFoundException("Customer not found");
+    }
+
     const data: Prisma.CustomerUpdateInput = {};
 
     if (input.name !== undefined) {
@@ -77,10 +87,25 @@ export class CustomersService {
       data.requiresDeposit = input.requiresDeposit;
     }
 
-    const updated = await this.prisma.customer.update({
-      data,
-      include: this.customerDetailInclude(),
-      where: { id: customerId }
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updatedCustomer = await tx.customer.update({
+        data,
+        include: this.customerDetailInclude(),
+        where: { id: customerId }
+      });
+
+      await this.audit.create(tx, {
+        action: "customer.updated",
+        after: this.customerAuditPayload(updatedCustomer),
+        before: this.customerAuditPayload(existing),
+        businessId: business.id,
+        entity: "customer",
+        entityId: customerId,
+        metadata: { source: "dashboard" },
+        user
+      });
+
+      return updatedCustomer;
     });
 
     return this.serializeCustomerDetail(updated);
@@ -137,32 +162,71 @@ export class CustomersService {
 
   async createNote(user: AuthenticatedUser, customerId: string, input: CreateCustomerNoteDto) {
     const business = await this.businesses.requireCurrentBusiness(user);
-    await this.requireCustomer(business.id, customerId);
     const content = input.content.trim();
 
     if (!content) {
       throw new BadRequestException("Customer note cannot be empty");
     }
 
-    const note = await this.prisma.customerNote.create({
-      data: {
-        businessId: business.id,
-        content,
-        customerId,
-        userId: user.id
-      },
-      include: {
-        user: {
-          select: {
-            email: true,
-            id: true,
-            name: true
+    const note = await this.prisma.$transaction(async (tx) => {
+      const customer = await tx.customer.findFirst({
+        select: { id: true },
+        where: { businessId: business.id, id: customerId }
+      });
+
+      if (!customer) {
+        throw new NotFoundException("Customer not found");
+      }
+
+      const createdNote = await tx.customerNote.create({
+        data: {
+          businessId: business.id,
+          content,
+          customerId,
+          userId: user.id
+        },
+        include: {
+          user: {
+            select: {
+              email: true,
+              id: true,
+              name: true
+            }
           }
         }
-      }
+      });
+
+      await this.audit.create(tx, {
+        action: "customer.note_created",
+        after: {
+          content,
+          noteId: createdNote.id
+        },
+        businessId: business.id,
+        entity: "customer",
+        entityId: customerId,
+        metadata: { source: "dashboard" },
+        user
+      });
+
+      return createdNote;
     });
 
     return this.serializeNote(note);
+  }
+
+  private customerAuditPayload(customer: CustomerWithAppointments): Prisma.InputJsonObject {
+    return {
+      email: customer.email,
+      id: customer.id,
+      name: customer.name,
+      noShowCount: customer.noShowCount,
+      phone: customer.phone,
+      requiresDeposit: customer.requiresDeposit,
+      riskLevel: customer.riskLevel.toLowerCase(),
+      riskScore: customer.riskScore,
+      totalAppointments: customer.totalAppointments
+    };
   }
 
   private buildCustomerWhere(businessId: string, query: ListCustomersQueryDto): Prisma.CustomerWhereInput {

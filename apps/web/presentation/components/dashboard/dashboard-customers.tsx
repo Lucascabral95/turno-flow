@@ -175,7 +175,7 @@ export function CustomersView({
         <div className="appointments-command-copy">
           <span className="page-kicker">Clientes</span>
           <h2>Historial, recurrencia y riesgo por cliente.</h2>
-          <p>Centraliza seguimiento operativo, gasto estimado, no-shows, senas sugeridas y notas internas.</p>
+          <p>Centraliza seguimiento operativo, gasto estimado, no-shows, depositos sugeridos y notas internas.</p>
         </div>
         <div className="dashboard-banner-stats">
           <Metric icon={<Users size={18} />} label="Clientes visibles" value={total} />
@@ -231,7 +231,7 @@ export function CustomersView({
               </select>
             </label>
             <label>
-              Sena
+              Deposito
               <select
                 onChange={(event) => updateFilters({ deposit: event.target.value as CustomerFilters["deposit"] })}
                 value={filters.deposit}
@@ -409,7 +409,7 @@ function CustomerDetailPanel({
             onChange={(event) => onEditChange({ ...editingCustomer, requiresDeposit: event.target.checked })}
             type="checkbox"
           />
-          Sena sugerida para proximas reservas
+          Deposito sugerido para proximas reservas
         </label>
         <button className="button-primary" onClick={onUpdateSubmit} type="button">
           Guardar cliente
@@ -419,9 +419,19 @@ function CustomerDetailPanel({
       <section className={styles.insightBox}>
         <h3>Riesgo y recurrencia</h3>
         <p>
-          Score {detail.riskScore}. {detail.requiresDeposit ? "El sistema sugiere pedir sena." : "No requiere sena sugerida."}
+          Score {detail.riskScore}. {detail.requiresDeposit ? "El sistema sugiere pedir deposito." : "No requiere deposito sugerido."}
         </p>
         <p>{detail.recurrenceRate}% recurrencia operativa.</p>
+        <div className={styles.appointmentSignals}>
+          <span>
+            Ultimo turno
+            <strong>{detail.lastAppointmentAt ? formatDateTime(detail.lastAppointmentAt) : "Sin historial"}</strong>
+          </span>
+          <span>
+            Proximo turno
+            <strong>{detail.nextAppointmentAt ? formatDateTime(detail.nextAppointmentAt) : "Sin reserva activa"}</strong>
+          </span>
+        </div>
         {detail.favoriteServices.length > 0 ? (
           <div className={styles.serviceChips}>
             {detail.favoriteServices.map((service) => (

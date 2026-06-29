@@ -12,6 +12,25 @@ import { AppModule } from "./app.module";
 import { initSentry } from "./common/sentry.config";
 import { SentryFilter } from "./common/sentry.filter";
 
+function parseCorsOrigins(config: ConfigService, isDev: boolean): string[] {
+  const configuredOrigins = config.get<string>("CORS_ORIGINS", "");
+
+  if (configuredOrigins.trim().length > 0) {
+    return configuredOrigins
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter((origin) => origin.length > 0);
+  }
+
+  if (!isDev) {
+    throw new Error("CORS_ORIGINS is required in production");
+  }
+
+  const appBaseUrl = config.get<string>("APP_BASE_URL", "http://localhost:3000");
+  const webPort = config.get<string>("WEB_PORT", "3000");
+  return [appBaseUrl, `http://localhost:${webPort}`];
+}
+
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.set("trust proxy", 1);
@@ -28,11 +47,10 @@ async function bootstrap(): Promise<void> {
     })
   );
 
-  const appBaseUrl = config.get<string>("APP_BASE_URL", "http://localhost:3000");
-  const webPort = config.get<string>("WEB_PORT", "3000");
+  const corsOrigins = parseCorsOrigins(config, isDev);
   app.enableCors({
     credentials: true,
-    origin: [appBaseUrl, `http://localhost:${webPort}`]
+    origin: corsOrigins
   });
   app.useGlobalPipes(
     new ValidationPipe({

@@ -54,6 +54,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       API_PORT: 3001
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       CALENDAR_TOKEN_ENCRYPTION_KEY: ${CALENDAR_TOKEN_ENCRYPTION_KEY:-}
       EMAIL_FROM: ${EMAIL_FROM:-TurnoFlow <noreply@turnoflow.local>}
       EMAIL_TRANSPORT: ${EMAIL_TRANSPORT:-json}

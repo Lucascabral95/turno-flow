@@ -195,6 +195,30 @@
   }
 }
 
+.appointmentSignals {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+
+  span {
+    background: linear-gradient(180deg, #fff 0%, $surface-soft 100%);
+    border: 1px solid $border;
+    border-radius: $radius;
+    color: $muted;
+    display: grid;
+    font-size: 0.78rem;
+    font-weight: 780;
+    gap: 5px;
+    padding: 11px;
+  }
+
+  strong {
+    color: $ink;
+    font-size: 0.86rem;
+    line-height: 1.35;
+  }
+}
+
 .serviceChips {
   display: flex;
   flex-wrap: wrap;
@@ -280,6 +304,10 @@
   }
 
   .detailMetrics {
+    grid-template-columns: 1fr;
+  }
+
+  .appointmentSignals {
     grid-template-columns: 1fr;
   }
 }
