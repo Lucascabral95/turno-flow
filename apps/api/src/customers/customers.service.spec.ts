@@ -11,6 +11,9 @@ type CustomerFindManyInput = {
 };
 
 describe("CustomersService", () => {
+  const audit = {
+    create: vi.fn().mockResolvedValue({})
+  };
   const business = { id: "business-1" };
   const user = { email: "owner@example.test", id: "user-1" };
 
@@ -43,6 +46,7 @@ describe("CustomersService", () => {
       })
     ]);
     const service = new CustomersService(
+      audit as never,
       { requireCurrentBusiness } as never,
       { customer: { findMany: customerFindMany } } as never
     );
@@ -78,11 +82,16 @@ describe("CustomersService", () => {
     const requireCurrentBusiness = vi.fn().mockResolvedValue(business);
     const customerFindFirst = vi.fn().mockResolvedValue({ id: "customer-1" });
     const customerNoteCreate = vi.fn().mockResolvedValue(buildNote({ content: "Llamar antes del turno" }));
+    const auditCreate = vi.fn().mockResolvedValue({});
+    const transaction = {
+      customer: { findFirst: customerFindFirst },
+      customerNote: { create: customerNoteCreate }
+    };
     const service = new CustomersService(
+      { create: auditCreate } as never,
       { requireCurrentBusiness } as never,
       {
-        customer: { findFirst: customerFindFirst },
-        customerNote: { create: customerNoteCreate }
+        $transaction: vi.fn((fn: (tx: typeof transaction) => Promise<unknown>) => fn(transaction))
       } as never
     );
 
@@ -100,6 +109,13 @@ describe("CustomersService", () => {
         userId: "user-1"
       }
     }));
+    expect(auditCreate).toHaveBeenCalledWith(transaction, expect.objectContaining({
+      action: "customer.note_created",
+      businessId: "business-1",
+      entity: "customer",
+      entityId: "customer-1",
+      user
+    }));
     expect(result).toMatchObject({
       author: { email: "owner@example.test", id: "user-1", name: "Owner" },
       content: "Llamar antes del turno"
@@ -108,6 +124,7 @@ describe("CustomersService", () => {
 
   it("rejects empty internal notes", async () => {
     const service = new CustomersService(
+      audit as never,
       { requireCurrentBusiness: vi.fn().mockResolvedValue(business) } as never,
       {
         customer: { findFirst: vi.fn().mockResolvedValue({ id: "customer-1" }) },
@@ -121,6 +138,7 @@ describe("CustomersService", () => {
   it("does not update customers from another tenant", async () => {
     const customerUpdate = vi.fn();
     const service = new CustomersService(
+      audit as never,
       { requireCurrentBusiness: vi.fn().mockResolvedValue(business) } as never,
       {
         customer: {

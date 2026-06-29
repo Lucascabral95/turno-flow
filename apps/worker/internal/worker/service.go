@@ -178,6 +178,10 @@ func (service *Service) handleAppointmentRescheduledEvent(ctx context.Context, t
 		return err
 	}
 
+	if err := service.scheduleAppointmentReminder(ctx, tx, appointment); err != nil {
+		return err
+	}
+
 	if err := service.sendAppointmentRescheduledNotification(ctx, tx, appointment); err != nil {
 		return err
 	}
@@ -380,15 +384,64 @@ func (service *Service) handleAppointmentBooked(ctx context.Context, tx Tx, payl
 		return fmt.Errorf("decode appointment booking payload: %w", err)
 	}
 
+	if err := service.scheduleAppointmentReminder(ctx, tx, appointment); err != nil {
+		return err
+	}
+
+	if err := service.syncCalendarAppointment(ctx, tx, appointment.AppointmentID, "upsert"); err != nil {
+		return err
+	}
+
+	if err := service.sendAppointmentBookedNotification(ctx, tx, appointment); err != nil {
+		return err
+	}
+
+	return service.recalculateBusinessMetrics(ctx, tx, appointment)
+}
+
+func (service *Service) sendAppointmentBookedNotification(
+	ctx context.Context,
+	tx Tx,
+	appointment domain.AppointmentPayload,
+) error {
+	manageURL := fmt.Sprintf("%s/cancel/%s?token=%s", service.appBaseURL, appointment.AppointmentID, appointment.CancellationToken)
+	message := email.Message{
+		From:    service.emailFrom,
+		To:      appointment.Customer.Email,
+		Subject: "Tu turno fue confirmado",
+		Text: fmt.Sprintf(
+			"Hola %s,\n\nTu turno para %s quedo confirmado para %s.\n\nSi necesitas cancelar o reprogramar, podes gestionarlo desde: %s",
+			appointment.Customer.Name,
+			appointment.Service.Name,
+			formatBusinessDateTime(appointment.StartsAt, appointment.Timezone),
+			manageURL,
+		),
+	}
+
+	logInput := NotificationLog{
+		AppointmentID: &appointment.AppointmentID,
+		BusinessID:    appointment.BusinessID,
+		Email:         appointment.Customer.Email,
+		Status:        NotificationSent,
+		Template:      "appointment_booked_confirmation",
+	}
+
+	if err := service.sender.Send(ctx, message); err != nil {
+		errorMessage := err.Error()
+		logInput.LastError = &errorMessage
+		logInput.Status = NotificationFailed
+	}
+
+	return tx.CreateNotificationLog(ctx, logInput)
+}
+
+func (service *Service) scheduleAppointmentReminder(ctx context.Context, tx Tx, appointment domain.AppointmentPayload) error {
 	settings, err := tx.GetReminderSettings(ctx, appointment.BusinessID)
 	if err != nil {
 		return fmt.Errorf("get reminder settings: %w", err)
 	}
 	if !settings.Enabled {
-		if err := service.syncCalendarAppointment(ctx, tx, appointment.AppointmentID, "upsert"); err != nil {
-			return err
-		}
-		return service.recalculateBusinessMetrics(ctx, tx, appointment)
+		return nil
 	}
 
 	cancelURL := fmt.Sprintf("%s/cancel/%s?token=%s", service.appBaseURL, appointment.AppointmentID, appointment.CancellationToken)
@@ -446,11 +499,7 @@ func (service *Service) handleAppointmentBooked(ctx context.Context, tx Tx, payl
 		return fmt.Errorf("create reminder scheduled outbox event: %w", err)
 	}
 
-	if err := service.syncCalendarAppointment(ctx, tx, appointment.AppointmentID, "upsert"); err != nil {
-		return err
-	}
-
-	return service.recalculateBusinessMetrics(ctx, tx, appointment)
+	return nil
 }
 
 func (service *Service) syncCalendarEvent(ctx context.Context, tx Tx, payload json.RawMessage, action string) error {
