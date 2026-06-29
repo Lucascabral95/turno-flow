@@ -37,6 +37,7 @@ describe("Outbox integration (Postgres + RabbitMQ)", () => {
   it("publishes an outbox event to RabbitMQ after creating an appointment", async () => {
     const conn = await connect(env.rabbitmqUrl);
     const channel = await conn.createChannel();
+    await channel.assertExchange("turnoflow.events", "topic", { durable: true });
     await channel.assertQueue("test-consumer", { durable: false });
     await channel.bindQueue("test-consumer", "turnoflow.events", "appointment.booked");
 
