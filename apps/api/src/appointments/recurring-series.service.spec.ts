@@ -93,7 +93,7 @@ describe("RecurringSeriesService", () => {
       where: { id: { in: ["appointment-1"] } }
     });
     expect(customerUpdate).toHaveBeenCalledWith({
-      data: { totalAppointments: { decrement: 1 } },
+      data: { cancelledAppointments: { increment: 1 }, totalAppointments: { decrement: 1 } },
       where: { id: "customer-1" }
     });
     expect(eventOutboxCreateMany).toHaveBeenCalled();

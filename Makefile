@@ -73,6 +73,9 @@ worker-tidy:
 up:
 	$(DOCKER_COMPOSE) up -d --build
 
+web:
+	docker compose up -d --build web
+
 up-fresh:
 	$(DOCKER_COMPOSE) build --no-cache
 	$(DOCKER_COMPOSE) up -d --force-recreate

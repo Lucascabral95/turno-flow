@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Repeat2, UserPlus } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -8,16 +8,16 @@ import type { AvailabilitySlot, BusinessMemberRole, CurrentBusiness, CustomerPro
 import { formatSlotTime } from "../../../lib/api";
 import { createLocalDateString } from "../../../lib/booking-forms";
 
-// ─── Constants ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const INTERVAL_UNIT_LABELS: Record<RecurringIntervalUnit, string> = {
-  DAY: "días",
+  DAY: "dÃ­as",
   MONTH: "meses",
   WEEK: "semanas"
 };
 
 const INTERVAL_UNIT_SINGULAR: Record<RecurringIntervalUnit, string> = {
-  DAY: "día",
+  DAY: "dÃ­a",
   MONTH: "mes",
   WEEK: "semana"
 };
@@ -27,13 +27,14 @@ const DURATION_OPTIONS = [
   { label: "2 meses", months: 2 },
   { label: "3 meses", months: 3 },
   { label: "6 meses", months: 6 },
-  { label: "1 año", months: 12 }
+  { label: "1 aÃ±o", months: 12 }
 ] as const;
 
 const AVATAR_COLORS = ["#635bff", "#2563eb", "#0f8f72", "#b7791f", "#9333ea", "#0891b2"] as const;
 const DEFAULT_TIMEZONE = "America/Argentina/Buenos_Aires";
+const VISIBLE_SERIES_DATES = 5;
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function calcMaxOccurrences(durationMonths: number, intervalValue: number, intervalUnit: RecurringIntervalUnit): number {
   const durationDays = durationMonths * 30;
@@ -102,7 +103,7 @@ function normalizeAvailabilitySlots(slots: AvailabilitySlot[]): AvailabilitySlot
   return [...uniqueSlots.values()].sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime());
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// â”€â”€â”€ Sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function CustomerAvatar({ name, size = 38 }: { name: string; size?: number }) {
   return (
@@ -167,7 +168,7 @@ function CustomerCombobox({
           <div style={{ fontWeight: 760, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value.name}</div>
           <div style={{ color: "#6f7382", fontSize: "0.8rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {value.email}
-            {value.totalAppointments > 0 ? ` · ${value.totalAppointments} turno${value.totalAppointments !== 1 ? "s" : ""}` : " · cliente nuevo"}
+            {value.totalAppointments > 0 ? ` Â· ${value.totalAppointments} turno${value.totalAppointments !== 1 ? "s" : ""}` : " Â· cliente nuevo"}
           </div>
         </div>
         <button
@@ -177,7 +178,7 @@ function CustomerCombobox({
           title="Cambiar cliente"
           type="button"
         >
-          ×
+          Ã—
         </button>
       </div>
     );
@@ -187,7 +188,7 @@ function CustomerCombobox({
     <div style={{ position: "relative" }}>
       <div style={{ position: "relative" }}>
         <span style={{ color: "#6f7382", left: "12px", pointerEvents: "none", position: "absolute", top: "50%", transform: "translateY(-50%)" }}>
-          ⌕
+          âŒ•
         </span>
         <input
           onBlur={() => setTimeout(() => setOpen(false), 150)}
@@ -196,7 +197,7 @@ function CustomerCombobox({
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
-          placeholder="Buscar cliente por nombre o email…"
+          placeholder="Buscar cliente por nombre o emailâ€¦"
           style={{ paddingLeft: "32px" }}
           type="text"
           value={query}
@@ -220,7 +221,7 @@ function CustomerCombobox({
         >
           {filtered.length === 0 && !query.trim() ? (
             <div style={{ color: "#6f7382", fontSize: "0.88rem", padding: "14px 16px" }}>
-              No hay clientes registrados aún.
+              No hay clientes registrados aÃºn.
             </div>
           ) : (
             <>
@@ -388,7 +389,7 @@ function NewCustomerForm({
           </label>
         </div>
         <label style={{ marginBottom: 0 }}>
-          Teléfono <span style={{ color: "#9ca3af", fontWeight: 400 }}>(opcional)</span>
+          TelÃ©fono <span style={{ color: "#9ca3af", fontWeight: 400 }}>(opcional)</span>
           <input
             onChange={(e) => setPhone(e.target.value)}
             placeholder="+54 9 11 1234 5678"
@@ -403,7 +404,7 @@ function NewCustomerForm({
             style={{ fontSize: "0.85rem", minHeight: "unset", padding: "7px 14px" }}
             type="submit"
           >
-            {saving ? "Guardando…" : "Guardar y seleccionar"}
+            {saving ? "Guardandoâ€¦" : "Guardar y seleccionar"}
           </button>
           <button
             className="button-muted"
@@ -447,8 +448,22 @@ function SeriesCard({
       : `Cada ${series.intervalValue} ${INTERVAL_UNIT_LABELS[series.intervalUnit]}`;
 
   const seriesDates = buildSeriesDates(series);
-  // Index of the first date >= now (the upcoming appointment)
-  const upcomingIdx = seriesDates.findIndex((d) => d.getTime() >= now);
+  const upcomingIdx = seriesDates.findIndex((date) => date.getTime() >= now);
+  const totalPages = Math.max(1, Math.ceil(seriesDates.length / VISIBLE_SERIES_DATES));
+  const upcomingPage = upcomingIdx >= 0 ? Math.floor(upcomingIdx / VISIBLE_SERIES_DATES) : 0;
+  const [page, setPage] = useState(upcomingPage);
+
+  useEffect(() => {
+    setPage(upcomingPage);
+  }, [series.id, upcomingPage]);
+
+  const safePage = Math.min(Math.max(page, 0), totalPages - 1);
+  const pageStart = safePage * VISIBLE_SERIES_DATES;
+  const visibleDates = seriesDates.slice(pageStart, pageStart + VISIBLE_SERIES_DATES);
+  const visibleFrom = seriesDates.length === 0 ? 0 : pageStart + 1;
+  const visibleTo = Math.min(pageStart + VISIBLE_SERIES_DATES, seriesDates.length);
+  const canGoPrev = safePage > 0;
+  const canGoNext = safePage < totalPages - 1;
 
   return (
     <div
@@ -462,7 +477,6 @@ function SeriesCard({
         overflow: "hidden"
       }}
     >
-      {/* Header */}
       <div style={{ alignItems: "center", display: "flex", gap: "12px", padding: "14px 16px 10px" }}>
         <CustomerAvatar name={series.customer.name} size={42} />
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -489,9 +503,30 @@ function SeriesCard({
             {series.customer.email}
           </div>
         </div>
+        {!confirmingDelete ? (
+          <button
+            aria-label="Cancelar serie"
+            className="icon-button icon-button-danger"
+            onClick={onRequestDelete}
+            style={{
+              alignItems: "center",
+              display: "inline-flex",
+              flexShrink: 0,
+              height: "34px",
+              justifyContent: "center",
+              minHeight: "34px",
+              minWidth: "34px",
+              padding: 0,
+              width: "34px"
+            }}
+            title="Eliminar serie y cancelar turnos futuros"
+            type="button"
+          >
+            ×
+          </button>
+        ) : null}
       </div>
 
-      {/* Body */}
       <div style={{ borderTop: "1px solid #f0f1f6", padding: "10px 16px" }}>
         <div style={{ color: "#202331", fontSize: "0.88rem", fontWeight: 600 }}>{series.service.name}</div>
         <div style={{ color: "#6f7382", fontSize: "0.8rem", marginTop: "2px" }}>
@@ -499,54 +534,130 @@ function SeriesCard({
         </div>
       </div>
 
-      {/* Date strip */}
       <div style={{ borderTop: "1px solid #f0f1f6", padding: "8px 16px 10px" }}>
-        <div style={{ color: "#6f7382", fontSize: "0.72rem", fontWeight: 600, letterSpacing: "0.4px", marginBottom: "6px", textTransform: "uppercase" }}>
-          {series.maxOccurrences !== null ? `${series.occurrencesCreated} de ${series.maxOccurrences} sesiones` : "Turnos"}
-        </div>
         <div
           style={{
+            alignItems: "center",
+            color: "#6f7382",
             display: "flex",
-            gap: "5px",
-            overflowX: "auto",
-            paddingBottom: "2px",
-            scrollbarWidth: "none"
+            flexWrap: "wrap",
+            fontSize: "0.72rem",
+            fontWeight: 600,
+            gap: "8px",
+            justifyContent: "space-between",
+            letterSpacing: "0.4px",
+            marginBottom: "8px",
+            textTransform: "uppercase"
           }}
         >
-          {seriesDates.map((date, i) => {
-            const isUpcoming = i === upcomingIdx;
-            const isPast = date.getTime() < now;
-            const dayLabel = date.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", timeZone: businessTimezone });
-            const timeLabel = date.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", timeZone: businessTimezone });
-            const weekLabel = date.toLocaleDateString("es-AR", { weekday: "short", timeZone: businessTimezone });
-
-            return (
-              <div
-                key={i}
-                style={{
-                  background: isUpcoming ? (isActive ? "#ecebff" : "#fff7df") : "transparent",
-                  border: `1px solid ${isUpcoming ? (isActive ? "#c4bfff" : "#f6d860") : "#e6e8ef"}`,
-                  borderRadius: "7px",
-                  flexShrink: 0,
-                  opacity: isPast ? 0.45 : 1,
-                  padding: "4px 7px",
-                  textAlign: "center"
-                }}
-              >
-                <div style={{ color: isUpcoming ? (isActive ? "#635bff" : "#b7791f") : "#9ca3af", fontSize: "0.64rem", fontWeight: 700, textTransform: "capitalize" }}>
-                  {weekLabel}
-                </div>
-                <div style={{ color: isUpcoming ? (isActive ? "#3730a3" : "#92400e") : (isPast ? "#9ca3af" : "#202331"), fontSize: "0.78rem", fontWeight: isUpcoming ? 760 : 500 }}>
-                  {dayLabel}
-                </div>
-                <div style={{ color: isUpcoming ? (isActive ? "#635bff" : "#b7791f") : "#6f7382", fontSize: "0.68rem" }}>
-                  {timeLabel}
-                </div>
-              </div>
-            );
-          })}
+          <span>{series.maxOccurrences !== null ? `${series.occurrencesCreated} de ${series.maxOccurrences} sesiones` : "Turnos"}</span>
+          <span style={{ color: "#9ca3af", fontSize: "0.68rem" }}>
+            {visibleFrom}-{visibleTo} de {seriesDates.length}
+          </span>
         </div>
-        {/* Progress bar */}
+
+        <div
+          style={{
+            alignItems: "stretch",
+            display: "grid",
+            gap: "8px",
+            gridTemplateColumns: "28px minmax(0, 1fr) 28px"
+          }}
+        >
+          <button
+            aria-label="Anteriores"
+            disabled={!canGoPrev}
+            onClick={() => setPage((current) => Math.max(0, current - 1))}
+            style={{
+              alignItems: "center",
+              background: canGoPrev ? "#f7f8fb" : "#fbfbfd",
+              border: "1px solid #e6e8ef",
+              borderRadius: "8px",
+              color: canGoPrev ? "#4b5563" : "#cbd0dc",
+              cursor: "pointer",
+              display: "inline-flex",
+              fontSize: "1rem",
+              justifyContent: "center",
+              lineHeight: 1,
+              minHeight: "100%",
+              opacity: canGoPrev ? 1 : 0.65,
+              padding: 0,
+              width: "28px"
+            }}
+            type="button"
+          >
+            ‹
+          </button>
+
+          <div
+            style={{
+              display: "grid",
+              gap: "6px",
+              gridTemplateColumns: `repeat(${VISIBLE_SERIES_DATES}, minmax(0, 1fr))`,
+              minWidth: 0
+            }}
+          >
+            {visibleDates.map((date, index) => {
+              const realIndex = pageStart + index;
+              const isUpcoming = realIndex === upcomingIdx;
+              const isPast = date.getTime() < now;
+              const dayLabel = date.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", timeZone: businessTimezone });
+              const timeLabel = date.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", timeZone: businessTimezone });
+              const weekLabel = date.toLocaleDateString("es-AR", { weekday: "short", timeZone: businessTimezone });
+
+              return (
+                <div
+                  key={`${series.id}-${date.toISOString()}`}
+                  style={{
+                    background: isUpcoming ? (isActive ? "#ecebff" : "#fff7df") : "transparent",
+                    border: `1px solid ${isUpcoming ? (isActive ? "#c4bfff" : "#f6d860") : "#e6e8ef"}`,
+                    borderRadius: "7px",
+                    minWidth: 0,
+                    opacity: isPast ? 0.45 : 1,
+                    padding: "4px 7px",
+                    textAlign: "center"
+                  }}
+                >
+                  <div style={{ color: isUpcoming ? (isActive ? "#635bff" : "#b7791f") : "#9ca3af", fontSize: "0.64rem", fontWeight: 700, textTransform: "capitalize" }}>
+                    {weekLabel}
+                  </div>
+                  <div style={{ color: isUpcoming ? (isActive ? "#3730a3" : "#92400e") : (isPast ? "#9ca3af" : "#202331"), fontSize: "0.78rem", fontWeight: isUpcoming ? 760 : 500 }}>
+                    {dayLabel}
+                  </div>
+                  <div style={{ color: isUpcoming ? (isActive ? "#635bff" : "#b7791f") : "#6f7382", fontSize: "0.68rem" }}>
+                    {timeLabel}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <button
+            aria-label="Siguientes"
+            disabled={!canGoNext}
+            onClick={() => setPage((current) => Math.min(totalPages - 1, current + 1))}
+            style={{
+              alignItems: "center",
+              background: canGoNext ? "#f7f8fb" : "#fbfbfd",
+              border: "1px solid #e6e8ef",
+              borderRadius: "8px",
+              color: canGoNext ? "#4b5563" : "#cbd0dc",
+              cursor: "pointer",
+              display: "inline-flex",
+              fontSize: "1rem",
+              justifyContent: "center",
+              lineHeight: 1,
+              minHeight: "100%",
+              opacity: canGoNext ? 1 : 0.65,
+              padding: 0,
+              width: "28px"
+            }}
+            type="button"
+          >
+            ›
+          </button>
+        </div>
+
         {series.maxOccurrences !== null ? (
           <div style={{ background: "#e6e8ef", borderRadius: "4px", height: "3px", marginTop: "8px", overflow: "hidden" }}>
             <div
@@ -562,55 +673,48 @@ function SeriesCard({
         ) : null}
       </div>
 
-      {/* Footer */}
       <div
         style={{
           alignItems: "center",
           background: "#f7f8fb",
           borderTop: "1px solid #e6e8ef",
           display: "flex",
+          flexWrap: "wrap",
           gap: "8px",
-          justifyContent: "flex-end",
+          justifyContent: confirmingDelete ? "space-between" : "flex-end",
           padding: "8px 16px"
         }}
       >
         {confirmingDelete ? (
-          <div style={{ alignItems: "center", display: "flex", gap: "6px" }}>
-            <span style={{ color: "#c24132", fontSize: "0.78rem", fontWeight: 600 }}>¿Cancelar todos los turnos futuros?</span>
-            <button
-              className="button-danger"
-              disabled={deleting}
-              onClick={onConfirmDelete}
-              style={{ fontSize: "0.75rem", minHeight: "unset", padding: "4px 10px" }}
-              type="button"
-            >
-              {deleting ? "Cancelando…" : "Sí, cancelar"}
-            </button>
-            <button
-              className="button-muted"
-              onClick={onCancelDelete}
-              style={{ fontSize: "0.75rem", minHeight: "unset", padding: "4px 10px" }}
-              type="button"
-            >
-              No
-            </button>
-          </div>
-        ) : (
-          <button
-            className="icon-button icon-button-danger"
-            onClick={onRequestDelete}
-            title="Eliminar serie y cancelar turnos futuros"
-            type="button"
-          >
-            ✕
-          </button>
-        )}
+          <>
+            <span style={{ color: "#c24132", flex: 1, fontSize: "0.78rem", fontWeight: 600, minWidth: "180px" }}>
+              ¿Cancelar todos los turnos futuros?
+            </span>
+            <div style={{ alignItems: "center", display: "flex", gap: "6px", marginLeft: "auto" }}>
+              <button
+                className="button-danger"
+                disabled={deleting}
+                onClick={onConfirmDelete}
+                style={{ fontSize: "0.75rem", minHeight: "unset", padding: "4px 10px" }}
+                type="button"
+              >
+                {deleting ? "Cancelando..." : "Sí, cancelar"}
+              </button>
+              <button
+                className="button-muted"
+                onClick={onCancelDelete}
+                style={{ fontSize: "0.75rem", minHeight: "unset", padding: "4px 10px" }}
+                type="button"
+              >
+                No
+              </button>
+            </div>
+          </>
+        ) : null}
       </div>
     </div>
   );
 }
-
-// ─── Main Component ───────────────────────────────────────────────────────────
 
 export function RecurringPanel({
   business,
@@ -765,7 +869,7 @@ export function RecurringPanel({
       setDurationMonths(1);
       setCreatingCustomer(false);
     } else {
-      toast.error("No se pudo crear la serie. Revisá que todos los turnos futuros tengan disponibilidad.");
+      toast.error("No se pudo crear la serie. RevisÃ¡ que todos los turnos futuros tengan disponibilidad.");
     }
   }
 
@@ -793,7 +897,7 @@ export function RecurringPanel({
       {/* Header */}
       <div style={{ alignItems: "flex-start", display: "flex", gap: "16px", justifyContent: "space-between" }}>
         <div>
-          <span className="page-kicker">Automatización</span>
+          <span className="page-kicker">AutomatizaciÃ³n</span>
           <h2 style={{ margin: "2px 0 6px" }}>
             <Repeat2 size={18} style={{ marginRight: "6px", verticalAlign: "middle" }} />
             Turnos recurrentes
@@ -831,7 +935,7 @@ export function RecurringPanel({
             </p>
           </div>
 
-          {/* Customer selection — or inline registration */}
+          {/* Customer selection â€” or inline registration */}
           <label>
             Cliente
             {creatingCustomer ? (
@@ -855,7 +959,7 @@ export function RecurringPanel({
             <label>
               Servicio
               <select onChange={(e) => setServiceId(e.target.value)} required value={serviceId}>
-                <option value="">— Seleccioná un servicio —</option>
+                <option value="">â€” SeleccionÃ¡ un servicio â€”</option>
                 {services.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
@@ -866,7 +970,7 @@ export function RecurringPanel({
             <label>
               Profesional
               <select onChange={(e) => setStaffMemberId(e.target.value)} required value={staffMemberId}>
-                <option value="">— Seleccioná un profesional —</option>
+                <option value="">â€” SeleccionÃ¡ un profesional â€”</option>
                 {staffMembers.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
@@ -907,7 +1011,7 @@ export function RecurringPanel({
                   value={intervalValue}
                 />
                 <select onChange={(e) => setIntervalUnit(e.target.value as RecurringIntervalUnit)} value={intervalUnit}>
-                  <option value="DAY">Días</option>
+                  <option value="DAY">DÃ­as</option>
                   <option value="WEEK">Semanas</option>
                   <option value="MONTH">Meses</option>
                 </select>
@@ -917,7 +1021,7 @@ export function RecurringPanel({
 
           {/* Duration */}
           <label>
-            Duración de la serie
+            DuraciÃ³n de la serie
             <select onChange={(e) => setDurationMonths(Number(e.target.value))} value={durationMonths}>
               {DURATION_OPTIONS.map((opt) => (
                 <option key={opt.months} value={opt.months}>
@@ -965,7 +1069,7 @@ export function RecurringPanel({
                         {formatSlotTime(slot.startsAt, businessTimezone)}
                         {selectedService ? (
                           <span style={{ color: selected ? "inherit" : "#6f7382", fontSize: "0.75rem" }}>
-                            {" "}· {selectedService.durationMinutes} min
+                            {" "}Â· {selectedService.durationMinutes} min
                           </span>
                         ) : null}
                       </button>
@@ -994,20 +1098,20 @@ export function RecurringPanel({
                 <strong>
                   {maxOccurrences} turno{maxOccurrences !== 1 ? "s" : ""}
                 </strong>{" "}
-                para <strong>{selectedCustomer.name}</strong> · cada{" "}
+                para <strong>{selectedCustomer.name}</strong> Â· cada{" "}
                 {intervalValue === "1"
                   ? INTERVAL_UNIT_SINGULAR[intervalUnit]
                   : `${intervalValue} ${INTERVAL_UNIT_LABELS[intervalUnit]}`}
                 {lastOccurrenceDate ? (
                   <>
                     {" "}
-                    · hasta el{" "}
+                    Â· hasta el{" "}
                     <strong>
                       {lastOccurrenceDate.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", timeZone: businessTimezone, year: "numeric" })}
                     </strong>
                   </>
                 ) : null}
-                {" "}· primer turno a las <strong>{formatSlotTime(selectedSlot.startsAt, businessTimezone)}</strong>
+                {" "}Â· primer turno a las <strong>{formatSlotTime(selectedSlot.startsAt, businessTimezone)}</strong>
               </div>
             </div>
           ) : null}
@@ -1019,7 +1123,7 @@ export function RecurringPanel({
             type="submit"
           >
             {submitting
-              ? "Creando turnos…"
+              ? "Creando turnosâ€¦"
               : `Reservar ${maxOccurrences} turno${maxOccurrences !== 1 ? "s" : ""}`}
           </button>
         </form>
@@ -1057,7 +1161,7 @@ export function RecurringPanel({
           <p style={{ margin: 0 }}>No hay series activas.</p>
           {!isProfessional ? (
             <p style={{ color: "#9ca3af", fontSize: "0.84rem", margin: 0 }}>
-              Creá una serie para automatizar turnos de clientes regulares.
+              CreÃ¡ una serie para automatizar turnos de clientes regulares.
             </p>
           ) : null}
         </div>
@@ -1065,3 +1169,4 @@ export function RecurringPanel({
     </div>
   );
 }
+
