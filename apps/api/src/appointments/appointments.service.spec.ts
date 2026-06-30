@@ -1,5 +1,5 @@
 import { AppointmentStatus, WaitlistOfferStatus, WaitlistStatus } from "@prisma/client";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { EventRoutingKeys, EventTypes } from "../events/event-types";
 import { OutboxService } from "../events/outbox.service";
@@ -77,7 +77,14 @@ describe("AppointmentsService", () => {
     create: vi.fn()
   };
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("does not offer the current appointment time or occupied same-day times when rescheduling", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-29T14:00:00.000Z"));
+
     const currentAppointment = {
       businessId: "business-1",
       cancellationToken: "cancel-token",
@@ -172,6 +179,7 @@ describe("AppointmentsService", () => {
     expect(startsAt).not.toContain("2026-06-29T18:30:00.000Z");
     const lastFindManyInput = tx.appointment.findMany.mock.calls.at(-1)?.[0];
     expect(lastFindManyInput?.where?.id).toEqual({ not: "appointment-current" });
+
   });
 
   it("rejects a pending waitlist offer and emits a reassignment event", async () => {

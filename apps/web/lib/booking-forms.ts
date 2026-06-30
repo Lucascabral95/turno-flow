@@ -16,6 +16,10 @@ export const bookingFormSchema = z.object({
   customerName: customerNameSchema,
   customerPhone: customerPhoneSchema,
   date: z.string().regex(datePattern, "Selecciona un dia valido"),
+  depositAmount: z.number().min(0, "La sena no puede ser negativa").optional(),
+  depositCustomerNote: z.string().trim().max(180, "Nota demasiado larga").optional(),
+  depositReference: z.string().trim().max(120, "Referencia demasiado larga").optional(),
+  depositSubmitted: z.boolean().optional(),
   serviceId: z.string().min(1, "Selecciona un servicio"),
   slotKey: z.string().min(1, "Selecciona un horario disponible")
 });

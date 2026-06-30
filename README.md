@@ -14,6 +14,7 @@ Phases 1-12 are implemented for local development:
 - Waitlist offers with accept, reject, expire, and automatic reassignment.
 - Manual completed/no-show marking plus persisted customer risk scoring.
 - Daily business metrics aggregation with dashboard analytics for activity, revenue, top services, recurring customers, and risky customers.
+- Optional manual deposits for appointments, with business payment instructions, customer-submitted references, admin confirmation/rejection, and remaining balance tracking.
 - Formal API aliases for auth, business, availability, appointments, waitlist, and metrics endpoints.
 - Canonical domain events and RabbitMQ routing keys with legacy bindings kept during the transition.
 
@@ -151,6 +152,14 @@ SCHEDULER_INTERVAL_SECONDS=60
 
 RabbitMQ events still use the durable `worker.appointments` queue. Invalid event payloads are rejected without requeue and routed to `worker.appointments.dlq`.
 
+### Optional manual deposits
+
+TurnoFlow supports optional manual deposits without requiring HTTPS or a payment gateway. The business configures payment instructions from the dashboard, each service can define whether it suggests a deposit, and the public booking form lets the customer report a transfer reference.
+
+This flow is intentionally non-blocking: the appointment is created even if the customer does not submit a deposit. When a deposit is reported, the dashboard shows it on the appointment row so the business can confirm, reject, or void it after checking the transfer externally. Confirmed deposits are subtracted from the estimated remaining balance.
+
+This is suitable for local deployments because TurnoFlow never handles card data and does not process money directly. For real online checkout, add a provider such as Mercado Pago later.
+
 ## API Contract
 
 Core private endpoints include `/auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/me`, `/businesses/me`, `/services`, `/availability/rules`, `/availability/exceptions`, `/availability/slots`, `/appointments`, `/waitlist`, `/waitlist-offers`, and `/metrics/dashboard`.
@@ -162,6 +171,6 @@ Canonical events include `BusinessCreated`, `AppointmentBooked`, `AppointmentCon
 ## MVP Boundaries
 
 - Email is the first notification channel.
-- WhatsApp, payments, subscriptions, marketplace discovery, and complex resource booking are intentionally outside the MVP.
+- WhatsApp, online payment gateway checkout, subscriptions, marketplace discovery, and complex resource booking are intentionally outside the MVP.
 - No-show risk is rule based, not machine learning.
 - Production hardening items such as audit logs, rate limit strategy, correlation ids, and deeper e2e coverage are still pending.

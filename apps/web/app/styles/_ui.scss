@@ -248,6 +248,52 @@ label {
   padding: 22px;
 }
 
+.payment-settings-panel,
+.deposit-config-card {
+  align-items: stretch;
+  display: grid;
+}
+
+.payment-settings-toggle,
+.deposit-config-toggle {
+  align-items: start;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: auto minmax(0, 1fr);
+
+  span {
+    color: $ink;
+    display: block;
+    font-weight: 760;
+    line-height: 1.45;
+  }
+}
+
+.payment-settings-grid {
+  align-items: start;
+}
+
+.payment-settings-copy,
+.deposit-config-copy {
+  grid-column: 1 / -1;
+}
+
+.deposit-config-card {
+  background: linear-gradient(180deg, #f7f9ff 0%, #eef3ff 100%);
+  border-color: #d8e5ff;
+  gap: 16px;
+}
+
+.deposit-config-grid {
+  align-items: end;
+}
+
+.deposit-config-copy input[disabled],
+.deposit-config-grid input[disabled] {
+  background: #f4f6fb;
+  color: $muted;
+}
+
 .form-header {
   display: grid;
   gap: 4px;

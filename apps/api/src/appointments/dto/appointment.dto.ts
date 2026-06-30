@@ -1,4 +1,4 @@
-import { IsEmail, IsIn, IsISO8601, IsOptional, IsString, IsUUID, Matches } from "class-validator";
+import { IsEmail, IsIn, IsInt, IsISO8601, IsOptional, IsString, IsUUID, Matches, Min } from "class-validator";
 
 import type { PublicAppointmentStatus } from "../status";
 
@@ -22,6 +22,19 @@ export class CreatePublicAppointmentDto {
   @IsString()
   @IsOptional()
   customerPhone?: string;
+
+  @IsInt()
+  @IsOptional()
+  @Min(1)
+  depositAmountCents?: number;
+
+  @IsString()
+  @IsOptional()
+  depositReference?: string;
+
+  @IsString()
+  @IsOptional()
+  depositCustomerNote?: string;
 }
 
 export class CancelAppointmentDto {

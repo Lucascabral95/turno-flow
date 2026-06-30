@@ -111,6 +111,28 @@ enum OnboardingStep {
   @@map("onboarding_step")
 }
 
+enum DepositMode {
+  FIXED      @map("fixed")
+  PERCENTAGE @map("percentage")
+
+  @@map("deposit_mode")
+}
+
+enum AppointmentPaymentType {
+  DEPOSIT @map("deposit")
+
+  @@map("appointment_payment_type")
+}
+
+enum AppointmentPaymentStatus {
+  SUBMITTED @map("submitted")
+  CONFIRMED @map("confirmed")
+  REJECTED  @map("rejected")
+  VOIDED    @map("voided")
+
+  @@map("appointment_payment_status")
+}
+
 model User {
   id           String     @id @default(uuid()) @db.Uuid
   email        String     @unique
@@ -152,6 +174,11 @@ model Business {
   slug              String             @unique
   timezone          String             @default("America/Argentina/Buenos_Aires")
   email             String?
+  manualDepositsEnabled Boolean        @default(false) @map("manual_deposits_enabled")
+  paymentAlias      String?            @map("payment_alias")
+  paymentAccountHolder String?         @map("payment_account_holder")
+  paymentAccountLabel String?          @map("payment_account_label")
+  paymentInstructions String?          @map("payment_instructions")
   createdAt         DateTime           @default(now()) @map("created_at")
   updatedAt         DateTime           @updatedAt @map("updated_at")
   services          Service[]
@@ -175,6 +202,7 @@ model Business {
   customerNotes     CustomerNote[]
   onboarding        BusinessOnboarding?
   onboardingEvents  BusinessOnboardingEvent[]
+  appointmentPayments AppointmentPayment[]
 
   @@map("businesses")
 }
@@ -252,6 +280,11 @@ model Service {
   durationMinutes Int              @map("duration_minutes")
   priceCents      Int              @default(0) @map("price_cents")
   bufferMinutes   Int              @default(0) @map("buffer_minutes")
+  depositEnabled  Boolean          @default(false) @map("deposit_enabled")
+  depositMode     DepositMode      @default(FIXED) @map("deposit_mode")
+  depositAmountCents Int           @default(0) @map("deposit_amount_cents")
+  depositPercentage Int            @default(0) @map("deposit_percentage")
+  depositDescription String?       @map("deposit_description")
   active          Boolean          @default(true)
   createdAt       DateTime         @default(now()) @map("created_at")
   updatedAt       DateTime         @updatedAt @map("updated_at")
@@ -318,6 +351,7 @@ model Customer {
   waitlistEntries   WaitlistEntry[]
   notifications     Notification[]
   notes             CustomerNote[]
+  appointmentPayments AppointmentPayment[]
 
   @@unique([businessId, email])
   @@index([businessId, riskLevel, riskScore])
@@ -363,11 +397,43 @@ model Appointment {
   appointmentEvents AppointmentEvent[]
   waitlistOffers    WaitlistOffer[]
   calendarEventSyncs CalendarEventSync[]
+  payments          AppointmentPayment[]
 
   @@index([businessId, startsAt])
   @@index([staffMemberId, startsAt])
   @@index([status, endsAt, attendanceAlertedAt])
   @@map("appointments")
+}
+
+model AppointmentPayment {
+  id                String                   @id @default(uuid()) @db.Uuid
+  businessId        String                   @map("business_id") @db.Uuid
+  business          Business                 @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  appointmentId     String                   @map("appointment_id") @db.Uuid
+  appointment       Appointment              @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  customerId        String                   @map("customer_id") @db.Uuid
+  customer          Customer                 @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  type              AppointmentPaymentType   @default(DEPOSIT)
+  status            AppointmentPaymentStatus @default(SUBMITTED)
+  amountCents       Int                      @map("amount_cents")
+  currency          String                   @default("ARS")
+  reference         String?
+  customerNote      String?                  @map("customer_note")
+  internalNote      String?                  @map("internal_note")
+  submittedAt       DateTime                 @default(now()) @map("submitted_at") @db.Timestamptz(3)
+  confirmedAt       DateTime?                @map("confirmed_at") @db.Timestamptz(3)
+  rejectedAt        DateTime?                @map("rejected_at") @db.Timestamptz(3)
+  voidedAt          DateTime?                @map("voided_at") @db.Timestamptz(3)
+  confirmedByUserId String?                  @map("confirmed_by_user_id") @db.Uuid
+  rejectedByUserId  String?                  @map("rejected_by_user_id") @db.Uuid
+  voidedByUserId    String?                  @map("voided_by_user_id") @db.Uuid
+  createdAt         DateTime                 @default(now()) @map("created_at")
+  updatedAt         DateTime                 @updatedAt @map("updated_at")
+
+  @@index([businessId, status, submittedAt])
+  @@index([appointmentId, status])
+  @@index([customerId, status])
+  @@map("appointment_payments")
 }
 
 model WaitlistEntry {

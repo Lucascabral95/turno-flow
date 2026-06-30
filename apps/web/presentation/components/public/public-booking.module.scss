@@ -61,6 +61,91 @@
 }
 
 .publicBooking {
+  .depositPanel {
+    align-items: stretch;
+    display: grid;
+    gap: 16px;
+  }
+
+  .depositToggle {
+    align-items: start;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: auto minmax(0, 1fr);
+
+    span {
+      color: $ink;
+      display: block;
+      font-weight: 760;
+      line-height: 1.45;
+    }
+  }
+
+  .depositDetails {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .depositDetailCard {
+    background: rgb(255 255 255 / 70%);
+    border: 1px solid $border;
+    border-radius: $radius;
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+    padding: 14px 16px;
+
+    span {
+      color: $muted;
+      font-size: 0.8rem;
+      font-weight: 760;
+      letter-spacing: 0.01em;
+      text-transform: uppercase;
+    }
+
+    strong {
+      font-size: 1rem;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+  }
+
+  .depositInstructions {
+    background: rgb(255 255 255 / 58%);
+    border: 1px dashed $border-strong;
+    border-radius: $radius;
+    display: grid;
+    gap: 6px;
+    padding: 14px 16px;
+
+    span {
+      color: $muted;
+      font-size: 0.8rem;
+      font-weight: 760;
+      letter-spacing: 0.01em;
+      text-transform: uppercase;
+    }
+
+    p {
+      color: $ink;
+      line-height: 1.55;
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+  }
+
+  .depositFormGrid {
+    align-items: start;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+
+    label:last-child {
+      grid-column: 1 / -1;
+    }
+  }
+
   :global(.booking-hero) {
     align-items: stretch;
     display: grid;
@@ -283,6 +368,14 @@
   }
 
   .publicBooking {
+    .depositDetails {
+      grid-template-columns: 1fr;
+    }
+
+    .depositFormGrid {
+      grid-template-columns: 1fr;
+    }
+
     :global(.booking-hero),
     :global(.booking-workspace),
     :global(.booking-hero-stats) {

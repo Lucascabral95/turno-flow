@@ -25,6 +25,7 @@ export function AppointmentsView({
   business,
   metrics,
   onFetchRescheduleSlots,
+  onPaymentStatus,
   onReschedule,
   onStatus
 }: {
@@ -32,6 +33,7 @@ export function AppointmentsView({
   business: CurrentBusiness | null;
   metrics: DashboardMetrics | null;
   onFetchRescheduleSlots: (appointmentId: string, date: string) => Promise<AvailabilitySlot[]>;
+  onPaymentStatus: (paymentId: string, action: "confirm" | "reject" | "void") => void;
   onReschedule: (appointmentId: string, startsAt: string, staffMemberId?: string) => void;
   onStatus: (appointmentId: string, status: "completed" | "no_show" | "cancelled_by_business") => void;
 }) {
@@ -68,6 +70,7 @@ export function AppointmentsView({
         appointments={appointments}
         business={business}
         onFetchRescheduleSlots={onFetchRescheduleSlots}
+        onPaymentStatus={onPaymentStatus}
         onReschedule={onReschedule}
         onStatus={onStatus}
       />
@@ -80,12 +83,14 @@ function AppointmentsOperationsPanel({
   appointments,
   business,
   onFetchRescheduleSlots,
+  onPaymentStatus,
   onReschedule,
   onStatus
 }: {
   appointments: Appointment[];
   business: CurrentBusiness | null;
   onFetchRescheduleSlots: (appointmentId: string, date: string) => Promise<AvailabilitySlot[]>;
+  onPaymentStatus: (paymentId: string, action: "confirm" | "reject" | "void") => void;
   onReschedule: (appointmentId: string, startsAt: string, staffMemberId?: string) => void;
   onStatus: (appointmentId: string, status: "completed" | "no_show" | "cancelled_by_business") => void;
 }) {
@@ -238,6 +243,7 @@ function AppointmentsOperationsPanel({
                 <th>Profesional</th>
                 <th>Horario</th>
                 <th>Estado</th>
+                <th>Seña</th>
                 <th>Valor</th>
                 <th>Acciones</th>
               </tr>
@@ -278,6 +284,9 @@ function AppointmentsOperationsPanel({
                         {upcoming ? <span className={styles.upcomingMeta}>Proximo</span> : null}
                         {!upcoming && actionable ? <span className={styles.liveMeta}>En curso</span> : null}
                       </div>
+                    </td>
+                    <td>
+                      <PaymentStatusCell appointment={appointment} onPaymentStatus={onPaymentStatus} />
                     </td>
                     <td>{formatMoney(appointment.service.priceCents)}</td>
                     <td>
@@ -406,6 +415,44 @@ function AppointmentsOperationsPanel({
         </div>
       )}
     </section>
+  );
+}
+
+function PaymentStatusCell({
+  appointment,
+  onPaymentStatus
+}: {
+  appointment: Appointment;
+  onPaymentStatus: (paymentId: string, action: "confirm" | "reject" | "void") => void;
+}) {
+  const latestPayment = appointment.payments?.[0] ?? null;
+  const summary = appointment.paymentSummary;
+
+  if (!latestPayment || !summary || summary.status === "not_submitted") {
+    return <span className="badge badge-soft">Sin seña</span>;
+  }
+
+  return (
+    <div className="table-primary">
+      <span className={paymentBadgeClass(latestPayment.status)}>{paymentStatusLabel(latestPayment.status)}</span>
+      <strong>{formatMoney(latestPayment.amountCents)}</strong>
+      <span>Saldo: {formatMoney(summary.remainingBalanceCents)}</span>
+      {latestPayment.reference ? <span>Ref: {latestPayment.reference}</span> : null}
+      {latestPayment.status === "submitted" ? (
+        <div className="appointment-actions">
+          <button className="button-secondary" onClick={() => onPaymentStatus(latestPayment.id, "confirm")} type="button">
+            Confirmar
+          </button>
+          <button className="button-danger" onClick={() => onPaymentStatus(latestPayment.id, "reject")} type="button">
+            Rechazar
+          </button>
+        </div>
+      ) : latestPayment.status === "confirmed" ? (
+        <button className="button-muted" onClick={() => onPaymentStatus(latestPayment.id, "void")} type="button">
+          Anular
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -779,6 +826,27 @@ function normalizeAvailabilitySlots(slots: AvailabilitySlot[]): AvailabilitySlot
 function escapeCsvValue(value: string): string {
   const normalizedValue = value.replaceAll("\"", "\"\"");
   return `"${normalizedValue}"`;
+}
+
+function paymentStatusLabel(status: NonNullable<Appointment["payments"]>[number]["status"]): string {
+  return {
+    confirmed: "Seña confirmada",
+    rejected: "Seña rechazada",
+    submitted: "Seña informada",
+    voided: "Seña anulada"
+  }[status];
+}
+
+function paymentBadgeClass(status: NonNullable<Appointment["payments"]>[number]["status"]): string {
+  if (status === "confirmed") {
+    return "badge";
+  }
+
+  if (status === "submitted") {
+    return "badge badge-warning";
+  }
+
+  return "badge badge-danger";
 }
 
 function useLiveNow(): number {

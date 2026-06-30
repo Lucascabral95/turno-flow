@@ -9,6 +9,7 @@ import { CreateAvailabilityExceptionDto, UpdateAvailabilityExceptionDto } from "
 import { CreateAvailabilityRuleDto, UpdateAvailabilityRuleDto } from "./dto/availability-rule.dto";
 import { CreateBusinessDto, UpdateBusinessDto } from "./dto/business.dto";
 import { CreateNotificationTemplateDto, UpdateNotificationTemplateDto } from "./dto/notification-template.dto";
+import { UpdatePaymentSettingsDto } from "./dto/payment-settings.dto";
 import { UpdateReminderSettingsDto } from "./dto/reminder-settings.dto";
 import { CreateServiceDto, UpdateServiceDto } from "./dto/service.dto";
 import { CreateStaffMemberDto, UpdateStaffMemberDto } from "./dto/staff-member.dto";
@@ -71,6 +72,16 @@ export class BusinessesController {
   @Patch("notification-settings")
   updateNotificationSettings(@CurrentUser() user: AuthenticatedUser, @Body() input: UpdateReminderSettingsDto) {
     return this.businesses.updateReminderSettings(user, input);
+  }
+
+  @Get("payment-settings")
+  getPaymentSettings(@CurrentUser() user: AuthenticatedUser) {
+    return this.businesses.getPaymentSettings(user);
+  }
+
+  @Patch("payment-settings")
+  updatePaymentSettings(@CurrentUser() user: AuthenticatedUser, @Body() input: UpdatePaymentSettingsDto) {
+    return this.businesses.updatePaymentSettings(user, input);
   }
 
   @Get("businesses/current/members")
