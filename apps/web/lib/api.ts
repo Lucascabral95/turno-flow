@@ -1,5 +1,6 @@
 export type {
   Appointment,
+  AppointmentPayment,
   AvailabilityException,
   AvailabilityRule,
   AvailabilitySlot,
@@ -20,6 +21,7 @@ export type {
   OnboardingStatus,
   OnboardingStepKey,
   OnboardingTaskStatus,
+  PaymentSettings,
   ReminderSettings,
   Service,
   StaffMember,

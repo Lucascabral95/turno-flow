@@ -1,4 +1,4 @@
-import { IsBoolean, IsInt, IsOptional, IsString, Min } from "class-validator";
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, Min } from "class-validator";
 
 export class CreateServiceDto {
   @IsString()
@@ -15,6 +15,29 @@ export class CreateServiceDto {
   @IsInt()
   @Min(0)
   bufferMinutes = 0;
+
+  @IsBoolean()
+  @IsOptional()
+  depositEnabled?: boolean;
+
+  @IsIn(["fixed", "percentage"])
+  @IsOptional()
+  depositMode?: "fixed" | "percentage";
+
+  @IsInt()
+  @IsOptional()
+  @Min(0)
+  depositAmountCents?: number;
+
+  @IsInt()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  depositPercentage?: number;
+
+  @IsOptional()
+  @IsString()
+  depositDescription?: string;
 }
 
 export class UpdateServiceDto {
@@ -40,4 +63,27 @@ export class UpdateServiceDto {
   @IsBoolean()
   @IsOptional()
   active?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  depositEnabled?: boolean;
+
+  @IsIn(["fixed", "percentage"])
+  @IsOptional()
+  depositMode?: "fixed" | "percentage";
+
+  @IsInt()
+  @IsOptional()
+  @Min(0)
+  depositAmountCents?: number;
+
+  @IsInt()
+  @IsOptional()
+  @Min(0)
+  @Max(100)
+  depositPercentage?: number;
+
+  @IsOptional()
+  @IsString()
+  depositDescription?: string;
 }

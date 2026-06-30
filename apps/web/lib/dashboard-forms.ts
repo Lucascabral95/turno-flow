@@ -12,6 +12,11 @@ export const businessFormSchema = z.object({
 
 export const serviceFormSchema = z.object({
   bufferMinutes: z.number().int().min(0, "El buffer no puede ser negativo").max(180, "Buffer demasiado alto"),
+  depositAmount: z.number().int().min(0, "La sena no puede ser negativa"),
+  depositDescription: z.string().trim().max(180, "Descripcion demasiado larga").optional().or(z.literal("")),
+  depositEnabled: z.boolean(),
+  depositMode: z.enum(["fixed", "percentage"]),
+  depositPercentage: z.number().int().min(0, "Porcentaje invalido").max(100, "Maximo 100%"),
   durationMinutes: z.number().int().min(5, "Minimo 5 minutos").max(480, "Duracion demasiado alta"),
   name: z.string().trim().min(2, "Ingresa un nombre valido"),
   price: z.number().int().min(0, "El precio no puede ser negativo")

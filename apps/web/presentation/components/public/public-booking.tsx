@@ -3,6 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   ArrowRight,
+  Banknote,
   CalendarClock,
   CheckCircle2,
   Clock,
@@ -181,6 +182,10 @@ export function PublicBooking({ businessSlug }: { businessSlug: string }) {
       customerName: "",
       customerPhone: "",
       date: initialDate,
+      depositAmount: 0,
+      depositCustomerNote: "",
+      depositReference: "",
+      depositSubmitted: false,
       serviceId: "",
       slotKey: ""
     },
@@ -203,6 +208,7 @@ export function PublicBooking({ businessSlug }: { businessSlug: string }) {
 
   const selectedServiceId = bookingForm.watch("serviceId");
   const date = bookingForm.watch("date");
+  const depositSubmitted = bookingForm.watch("depositSubmitted");
   const selectedSlotKey = bookingForm.watch("slotKey");
   const visibleSlots = useMemo(
     () =>
@@ -218,6 +224,13 @@ export function PublicBooking({ businessSlug }: { businessSlug: string }) {
     [selectedServiceId, services]
   );
   const selectedSlot = selectedSlotKey ? slotLookup.get(selectedSlotKey) ?? null : null;
+  const depositSuggestionCents = selectedService ? calculateDepositSuggestion(selectedService) : 0;
+  const canSubmitDeposit = Boolean(
+    business?.manualDepositsEnabled &&
+    business.paymentAlias &&
+    selectedService?.depositEnabled &&
+    selectedService.priceCents > 0
+  );
   const cancellationHref = confirmation
     ? `/cancel/${confirmation.id}?token=${confirmation.cancellationToken}`
     : "";
@@ -246,6 +259,10 @@ export function PublicBooking({ businessSlug }: { businessSlug: string }) {
           customerName: "",
           customerPhone: "",
           date: initialDate,
+          depositAmount: calculateDepositSuggestion(serviceResponse[0]) / 100,
+          depositCustomerNote: "",
+          depositReference: "",
+          depositSubmitted: false,
           serviceId: firstServiceId,
           slotKey: ""
         });
@@ -274,6 +291,19 @@ export function PublicBooking({ businessSlug }: { businessSlug: string }) {
       active = false;
     };
   }, [bookingForm, businessSlug, initialDate, waitlistForm]);
+
+  useEffect(() => {
+    if (!selectedService) {
+      bookingForm.setValue("depositSubmitted", false, { shouldDirty: false, shouldValidate: false });
+      bookingForm.setValue("depositAmount", 0, { shouldDirty: false, shouldValidate: false });
+      return;
+    }
+
+    bookingForm.setValue("depositAmount", calculateDepositSuggestion(selectedService) / 100, {
+      shouldDirty: false,
+      shouldValidate: false
+    });
+  }, [bookingForm, selectedService]);
 
   useEffect(() => {
     let active = true;
@@ -330,11 +360,25 @@ export function PublicBooking({ businessSlug }: { businessSlug: string }) {
     setWaitlistMessage(null);
 
     try {
+      const depositAmountCents = values.depositSubmitted
+        ? Math.round((values.depositAmount ?? 0) * 100)
+        : undefined;
+
+      if (values.depositSubmitted && (!canSubmitDeposit || !depositAmountCents || depositAmountCents > selectedService.priceCents)) {
+        bookingForm.setError("depositAmount", {
+          message: "Ingresa una sena valida menor o igual al precio del servicio"
+        });
+        return;
+      }
+
       const appointment = await requestJson<Appointment>(`/public/businesses/${businessSlug}/appointments`, {
         body: JSON.stringify({
           customerEmail: values.customerEmail,
           customerName: values.customerName,
           customerPhone: values.customerPhone,
+          depositAmountCents,
+          depositCustomerNote: values.depositCustomerNote || undefined,
+          depositReference: values.depositReference || undefined,
           serviceId: selectedService.id,
           staffMemberId: selectedSlot.staffMemberId,
           startsAt: selectedSlot.startsAt
@@ -352,6 +396,10 @@ export function PublicBooking({ businessSlug }: { businessSlug: string }) {
         customerName: "",
         customerPhone: "",
         date: values.date,
+        depositAmount: calculateDepositSuggestion(selectedService) / 100,
+        depositCustomerNote: "",
+        depositReference: "",
+        depositSubmitted: false,
         serviceId: values.serviceId,
         slotKey: ""
       });
@@ -429,6 +477,12 @@ export function PublicBooking({ businessSlug }: { businessSlug: string }) {
           <p className="section-copy">
             {confirmation.service.name} con {confirmation.staffMember.name} el {formatDateTime(confirmation.startsAt)}.
           </p>
+          {confirmation.paymentSummary?.status === "submitted" ? (
+            <div className="message">
+              <Banknote size={18} />
+              Sena informada: {formatMoney(confirmation.paymentSummary.submittedDepositCents)} pendiente de validacion del negocio.
+            </div>
+          ) : null}
           <div className="booking-confirmation-actions">
             <Link className="button-link button-primary" href={cancellationHref}>
               Gestionar cancelacion
@@ -466,7 +520,7 @@ export function PublicBooking({ businessSlug }: { businessSlug: string }) {
       </section>
 
       <section className="booking-workspace">
-        <form className="booking-main stack" onSubmit={(event) => void handleBooking(event)}>
+        <form className="booking-main stack" noValidate onSubmit={(event) => void handleBooking(event)}>
           <section className="panel stack booking-section booking-section-primary">
             <header className="booking-section-header">
               <div>
@@ -600,6 +654,63 @@ export function PublicBooking({ businessSlug }: { businessSlug: string }) {
                 <span className="field-error">{bookingForm.formState.errors.customerPhone.message}</span>
               ) : null}
             </label>
+            {canSubmitDeposit ? (
+              <section className={`message stack ${styles.depositPanel}`}>
+                <label className={`checkbox-row ${styles.depositToggle}`}>
+                  <input {...bookingForm.register("depositSubmitted")} type="checkbox" />
+                  <span>Informar una sena opcional para descontar del total</span>
+                </label>
+                <div className={styles.depositDetails}>
+                  <article className={styles.depositDetailCard}>
+                    <span>Alias/CVU</span>
+                    <strong>{business?.paymentAlias}</strong>
+                  </article>
+                  {business?.paymentAccountHolder ? (
+                    <article className={styles.depositDetailCard}>
+                      <span>Titular</span>
+                      <strong>{business.paymentAccountHolder}</strong>
+                    </article>
+                  ) : null}
+                </div>
+                {business?.paymentInstructions ? (
+                  <div className={styles.depositInstructions}>
+                    <span>Instrucciones</span>
+                    <p>{business.paymentInstructions}</p>
+                  </div>
+                ) : null}
+                {depositSubmitted ? (
+                  <div className={`grid-2 ${styles.depositFormGrid}`}>
+                    <label>
+                      Monto abonado
+                      <div className="input-shell">
+                        <Banknote size={16} />
+                        <input
+                          {...bookingForm.register("depositAmount", { valueAsNumber: true })}
+                          inputMode="decimal"
+                          step="any"
+                          type="number"
+                        />
+                      </div>
+                      {bookingForm.formState.errors.depositAmount ? (
+                        <span className="field-error">{bookingForm.formState.errors.depositAmount.message}</span>
+                      ) : null}
+                    </label>
+                    <label>
+                      Referencia
+                      <input {...bookingForm.register("depositReference")} placeholder="Numero, alias usado o detalle" />
+                    </label>
+                    <label>
+                      Nota
+                      <input {...bookingForm.register("depositCustomerNote")} placeholder="Dato adicional para el negocio" />
+                    </label>
+                  </div>
+                ) : null}
+              </section>
+            ) : selectedService?.depositEnabled ? (
+              <div className="message">
+                Este servicio acepta seña opcional, pero el negocio todavia no cargo sus datos de cobro.
+              </div>
+            ) : null}
             <div className="booking-form-actions">
               <button className="button-primary booking-submit" disabled={bookingForm.formState.isSubmitting} type="submit">
                 <CheckCircle2 size={18} />
@@ -630,6 +741,12 @@ export function PublicBooking({ businessSlug }: { businessSlug: string }) {
               <span>Precio</span>
               <strong>{selectedService ? formatMoney(selectedService.priceCents) : "--"}</strong>
             </div>
+            {selectedService?.depositEnabled ? (
+              <div className="summary-row">
+                <span>Sena sugerida</span>
+                <strong>{depositSuggestionCents > 0 ? formatMoney(depositSuggestionCents) : "Opcional"}</strong>
+              </div>
+            ) : null}
             <div className="summary-row">
               <span>Fecha</span>
               <strong>{date}</strong>
@@ -642,8 +759,14 @@ export function PublicBooking({ businessSlug }: { businessSlug: string }) {
                   : "Sin elegir"}
               </strong>
             </div>
+            {depositSubmitted && selectedService ? (
+              <div className="summary-row">
+                <span>Saldo estimado</span>
+                <strong>{formatMoney(Math.max(0, selectedService.priceCents - Math.round((bookingForm.watch("depositAmount") ?? 0) * 100)))}</strong>
+              </div>
+            ) : null}
             <div className="message booking-summary-note">
-              Si no hay disponibilidad, usa la lista de espera y te avisamos cuando se libere un turno.
+              La sena es opcional. El turno se confirma igual y el negocio valida el pago informado.
             </div>
           </section>
 
@@ -1125,6 +1248,18 @@ function buildSlotKey(slot: AvailabilitySlot): string {
 
 function buildBookedSlotKey(serviceId: string, date: string, startsAt: string): string {
   return `${serviceId}::${date}::${startsAt}`;
+}
+
+function calculateDepositSuggestion(service: Service | undefined): number {
+  if (!service?.depositEnabled || service.priceCents <= 0) {
+    return 0;
+  }
+
+  if (service.depositMode === "percentage") {
+    return Math.round((service.priceCents * service.depositPercentage) / 100);
+  }
+
+  return Math.min(service.depositAmountCents, service.priceCents);
 }
 
 async function fetchAvailabilitySlots(

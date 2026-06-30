@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import { BusinessMemberRole, type AvailabilityException, type AvailabilityRule, type Service } from "@prisma/client";
+import { BusinessMemberRole, DepositMode, type AvailabilityException, type AvailabilityRule, type Prisma, type Service } from "@prisma/client";
 
 import { AuditService } from "../audit/audit.service";
 import { activeAppointmentStatuses } from "../appointments/status";
@@ -14,6 +14,7 @@ import type { CreateAvailabilityExceptionDto, UpdateAvailabilityExceptionDto } f
 import type { CreateAvailabilityRuleDto, UpdateAvailabilityRuleDto } from "./dto/availability-rule.dto";
 import type { CreateBusinessDto, UpdateBusinessDto } from "./dto/business.dto";
 import type { CreateNotificationTemplateDto, UpdateNotificationTemplateDto } from "./dto/notification-template.dto";
+import type { UpdatePaymentSettingsDto } from "./dto/payment-settings.dto";
 import { BusinessOnboardingService } from "./onboarding.service";
 import type { UpdateReminderSettingsDto } from "./dto/reminder-settings.dto";
 import type { CreateServiceDto, UpdateServiceDto } from "./dto/service.dto";
@@ -182,6 +183,36 @@ export class BusinessesService {
     });
   }
 
+  async getPaymentSettings(user: AuthenticatedUser) {
+    const business = await this.requireCurrentBusiness(user);
+
+    return this.paymentSettingsPayload(business);
+  }
+
+  async updatePaymentSettings(user: AuthenticatedUser, input: UpdatePaymentSettingsDto) {
+    const business = await this.requireCurrentBusiness(user);
+    const data = this.normalizePaymentSettingsInput(input);
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.business.update({
+        data,
+        where: { id: business.id }
+      });
+
+      await this.audit.create(tx, {
+        action: "payment_settings.updated",
+        after: this.paymentSettingsPayload(updated),
+        before: this.paymentSettingsPayload(business),
+        businessId: business.id,
+        entity: "payment_settings",
+        entityId: business.id,
+        user
+      });
+
+      return this.paymentSettingsPayload(updated);
+    });
+  }
+
   async updateReminderSettings(user: AuthenticatedUser, input: UpdateReminderSettingsDto) {
     const business = await this.requireCurrentBusiness(user);
 
@@ -320,7 +351,7 @@ export class BusinessesService {
 
     return this.prisma.$transaction(async (tx) => {
       const service = await tx.service.create({
-        data: { ...input, businessId: business.id }
+        data: { ...this.normalizeCreateServiceInput(input), businessId: business.id }
       });
 
       await this.audit.create(tx, {
@@ -352,7 +383,7 @@ export class BusinessesService {
     return this.prisma.$transaction(async (tx) => {
       const before = await tx.service.findUniqueOrThrow({ where: { id: serviceId } });
       const updated = await tx.service.update({
-        data: input,
+        data: this.normalizeUpdateServiceInput(input),
         where: { id: serviceId }
       });
 
@@ -861,11 +892,71 @@ export class BusinessesService {
       active: service.active,
       bufferMinutes: service.bufferMinutes,
       businessId: service.businessId,
+      depositAmountCents: service.depositAmountCents,
+      depositDescription: service.depositDescription,
+      depositEnabled: service.depositEnabled,
+      depositMode: service.depositMode.toLowerCase(),
+      depositPercentage: service.depositPercentage,
       durationMinutes: service.durationMinutes,
       name: service.name,
       priceCents: service.priceCents,
       serviceId: service.id
     };
+  }
+
+  private normalizeCreateServiceInput(input: CreateServiceDto): Omit<Prisma.ServiceUncheckedCreateInput, "businessId"> {
+    return {
+      ...input,
+      depositMode: input.depositMode ? this.toDepositMode(input.depositMode) : undefined
+    };
+  }
+
+  private normalizeUpdateServiceInput(input: UpdateServiceDto): Prisma.ServiceUncheckedUpdateInput {
+    return {
+      ...input,
+      depositMode: input.depositMode ? this.toDepositMode(input.depositMode) : undefined
+    };
+  }
+
+  private toDepositMode(value: "fixed" | "percentage"): DepositMode {
+    return value === "percentage" ? DepositMode.PERCENTAGE : DepositMode.FIXED;
+  }
+
+  private normalizePaymentSettingsInput(input: UpdatePaymentSettingsDto): Prisma.BusinessUpdateInput {
+    return {
+      manualDepositsEnabled: input.manualDepositsEnabled,
+      paymentAccountHolder: this.optionalTrim(input.paymentAccountHolder),
+      paymentAccountLabel: this.optionalTrim(input.paymentAccountLabel),
+      paymentAlias: this.optionalTrim(input.paymentAlias),
+      paymentInstructions: this.optionalTrim(input.paymentInstructions)
+    };
+  }
+
+  private paymentSettingsPayload(business: {
+    id: string;
+    manualDepositsEnabled: boolean;
+    paymentAccountHolder: string | null;
+    paymentAccountLabel: string | null;
+    paymentAlias: string | null;
+    paymentInstructions: string | null;
+  }) {
+    return {
+      businessId: business.id,
+      manualDepositsEnabled: business.manualDepositsEnabled,
+      paymentAccountHolder: business.paymentAccountHolder,
+      paymentAccountLabel: business.paymentAccountLabel,
+      paymentAlias: business.paymentAlias,
+      paymentInstructions: business.paymentInstructions
+    };
+  }
+
+  private optionalTrim(value: string | undefined): string | null | undefined {
+    if (value === undefined) {
+      return undefined;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
   }
 
   private availabilityRulePayload(rule: AvailabilityRule) {

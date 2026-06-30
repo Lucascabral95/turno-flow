@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Banknote,
   CalendarClock,
   CalendarDays,
   CheckCircle2,
@@ -284,9 +285,45 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
     }
   }
 
+  async function handlePaymentSettings(input: {
+    manualDepositsEnabled: boolean;
+    paymentAccountHolder: string;
+    paymentAccountLabel: string;
+    paymentAlias: string;
+    paymentInstructions: string;
+  }): SubmitResult {
+    setError(null);
+
+    try {
+      await authRequest("/payment-settings", {
+        body: JSON.stringify({
+          manualDepositsEnabled: input.manualDepositsEnabled,
+          paymentAccountHolder: input.paymentAccountHolder || undefined,
+          paymentAccountLabel: input.paymentAccountLabel || undefined,
+          paymentAlias: input.paymentAlias || undefined,
+          paymentInstructions: input.paymentInstructions || undefined
+        }),
+        method: "PATCH"
+      });
+      await refresh();
+      toast.success("Datos de cobro guardados");
+      return true;
+    } catch (paymentError) {
+      const message = paymentError instanceof Error ? paymentError.message : "No se pudo guardar la configuracion de cobro";
+      setError(message);
+      toast.error(message);
+      return false;
+    }
+  }
+
   async function handleService(input: ServiceFormValues): SubmitResult {
     return submitAndRefresh("/services", {
       bufferMinutes: input.bufferMinutes,
+      depositAmountCents: input.depositAmount * 100,
+      depositDescription: input.depositDescription || undefined,
+      depositEnabled: input.depositEnabled,
+      depositMode: input.depositMode,
+      depositPercentage: input.depositPercentage,
       durationMinutes: input.durationMinutes,
       name: input.name,
       priceCents: input.price * 100
@@ -299,6 +336,11 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
       await authRequest(`/services/${serviceId}`, {
         body: JSON.stringify({
           bufferMinutes: input.bufferMinutes,
+          depositAmountCents: input.depositAmount * 100,
+          depositDescription: input.depositDescription || undefined,
+          depositEnabled: input.depositEnabled,
+          depositMode: input.depositMode,
+          depositPercentage: input.depositPercentage,
           durationMinutes: input.durationMinutes,
           name: input.name,
           priceCents: input.price * 100
@@ -480,6 +522,22 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
       toast.success("Turno reprogramado y cliente notificado");
     } catch (rescheduleError) {
       const message = rescheduleError instanceof Error ? rescheduleError.message : "No se pudo reprogramar el turno";
+      setError(message);
+      toast.error(message);
+    }
+  }
+
+  async function updatePaymentStatus(paymentId: string, action: "confirm" | "reject" | "void") {
+    setError(null);
+    try {
+      await authRequest(`/appointment-payments/${paymentId}/${action}`, {
+        body: JSON.stringify({}),
+        method: "PATCH"
+      });
+      await refresh();
+      toast.success(action === "confirm" ? "Sena confirmada" : action === "reject" ? "Sena rechazada" : "Sena anulada");
+    } catch (paymentError) {
+      const message = paymentError instanceof Error ? paymentError.message : "No se pudo actualizar la sena";
       setError(message);
       toast.error(message);
     }
@@ -822,6 +880,7 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
           <SetupView
             business={business}
             onBusinessSubmit={handleBusiness}
+            onPaymentSettingsSubmit={handlePaymentSettings}
             onServiceDelete={(serviceId) => {
               void handleServiceDelete(serviceId);
             }}
@@ -850,6 +909,9 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
             business={business}
             metrics={metrics}
             onFetchRescheduleSlots={fetchRescheduleSlots}
+            onPaymentStatus={(paymentId, action) => {
+              void updatePaymentStatus(paymentId, action);
+            }}
             onReschedule={(appointmentId, startsAt, staffMemberId) => {
               void rescheduleAppointment(appointmentId, startsAt, staffMemberId);
             }}
@@ -921,6 +983,7 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
 function SetupView({
   business,
   onBusinessSubmit,
+  onPaymentSettingsSubmit,
   onServiceDelete,
   onServiceSubmit,
   onServiceUpdate,
@@ -930,6 +993,13 @@ function SetupView({
 }: {
   business: CurrentBusiness | null;
   onBusinessSubmit: (input: BusinessFormValues) => SubmitResult;
+  onPaymentSettingsSubmit: (input: {
+    manualDepositsEnabled: boolean;
+    paymentAccountHolder: string;
+    paymentAccountLabel: string;
+    paymentAlias: string;
+    paymentInstructions: string;
+  }) => SubmitResult;
   onServiceDelete: (serviceId: string) => void;
   onServiceSubmit: (input: ServiceFormValues) => SubmitResult;
   onServiceUpdate: (serviceId: string, input: ServiceFormValues) => SubmitResult;
@@ -954,6 +1024,7 @@ function SetupView({
       <section className="layout-grid layout-grid-wide">
         <aside className="stack">
           <BusinessPanel business={business} onSubmit={onBusinessSubmit} />
+          {business ? <PaymentSettingsPanel business={business} onSubmit={onPaymentSettingsSubmit} /> : null}
         </aside>
         <section className="stack">
           <BusinessIdentityPanel business={business} />
@@ -1694,6 +1765,97 @@ function BusinessPanel({
   );
 }
 
+function PaymentSettingsPanel({
+  business,
+  onSubmit
+}: {
+  business: CurrentBusiness;
+  onSubmit: (input: {
+    manualDepositsEnabled: boolean;
+    paymentAccountHolder: string;
+    paymentAccountLabel: string;
+    paymentAlias: string;
+    paymentInstructions: string;
+  }) => SubmitResult;
+}) {
+  const [manualDepositsEnabled, setManualDepositsEnabled] = useState(Boolean(business.manualDepositsEnabled));
+  const [paymentAccountHolder, setPaymentAccountHolder] = useState(business.paymentAccountHolder ?? "");
+  const [paymentAccountLabel, setPaymentAccountLabel] = useState(business.paymentAccountLabel ?? "");
+  const [paymentAlias, setPaymentAlias] = useState(business.paymentAlias ?? "");
+  const [paymentInstructions, setPaymentInstructions] = useState(business.paymentInstructions ?? "");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    setManualDepositsEnabled(Boolean(business.manualDepositsEnabled));
+    setPaymentAccountHolder(business.paymentAccountHolder ?? "");
+    setPaymentAccountLabel(business.paymentAccountLabel ?? "");
+    setPaymentAlias(business.paymentAlias ?? "");
+    setPaymentInstructions(business.paymentInstructions ?? "");
+  }, [business]);
+
+  return (
+    <form
+      className="panel stack dashboard-form-panel payment-settings-panel"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void (async () => {
+          setSubmitting(true);
+          await onSubmit({
+            manualDepositsEnabled,
+            paymentAccountHolder,
+            paymentAccountLabel,
+            paymentAlias,
+            paymentInstructions
+          });
+          setSubmitting(false);
+        })();
+      }}
+    >
+      <div className="form-header">
+        <h2 className="inline">
+          <Banknote size={20} />
+          Cobro manual
+        </h2>
+        <p>Datos visibles para clientes que quieran informar una sena opcional.</p>
+      </div>
+      <label className="checkbox-row payment-settings-toggle">
+        <input
+          checked={manualDepositsEnabled}
+          onChange={(event) => setManualDepositsEnabled(event.target.checked)}
+          type="checkbox"
+        />
+        <span>Habilitar senas opcionales</span>
+      </label>
+      <div className="grid-2 payment-settings-grid">
+        <label>
+          Alias / CVU / CBU
+          <input onChange={(event) => setPaymentAlias(event.target.value)} placeholder="alias.negocio.mp" value={paymentAlias} />
+        </label>
+        <label>
+          Titular
+          <input onChange={(event) => setPaymentAccountHolder(event.target.value)} placeholder="Nombre del titular" value={paymentAccountHolder} />
+        </label>
+        <label>
+          Cuenta o entidad
+          <input onChange={(event) => setPaymentAccountLabel(event.target.value)} placeholder="Mercado Pago, banco, billetera" value={paymentAccountLabel} />
+        </label>
+        <label className="payment-settings-copy">
+          Instrucciones
+          <input
+            onChange={(event) => setPaymentInstructions(event.target.value)}
+            placeholder="Enviar referencia al confirmar el turno"
+            value={paymentInstructions}
+          />
+        </label>
+      </div>
+      <button className="button-primary" disabled={submitting} type="submit">
+        <Save size={18} />
+        {submitting ? "Guardando..." : "Guardar cobro"}
+      </button>
+    </form>
+  );
+}
+
 function ServicePanel({
   business,
   onSubmit
@@ -1704,12 +1866,19 @@ function ServicePanel({
   const form = useForm<ServiceFormValues>({
     defaultValues: {
       bufferMinutes: 0,
+      depositAmount: 0,
+      depositDescription: "",
+      depositEnabled: false,
+      depositMode: "fixed",
+      depositPercentage: 0,
       durationMinutes: 30,
       name: "",
       price: 0
     },
     resolver: zodResolver(serviceFormSchema)
   });
+  const depositEnabled = form.watch("depositEnabled");
+  const depositMode = form.watch("depositMode");
   const existingNames = business.services
     .filter((service) => service.active)
     .map((service) => service.name.trim().toLowerCase());
@@ -1731,6 +1900,11 @@ function ServicePanel({
             if (submitted) {
               form.reset({
                 bufferMinutes: 0,
+                depositAmount: 0,
+                depositDescription: "",
+                depositEnabled: false,
+                depositMode: "fixed",
+                depositPercentage: 0,
                 durationMinutes: 30,
                 name: "",
                 price: 0
@@ -1770,6 +1944,50 @@ function ServicePanel({
           {form.formState.errors.price ? <span className="field-error">{form.formState.errors.price.message}</span> : null}
         </label>
       </div>
+      <section className="message stack deposit-config-card">
+        <label className="checkbox-row deposit-config-toggle">
+          <input {...form.register("depositEnabled")} type="checkbox" />
+          <span>Permitir sena opcional en este servicio</span>
+        </label>
+        <div className="grid-3 deposit-config-grid">
+          <label>
+            Tipo
+            <select {...form.register("depositMode")}>
+              <option value="fixed">Monto fijo</option>
+              <option value="percentage">Porcentaje</option>
+            </select>
+          </label>
+          <label>
+            Monto sugerido
+            <input
+              {...form.register("depositAmount", { valueAsNumber: true })}
+              disabled={!depositEnabled || depositMode !== "fixed"}
+              min={0}
+              type="number"
+            />
+            {form.formState.errors.depositAmount ? <span className="field-error">{form.formState.errors.depositAmount.message}</span> : null}
+          </label>
+          <label>
+            Porcentaje
+            <input
+              {...form.register("depositPercentage", { valueAsNumber: true })}
+              disabled={!depositEnabled || depositMode !== "percentage"}
+              max={100}
+              min={0}
+              type="number"
+            />
+            {form.formState.errors.depositPercentage ? <span className="field-error">{form.formState.errors.depositPercentage.message}</span> : null}
+          </label>
+        </div>
+        <label className="deposit-config-copy">
+          Texto para el cliente
+          <input
+            {...form.register("depositDescription")}
+            disabled={!depositEnabled}
+            placeholder="Ej. Sena opcional para asegurar tu reserva"
+          />
+        </label>
+      </section>
       <button className="button-primary" disabled={form.formState.isSubmitting} type="submit">
         <Scissors size={18} />
         {form.formState.isSubmitting ? "Guardando..." : "Agregar servicio"}
@@ -1899,16 +2117,28 @@ function ManagedServiceItem({
   const form = useForm<ServiceFormValues>({
     defaultValues: {
       bufferMinutes: service.bufferMinutes,
+      depositAmount: Math.round(service.depositAmountCents / 100),
+      depositDescription: service.depositDescription ?? "",
+      depositEnabled: service.depositEnabled,
+      depositMode: service.depositMode,
+      depositPercentage: service.depositPercentage,
       durationMinutes: service.durationMinutes,
       name: service.name,
       price: Math.round(service.priceCents / 100)
     },
     resolver: zodResolver(serviceFormSchema)
   });
+  const depositEnabled = form.watch("depositEnabled");
+  const depositMode = form.watch("depositMode");
 
   useEffect(() => {
     form.reset({
       bufferMinutes: service.bufferMinutes,
+      depositAmount: Math.round(service.depositAmountCents / 100),
+      depositDescription: service.depositDescription ?? "",
+      depositEnabled: service.depositEnabled,
+      depositMode: service.depositMode,
+      depositPercentage: service.depositPercentage,
       durationMinutes: service.durationMinutes,
       name: service.name,
       price: Math.round(service.priceCents / 100)
@@ -1923,6 +2153,9 @@ function ManagedServiceItem({
           <span>
             {service.durationMinutes} min · Buffer {service.bufferMinutes} min · {formatMoney(service.priceCents)}
           </span>
+          {service.depositEnabled ? (
+            <span>Sena opcional: {service.depositMode === "percentage" ? `${service.depositPercentage}%` : formatMoney(service.depositAmountCents)}</span>
+          ) : null}
         </div>
         <div className="management-card-actions">
           <button
@@ -1931,6 +2164,11 @@ function ManagedServiceItem({
               if (editing) {
                 form.reset({
                   bufferMinutes: service.bufferMinutes,
+                  depositAmount: Math.round(service.depositAmountCents / 100),
+                  depositDescription: service.depositDescription ?? "",
+                  depositEnabled: service.depositEnabled,
+                  depositMode: service.depositMode,
+                  depositPercentage: service.depositPercentage,
                   durationMinutes: service.durationMinutes,
                   name: service.name,
                   price: Math.round(service.priceCents / 100)
@@ -2011,6 +2249,54 @@ function ManagedServiceItem({
               {form.formState.errors.price ? <span className="field-error">{form.formState.errors.price.message}</span> : null}
             </label>
           </div>
+          <section className="message stack deposit-config-card">
+            <label className="checkbox-row deposit-config-toggle">
+              <input {...form.register("depositEnabled")} type="checkbox" />
+              <span>Permitir sena opcional</span>
+            </label>
+            <div className="grid-3 deposit-config-grid">
+              <label>
+                Tipo
+                <select {...form.register("depositMode")}>
+                  <option value="fixed">Monto fijo</option>
+                  <option value="percentage">Porcentaje</option>
+                </select>
+              </label>
+              <label>
+                Monto sugerido
+                <input
+                  {...form.register("depositAmount", { valueAsNumber: true })}
+                  disabled={!depositEnabled || depositMode !== "fixed"}
+                  min={0}
+                  type="number"
+                />
+                {form.formState.errors.depositAmount ? (
+                  <span className="field-error">{form.formState.errors.depositAmount.message}</span>
+                ) : null}
+              </label>
+              <label>
+                Porcentaje
+                <input
+                  {...form.register("depositPercentage", { valueAsNumber: true })}
+                  disabled={!depositEnabled || depositMode !== "percentage"}
+                  max={100}
+                  min={0}
+                  type="number"
+                />
+                {form.formState.errors.depositPercentage ? (
+                  <span className="field-error">{form.formState.errors.depositPercentage.message}</span>
+                ) : null}
+              </label>
+            </div>
+            <label className="deposit-config-copy">
+              Texto para el cliente
+              <input
+                {...form.register("depositDescription")}
+                disabled={!depositEnabled}
+                placeholder="Ej. Sena opcional para asegurar tu reserva"
+              />
+            </label>
+          </section>
           <div className="management-form-actions">
             <button className="button-primary" disabled={form.formState.isSubmitting} type="submit">
               <Save size={16} />

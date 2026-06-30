@@ -1,5 +1,5 @@
 import { ConflictException, HttpException, Injectable, NotFoundException } from "@nestjs/common";
-import { AppointmentStatus, Prisma, WaitlistOfferStatus, WaitlistStatus } from "@prisma/client";
+import { AppointmentPaymentStatus, AppointmentPaymentType, AppointmentStatus, Prisma, WaitlistOfferStatus, WaitlistStatus } from "@prisma/client";
 
 import { AuditService } from "../audit/audit.service";
 import type { AuthenticatedUser } from "../common/authenticated-user";
@@ -21,15 +21,19 @@ import type {
   UpdateAppointmentStatusDto
 } from "./dto/appointment.dto";
 
-type AppointmentWithRelations = Prisma.AppointmentGetPayload<{
-  include: {
-    customer: true;
-    service: true;
-    staffMember: true;
-  };
-}>;
-
 const DEFAULT_BUSINESS_TIMEZONE = "America/Argentina/Buenos_Aires";
+const appointmentInclude = {
+  customer: true,
+  payments: {
+    orderBy: { submittedAt: "desc" }
+  },
+  service: true,
+  staffMember: true
+} as const satisfies Prisma.AppointmentInclude;
+
+type AppointmentWithRelations = Prisma.AppointmentGetPayload<{
+  include: typeof appointmentInclude;
+}>;
 
 type WaitlistEntryWithRelations = Prisma.WaitlistEntryGetPayload<{
   include: {
@@ -42,11 +46,7 @@ type WaitlistEntryWithRelations = Prisma.WaitlistEntryGetPayload<{
 type WaitlistOfferForRejection = Prisma.WaitlistOfferGetPayload<{
   include: {
     appointment: {
-      include: {
-        customer: true;
-        service: true;
-        staffMember: true;
-      };
+      include: typeof appointmentInclude;
     };
   };
 }>;
@@ -65,7 +65,12 @@ export class AppointmentsService {
       select: {
         email: true,
         id: true,
+        manualDepositsEnabled: true,
         name: true,
+        paymentAccountHolder: true,
+        paymentAccountLabel: true,
+        paymentAlias: true,
+        paymentInstructions: true,
         slug: true,
         timezone: true
       },
@@ -176,6 +181,9 @@ export class AppointmentsService {
       customerEmail: input.customerEmail,
       customerName: input.customerName,
       customerPhone: input.customerPhone,
+      depositAmountCents: input.depositAmountCents,
+      depositCustomerNote: input.depositCustomerNote,
+      depositReference: input.depositReference,
       serviceId: input.serviceId,
       staffMemberId: input.staffMemberId,
       startsAt
@@ -184,7 +192,7 @@ export class AppointmentsService {
 
   async cancelPublicAppointment(appointmentId: string, input: CancelAppointmentDto) {
     const appointment = await this.prisma.appointment.findUnique({
-      include: { customer: true, service: true, staffMember: true },
+      include: appointmentInclude,
       where: { id: appointmentId }
     });
 
@@ -204,7 +212,7 @@ export class AppointmentsService {
 
       const updatedAppointment = await tx.appointment.update({
         data: { status: AppointmentStatus.CANCELLED_BY_CUSTOMER },
-        include: { customer: true, service: true, staffMember: true },
+        include: appointmentInclude,
         where: { id: appointment.id }
       });
 
@@ -274,6 +282,9 @@ export class AppointmentsService {
           }
         },
         customer: true,
+        payments: {
+          orderBy: { submittedAt: "desc" }
+        },
         service: true,
         staffMember: true
       },
@@ -349,7 +360,7 @@ export class AppointmentsService {
     const offer = await this.prisma.waitlistOffer.findUnique({
       include: {
         appointment: {
-          include: { customer: true, service: true, staffMember: true }
+          include: appointmentInclude
         }
       },
       where: { token }
@@ -367,7 +378,7 @@ export class AppointmentsService {
   async listPrivateAppointments(user: AuthenticatedUser) {
     const business = await this.businesses.requireCurrentBusiness(user);
     const appointments = await this.prisma.appointment.findMany({
-      include: { customer: true, service: true, staffMember: true },
+      include: appointmentInclude,
       orderBy: { startsAt: "desc" },
       take: 200,
       where: { businessId: business.id }
@@ -379,7 +390,7 @@ export class AppointmentsService {
   async getPrivateAppointment(user: AuthenticatedUser, appointmentId: string) {
     const business = await this.businesses.requireCurrentBusiness(user);
     const appointment = await this.prisma.appointment.findFirst({
-      include: { customer: true, service: true, staffMember: true },
+      include: appointmentInclude,
       where: { businessId: business.id, id: appointmentId }
     });
 
@@ -533,7 +544,7 @@ export class AppointmentsService {
     const offer = await this.prisma.waitlistOffer.findFirst({
       include: {
         appointment: {
-          include: { customer: true, service: true, staffMember: true }
+          include: appointmentInclude
         }
       },
       where: {
@@ -655,7 +666,7 @@ export class AppointmentsService {
     const nextStatus = toPrismaAppointmentStatus(status);
 
     const appointment = await this.prisma.appointment.findFirst({
-      include: { customer: true, service: true, staffMember: true },
+      include: appointmentInclude,
       where: { businessId: business.id, id: appointmentId }
     });
 
@@ -678,7 +689,7 @@ export class AppointmentsService {
       }
 
       const updated = await tx.appointment.findUniqueOrThrow({
-        include: { customer: true, service: true, staffMember: true },
+        include: appointmentInclude,
         where: { id: appointment.id }
       });
 
@@ -770,7 +781,7 @@ export class AppointmentsService {
     try {
       const appointment = await this.prisma.$transaction(async (tx) => {
         const current = await tx.appointment.findUnique({
-          include: { customer: true, service: true, staffMember: true },
+          include: appointmentInclude,
           where: { id: input.appointmentId }
         });
 
@@ -810,7 +821,7 @@ export class AppointmentsService {
             staffMemberId,
             startsAt
           },
-          include: { customer: true, service: true, staffMember: true },
+          include: appointmentInclude,
           where: { id: current.id }
         });
 
@@ -875,12 +886,18 @@ export class AppointmentsService {
     customerName: string;
     customerEmail: string;
     customerPhone: string | undefined;
+    depositAmountCents?: number;
+    depositCustomerNote?: string;
+    depositReference?: string;
     waitlistOfferId?: string;
   }) {
     try {
       const appointment = await this.prisma.$transaction(async (tx) => {
         const business = await tx.business.findUniqueOrThrow({
-          select: { timezone: true },
+          select: {
+            manualDepositsEnabled: true,
+            timezone: true
+          },
           where: { id: input.businessId }
         });
 
@@ -907,6 +924,12 @@ export class AppointmentsService {
           throw new NotFoundException("Service not found");
         }
 
+        this.assertDepositCanBeSubmitted({
+          amountCents: input.depositAmountCents,
+          manualDepositsEnabled: business.manualDepositsEnabled,
+          service
+        });
+
         const staffMemberId =
           input.staffMemberId ?? (await this.selectAvailableStaffMember(tx, input.businessId, service.id, input.startsAt));
         await this.assertStaffMemberCanTakeSlot(tx, input.businessId, service.id, staffMemberId, input.startsAt);
@@ -928,8 +951,54 @@ export class AppointmentsService {
             staffMemberId,
             startsAt: input.startsAt
           },
-          include: { customer: true, service: true, staffMember: true }
+          include: appointmentInclude
         });
+
+        if (input.depositAmountCents) {
+          const payment = await tx.appointmentPayment.create({
+            data: {
+              amountCents: input.depositAmountCents,
+              appointmentId: appointment.id,
+              businessId: input.businessId,
+              customerId: customer.id,
+              customerNote: this.optionalTrim(input.depositCustomerNote),
+              reference: this.optionalTrim(input.depositReference),
+              type: AppointmentPaymentType.DEPOSIT
+            }
+          });
+
+          await tx.appointmentEvent.create({
+            data: {
+              appointmentId: appointment.id,
+              businessId: input.businessId,
+              eventType: EventTypes.AppointmentDepositSubmitted,
+              metadata: {
+                amountCents: payment.amountCents,
+                paymentId: payment.id,
+                reference: payment.reference,
+                status: payment.status.toLowerCase()
+              }
+            }
+          });
+
+          await this.outbox.create(tx, {
+            aggregateId: payment.id,
+            businessId: input.businessId,
+            payload: {
+              amountCents: payment.amountCents,
+              appointmentId: appointment.id,
+              businessId: input.businessId,
+              customerId: customer.id,
+              paymentId: payment.id,
+              reference: payment.reference,
+              status: payment.status.toLowerCase(),
+              type: payment.type.toLowerCase()
+            },
+            routingKey: EventRoutingKeys.AppointmentDepositSubmitted,
+            type: EventTypes.AppointmentDepositSubmitted,
+            version: 1
+          });
+        }
 
         await tx.customer.update({
           data: { totalAppointments: { increment: 1 } },
@@ -987,7 +1056,10 @@ export class AppointmentsService {
           });
         }
 
-        return appointment;
+        return tx.appointment.findUniqueOrThrow({
+          include: appointmentInclude,
+          where: { id: appointment.id }
+        });
       });
 
       return this.serializeAppointment(appointment);
@@ -1142,6 +1214,35 @@ export class AppointmentsService {
     }
   }
 
+  private assertDepositCanBeSubmitted(input: {
+    amountCents: number | undefined;
+    manualDepositsEnabled: boolean;
+    service: {
+      depositEnabled: boolean;
+      priceCents: number;
+    };
+  }): void {
+    if (!input.amountCents) {
+      return;
+    }
+
+    if (!input.manualDepositsEnabled) {
+      throw new ConflictException("Manual deposits are not enabled for this business");
+    }
+
+    if (!input.service.depositEnabled) {
+      throw new ConflictException("This service does not accept optional deposits");
+    }
+
+    if (input.service.priceCents <= 0) {
+      throw new ConflictException("Cannot submit a deposit for a free service");
+    }
+
+    if (input.amountCents > input.service.priceCents) {
+      throw new ConflictException("Deposit cannot be greater than the service price");
+    }
+  }
+
   private async getAvailabilityForTransaction(
     tx: Prisma.TransactionClient,
     businessId: string,
@@ -1276,6 +1377,11 @@ export class AppointmentsService {
       },
       endsAt: appointment.endsAt.toISOString(),
       service: {
+        depositAmountCents: appointment.service.depositAmountCents ?? 0,
+        depositDescription: appointment.service.depositDescription ?? null,
+        depositEnabled: appointment.service.depositEnabled ?? false,
+        depositMode: appointment.service.depositMode?.toLowerCase() ?? "fixed",
+        depositPercentage: appointment.service.depositPercentage ?? 0,
         durationMinutes: appointment.service.durationMinutes,
         id: appointment.service.id,
         name: appointment.service.name,
@@ -1308,6 +1414,9 @@ export class AppointmentsService {
   }
 
   private serializeAppointment(appointment: AppointmentWithRelations) {
+    const appointmentPayments = Array.isArray(appointment.payments) ? appointment.payments : [];
+    const payments = appointmentPayments.map((payment) => this.serializePayment(payment, appointment.service.priceCents));
+
     return {
       cancellationToken: appointment.cancellationToken,
       customer: {
@@ -1324,11 +1433,65 @@ export class AppointmentsService {
       },
       endsAt: appointment.endsAt,
       id: appointment.id,
+      paymentSummary: this.paymentSummary(appointment.service.priceCents, appointmentPayments),
+      payments,
       service: appointment.service,
       staffMember: appointment.staffMember,
       startsAt: appointment.startsAt,
       status: fromPrismaAppointmentStatus(appointment.status)
     };
+  }
+
+  private serializePayment(
+    payment: AppointmentWithRelations["payments"][number],
+    servicePriceCents: number
+  ) {
+    return {
+      amountCents: payment.amountCents,
+      confirmedAt: payment.confirmedAt,
+      currency: payment.currency,
+      customerNote: payment.customerNote,
+      id: payment.id,
+      internalNote: payment.internalNote,
+      reference: payment.reference,
+      rejectedAt: payment.rejectedAt,
+      remainingBalanceCents: payment.status === AppointmentPaymentStatus.CONFIRMED
+        ? Math.max(0, servicePriceCents - payment.amountCents)
+        : servicePriceCents,
+      status: payment.status.toLowerCase(),
+      submittedAt: payment.submittedAt,
+      type: payment.type.toLowerCase(),
+      voidedAt: payment.voidedAt
+    };
+  }
+
+  private paymentSummary(
+    servicePriceCents: number,
+    payments: AppointmentWithRelations["payments"]
+  ) {
+    const confirmedDepositCents = payments
+      .filter((payment) => payment.status === AppointmentPaymentStatus.CONFIRMED)
+      .reduce((total, payment) => total + payment.amountCents, 0);
+    const submittedDepositCents = payments
+      .filter((payment) => payment.status === AppointmentPaymentStatus.SUBMITTED)
+      .reduce((total, payment) => total + payment.amountCents, 0);
+    const latestPayment = payments[0];
+
+    return {
+      confirmedDepositCents,
+      remainingBalanceCents: Math.max(0, servicePriceCents - confirmedDepositCents),
+      status: latestPayment?.status.toLowerCase() ?? "not_submitted",
+      submittedDepositCents
+    };
+  }
+
+  private optionalTrim(value: string | undefined): string | null {
+    if (!value) {
+      return null;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
   }
 
   private serializeWaitlistEntry(entry: WaitlistEntryWithRelations) {

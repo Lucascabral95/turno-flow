@@ -18,6 +18,7 @@ import { CustomersModule } from "./customers/customers.module";
 import { DashboardModule } from "./dashboard/dashboard.module";
 import { EventsModule } from "./events/events.module";
 import { HealthModule } from "./health/health.module";
+import { PaymentsModule } from "./payments/payments.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { PublicModule } from "./public/public.module";
 
@@ -34,6 +35,7 @@ import { PublicModule } from "./public/public.module";
     CustomersModule,
     AppointmentsModule,
     DashboardModule,
+    PaymentsModule,
     PublicModule,
     HealthModule
   ]

@@ -1,7 +1,12 @@
 export type Business = {
   email: string | null;
   id: string;
+  manualDepositsEnabled?: boolean;
   name: string;
+  paymentAccountHolder?: string | null;
+  paymentAccountLabel?: string | null;
+  paymentAlias?: string | null;
+  paymentInstructions?: string | null;
   slug: string;
   timezone: string;
 };
@@ -56,6 +61,11 @@ export type OnboardingStatus = {
 export type Service = {
   active: boolean;
   bufferMinutes: number;
+  depositAmountCents: number;
+  depositDescription: string | null;
+  depositEnabled: boolean;
+  depositMode: "fixed" | "percentage";
+  depositPercentage: number;
   durationMinutes: number;
   id: string;
   name: string;
@@ -105,10 +115,42 @@ export type Appointment = {
   };
   endsAt: string;
   id: string;
+  paymentSummary?: {
+    confirmedDepositCents: number;
+    remainingBalanceCents: number;
+    status: "not_submitted" | "submitted" | "confirmed" | "rejected" | "voided";
+    submittedDepositCents: number;
+  };
+  payments?: AppointmentPayment[];
   service: Service;
   staffMember: StaffMember;
   startsAt: string;
   status: "pending" | "confirmed" | "cancelled_by_customer" | "cancelled_by_business" | "completed" | "no_show";
+};
+
+export type AppointmentPayment = {
+  amountCents: number;
+  confirmedAt: string | null;
+  currency: string;
+  customerNote: string | null;
+  id: string;
+  internalNote: string | null;
+  reference: string | null;
+  rejectedAt: string | null;
+  remainingBalanceCents: number;
+  status: "submitted" | "confirmed" | "rejected" | "voided";
+  submittedAt: string;
+  type: "deposit";
+  voidedAt: string | null;
+};
+
+export type PaymentSettings = {
+  businessId: string;
+  manualDepositsEnabled: boolean;
+  paymentAccountHolder: string | null;
+  paymentAccountLabel: string | null;
+  paymentAlias: string | null;
+  paymentInstructions: string | null;
 };
 
 export type DashboardMetrics = {
