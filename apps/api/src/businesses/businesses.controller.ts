@@ -1,18 +1,25 @@
 import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
+import { BusinessMemberRole } from "@prisma/client";
 
 import type { AuthenticatedUser } from "../common/authenticated-user";
 import { CurrentUser } from "../common/current-user.decorator";
 import { AuthGuard } from "../auth/auth.guard";
+import { BusinessContextGuard } from "../common/business-context.guard";
+import { Roles } from "../common/roles.decorator";
+import { RolesGuard } from "../common/roles.guard";
 import { BusinessesService } from "./businesses.service";
 import { CreateAvailabilityExceptionDto, UpdateAvailabilityExceptionDto } from "./dto/availability-exception.dto";
 import { CreateAvailabilityRuleDto, UpdateAvailabilityRuleDto } from "./dto/availability-rule.dto";
 import { CreateBusinessDto, UpdateBusinessDto } from "./dto/business.dto";
+import { ChangeMemberRoleDto, InviteMemberDto } from "./dto/member.dto";
 import { CreateNotificationTemplateDto, UpdateNotificationTemplateDto } from "./dto/notification-template.dto";
 import { UpdatePaymentSettingsDto } from "./dto/payment-settings.dto";
 import { UpdateReminderSettingsDto } from "./dto/reminder-settings.dto";
 import { CreateServiceDto, UpdateServiceDto } from "./dto/service.dto";
 import { CreateStaffMemberDto, UpdateStaffMemberDto } from "./dto/staff-member.dto";
+
+const { OWNER, RECEPTIONIST, PROFESSIONAL } = BusinessMemberRole;
 
 @ApiTags("businesses")
 @UseGuards(AuthGuard)
@@ -40,11 +47,15 @@ export class BusinessesController {
     return this.businesses.createCurrent(user, input);
   }
 
+  @UseGuards(AuthGuard, BusinessContextGuard, RolesGuard)
+  @Roles(OWNER)
   @Patch("businesses/current")
   updateCurrent(@CurrentUser() user: AuthenticatedUser, @Body() input: UpdateBusinessDto) {
     return this.businesses.updateCurrent(user, input);
   }
 
+  @UseGuards(AuthGuard, BusinessContextGuard, RolesGuard)
+  @Roles(OWNER)
   @Patch("businesses/:id")
   updateBusiness(
     @CurrentUser() user: AuthenticatedUser,
@@ -84,14 +95,43 @@ export class BusinessesController {
     return this.businesses.updatePaymentSettings(user, input);
   }
 
+  @UseGuards(AuthGuard, BusinessContextGuard, RolesGuard)
+  @Roles(OWNER, RECEPTIONIST, PROFESSIONAL)
   @Get("businesses/current/members")
   listBusinessMembers(@CurrentUser() user: AuthenticatedUser) {
     return this.businesses.listBusinessMembers(user);
   }
 
+  @UseGuards(AuthGuard, BusinessContextGuard, RolesGuard)
+  @Roles(OWNER, RECEPTIONIST, PROFESSIONAL)
   @Get("business-members")
   listBusinessMembersAlias(@CurrentUser() user: AuthenticatedUser) {
     return this.businesses.listBusinessMembers(user);
+  }
+
+  @UseGuards(AuthGuard, BusinessContextGuard, RolesGuard)
+  @Roles(OWNER)
+  @Post("businesses/current/members")
+  inviteMember(@CurrentUser() user: AuthenticatedUser, @Body() input: InviteMemberDto) {
+    return this.businesses.inviteMember(user, input);
+  }
+
+  @UseGuards(AuthGuard, BusinessContextGuard, RolesGuard)
+  @Roles(OWNER)
+  @Patch("businesses/current/members/:id/role")
+  changeMemberRole(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() input: ChangeMemberRoleDto
+  ) {
+    return this.businesses.changeMemberRole(user, id, input);
+  }
+
+  @UseGuards(AuthGuard, BusinessContextGuard, RolesGuard)
+  @Roles(OWNER)
+  @Delete("businesses/current/members/:id")
+  deactivateMember(@CurrentUser() user: AuthenticatedUser, @Param("id", ParseUUIDPipe) id: string) {
+    return this.businesses.deactivateMember(user, id);
   }
 
   @Get("notification-templates")
@@ -123,11 +163,15 @@ export class BusinessesController {
     return this.businesses.getService(user, id);
   }
 
+  @UseGuards(AuthGuard, BusinessContextGuard, RolesGuard)
+  @Roles(OWNER)
   @Post("services")
   createService(@CurrentUser() user: AuthenticatedUser, @Body() input: CreateServiceDto) {
     return this.businesses.createService(user, input);
   }
 
+  @UseGuards(AuthGuard, BusinessContextGuard, RolesGuard)
+  @Roles(OWNER)
   @Patch("services/:id")
   updateService(
     @CurrentUser() user: AuthenticatedUser,
@@ -137,9 +181,40 @@ export class BusinessesController {
     return this.businesses.updateService(user, id, input);
   }
 
+  @UseGuards(AuthGuard, BusinessContextGuard, RolesGuard)
+  @Roles(OWNER)
   @Delete("services/:id")
   deactivateService(@CurrentUser() user: AuthenticatedUser, @Param("id", ParseUUIDPipe) id: string) {
     return this.businesses.deactivateService(user, id);
+  }
+
+  @UseGuards(AuthGuard, BusinessContextGuard, RolesGuard)
+  @Roles(OWNER, RECEPTIONIST, PROFESSIONAL)
+  @Get("services/:id/staff-members")
+  listServiceStaff(@CurrentUser() user: AuthenticatedUser, @Param("id", ParseUUIDPipe) id: string) {
+    return this.businesses.listServiceStaff(user, id);
+  }
+
+  @UseGuards(AuthGuard, BusinessContextGuard, RolesGuard)
+  @Roles(OWNER)
+  @Post("services/:id/staff-members/:staffMemberId")
+  assignStaffToService(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("staffMemberId", ParseUUIDPipe) staffMemberId: string
+  ) {
+    return this.businesses.assignStaffToService(user, id, staffMemberId);
+  }
+
+  @UseGuards(AuthGuard, BusinessContextGuard, RolesGuard)
+  @Roles(OWNER)
+  @Delete("services/:id/staff-members/:staffMemberId")
+  unassignStaffFromService(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("staffMemberId", ParseUUIDPipe) staffMemberId: string
+  ) {
+    return this.businesses.unassignStaffFromService(user, id, staffMemberId);
   }
 
   @Get("staff-members")
@@ -147,11 +222,15 @@ export class BusinessesController {
     return this.businesses.listStaffMembers(user);
   }
 
+  @UseGuards(AuthGuard, BusinessContextGuard, RolesGuard)
+  @Roles(OWNER)
   @Post("staff-members")
   createStaffMember(@CurrentUser() user: AuthenticatedUser, @Body() input: CreateStaffMemberDto) {
     return this.businesses.createStaffMember(user, input);
   }
 
+  @UseGuards(AuthGuard, BusinessContextGuard, RolesGuard)
+  @Roles(OWNER, RECEPTIONIST)
   @Patch("staff-members/:id")
   updateStaffMember(
     @CurrentUser() user: AuthenticatedUser,
@@ -161,6 +240,8 @@ export class BusinessesController {
     return this.businesses.updateStaffMember(user, id, input);
   }
 
+  @UseGuards(AuthGuard, BusinessContextGuard, RolesGuard)
+  @Roles(OWNER)
   @Delete("staff-members/:id")
   deactivateStaffMember(@CurrentUser() user: AuthenticatedUser, @Param("id", ParseUUIDPipe) id: string) {
     return this.businesses.deactivateStaffMember(user, id);

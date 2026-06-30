@@ -7,6 +7,7 @@ import { AuditModule } from "./audit/audit.module";
 import { AuthModule } from "./auth/auth.module";
 import { BusinessesModule } from "./businesses/businesses.module";
 import { CalendarModule } from "./calendar/calendar.module";
+import { CommonModule } from "./common/common.module";
 import { CorrelationIdMiddleware } from "./common/correlation-id.middleware";
 import {
   PublicAppointmentReadRateLimitMiddleware,
@@ -27,6 +28,7 @@ import { PublicModule } from "./public/public.module";
     ConfigModule.forRoot({ isGlobal: true }),
     JwtModule.register({ global: true }),
     PrismaModule,
+    CommonModule,
     EventsModule,
     AuditModule,
     AuthModule,

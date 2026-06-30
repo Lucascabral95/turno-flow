@@ -315,21 +315,44 @@ export type CustomerListResponse = {
   total: number;
 };
 
+export type BusinessMemberRole = "OWNER" | "RECEPTIONIST" | "PROFESSIONAL";
+export type BusinessMemberStatus = "ACTIVE" | "INACTIVE" | "PENDING_INVITE";
+
 export type BusinessMember = {
   active: boolean;
   createdAt: string;
   id: string;
-  role: "owner" | "receptionist" | "professional";
+  inviteEmail: string | null;
+  role: "OWNER" | "RECEPTIONIST" | "PROFESSIONAL";
   staffMember: {
     email: string | null;
     id: string;
     name: string;
   } | null;
+  status: BusinessMemberStatus;
   user: {
     email: string;
     id: string;
     name: string;
-  };
+  } | null;
+};
+
+export type CurrentUser = {
+  email: string;
+  id: string;
+  name: string;
+};
+
+export type StaffMetrics = {
+  cancelledAppointments: number;
+  completedAppointments: number;
+  estimatedRevenueCents: number;
+  noShowAppointments: number;
+  noShowRate: number;
+  occupancyMinutes: number;
+  staffMemberId: string;
+  staffMemberName: string;
+  totalAppointments: number;
 };
 
 export type WaitlistEntry = {

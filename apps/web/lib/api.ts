@@ -6,13 +6,16 @@ export type {
   AvailabilitySlot,
   Business,
   BusinessMember,
+  BusinessMemberRole,
+  BusinessMemberStatus,
   CalendarConnection,
+  CurrentBusiness,
+  CurrentUser,
   CustomerDetail,
   CustomerListResponse,
   CustomerNote,
   CustomerProfile,
   CustomerWaitlistEntry,
-  CurrentBusiness,
   DashboardMetrics,
   NotificationHistoryItem,
   NotificationTemplate,
@@ -25,6 +28,7 @@ export type {
   ReminderSettings,
   Service,
   StaffMember,
+  StaffMetrics,
   WaitlistEntry
 } from "../shared/interfaces";
 export { publicApiUrl, requestJson } from "../infrastructure/http";

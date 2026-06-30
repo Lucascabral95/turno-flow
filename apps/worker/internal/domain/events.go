@@ -17,11 +17,17 @@ const (
 	EventCalendarSyncSucceeded     = "CalendarSyncSucceeded"
 	EventCustomerRiskScoreUpdated  = "CustomerRiskScoreUpdated"
 	EventDailyMetricsCalculated    = "DailyMetricsCalculated"
+	EventMemberAccepted            = "MemberAccepted"
+	EventMemberInvited             = "MemberInvited"
+	EventMemberRoleChanged         = "MemberRoleChanged"
 	EventReminderFailed            = "ReminderFailed"
 	EventReminderScheduled         = "ReminderScheduled"
 	EventReminderSent              = "ReminderSent"
 	EventSlotReassigned            = "SlotReassigned"
 	EventSlotReleased              = "SlotReleased"
+	EventStaffMemberCreated        = "StaffMemberCreated"
+	EventStaffMemberDeactivated    = "StaffMemberDeactivated"
+	EventStaffMemberUpdated        = "StaffMemberUpdated"
 	EventWaitlistCandidateMatched  = "WaitlistCandidateMatched"
 	EventWaitlistOfferAccepted     = "WaitlistOfferAccepted"
 	EventWaitlistOfferCreated      = "WaitlistOfferCreated"
@@ -80,6 +86,25 @@ type Service struct {
 type Staff struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+}
+
+type StaffMemberPayload struct {
+	Active       bool    `json:"active"`
+	BusinessID   string  `json:"businessId"`
+	Email        *string `json:"email"`
+	Name         string  `json:"name"`
+	StaffMemberID string  `json:"staffMemberId"`
+}
+
+type MemberPayload struct {
+	BusinessID  string `json:"businessId"`
+	DirectAdd   bool   `json:"directAdd"`
+	Email       string `json:"email"`
+	MemberID    string `json:"memberId"`
+	NewRole     string `json:"newRole,omitempty"`
+	PreviousRole string `json:"previousRole,omitempty"`
+	Role        string `json:"role,omitempty"`
+	UserID      string `json:"userId,omitempty"`
 }
 
 type WaitlistCandidate struct {

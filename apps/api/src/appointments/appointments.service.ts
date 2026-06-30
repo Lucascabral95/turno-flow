@@ -110,10 +110,14 @@ export class AppointmentsService {
     const requestedDate = parseDateOnly(date);
     const dayBounds = zonedDayBounds(date, business.timezone);
 
-    const [activeStaffMembers, rules, exceptions, busySlots] = await Promise.all([
+    const [activeStaffMembers, serviceAssignments, rules, exceptions, busySlots] = await Promise.all([
       this.prisma.staffMember.findMany({
         select: { id: true },
         where: { active: true, businessId: business.id }
+      }),
+      this.prisma.serviceStaffMember.findMany({
+        select: { staffMemberId: true },
+        where: { serviceId }
       }),
       this.prisma.availabilityRule.findMany({
         select: {
@@ -156,8 +160,13 @@ export class AppointmentsService {
       })
     ]);
 
+    const assignedIds = serviceAssignments.map((a) => a.staffMemberId);
+    const eligibleStaffIds = assignedIds.length > 0
+      ? activeStaffMembers.filter((s) => assignedIds.includes(s.id)).map((s) => s.id)
+      : activeStaffMembers.map((s) => s.id);
+
     return calculateAvailability({
-      activeStaffMemberIds: activeStaffMembers.map((staffMember) => staffMember.id),
+      activeStaffMemberIds: eligibleStaffIds,
       bufferMinutes: service.bufferMinutes,
       busySlots,
       date,
@@ -1258,10 +1267,14 @@ export class AppointmentsService {
     });
     const dayBounds = zonedDayBounds(date, business.timezone);
 
-    const [activeStaffMembers, rules, exceptions, busySlots] = await Promise.all([
+    const [activeStaffMembers, serviceAssignments, rules, exceptions, busySlots] = await Promise.all([
       tx.staffMember.findMany({
         select: { id: true },
         where: { active: true, businessId }
+      }),
+      tx.serviceStaffMember.findMany({
+        select: { staffMemberId: true },
+        where: { serviceId }
       }),
       tx.availabilityRule.findMany({
         select: {
@@ -1305,8 +1318,13 @@ export class AppointmentsService {
       })
     ]);
 
+    const assignedIds = serviceAssignments.map((a) => a.staffMemberId);
+    const eligibleStaffIds = assignedIds.length > 0
+      ? activeStaffMembers.filter((s) => assignedIds.includes(s.id)).map((s) => s.id)
+      : activeStaffMembers.map((s) => s.id);
+
     return calculateAvailability({
-      activeStaffMemberIds: activeStaffMembers.map((staffMember) => staffMember.id),
+      activeStaffMemberIds: eligibleStaffIds,
       bufferMinutes: service.bufferMinutes,
       busySlots,
       date,
