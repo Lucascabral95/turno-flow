@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import { BusinessMemberRole, DepositMode, type AvailabilityException, type AvailabilityRule, type Prisma, type Service } from "@prisma/client";
+import { BusinessMemberRole, BusinessMemberStatus, DepositMode, type AvailabilityException, type AvailabilityRule, type Prisma, type Service } from "@prisma/client";
+import { createHash, randomBytes } from "node:crypto";
 
 import { AuditService } from "../audit/audit.service";
 import { activeAppointmentStatuses } from "../appointments/status";
@@ -19,6 +20,7 @@ import { BusinessOnboardingService } from "./onboarding.service";
 import type { UpdateReminderSettingsDto } from "./dto/reminder-settings.dto";
 import type { CreateServiceDto, UpdateServiceDto } from "./dto/service.dto";
 import type { CreateStaffMemberDto, UpdateStaffMemberDto } from "./dto/staff-member.dto";
+import type { ChangeMemberRoleDto, InviteMemberDto } from "./dto/member.dto";
 
 @Injectable()
 export class BusinessesService {
@@ -230,24 +232,303 @@ export class BusinessesService {
     const business = await this.requireCurrentBusiness(user);
 
     return this.prisma.businessMember.findMany({
-      include: {
-        staffMember: {
-          select: {
-            email: true,
-            id: true,
-            name: true
-          }
-        },
-        user: {
-          select: {
-            email: true,
-            id: true,
-            name: true
-          }
-        }
+      select: {
+        id: true,
+        businessId: true,
+        userId: true,
+        role: true,
+        status: true,
+        inviteEmail: true,
+        inviteExpiresAt: true,
+        active: true,
+        staffMemberId: true,
+        createdAt: true,
+        updatedAt: true,
+        staffMember: { select: { email: true, id: true, name: true } },
+        user: { select: { email: true, id: true, name: true } }
       },
       orderBy: [{ role: "asc" }, { createdAt: "asc" }],
       where: { businessId: business.id }
+    });
+  }
+
+  async inviteMember(user: AuthenticatedUser, input: InviteMemberDto) {
+    const business = await this.requireCurrentBusiness(user);
+    const emailLower = input.email.toLowerCase();
+
+    if (input.staffMemberId) {
+      const sm = await this.prisma.staffMember.findFirst({
+        where: { active: true, businessId: business.id, id: input.staffMemberId }
+      });
+      if (!sm) throw new NotFoundException("Staff member not found");
+
+      const alreadyLinked = await this.prisma.businessMember.findFirst({
+        where: { businessId: business.id, staffMemberId: input.staffMemberId, NOT: { userId: null } }
+      });
+      if (alreadyLinked) throw new ConflictException("Staff member is already linked to a team member");
+    }
+
+    const existingUser = await this.prisma.user.findUnique({ where: { email: emailLower } });
+
+    if (existingUser) {
+      const existingMember = await this.prisma.businessMember.findUnique({
+        where: { businessId_userId: { businessId: business.id, userId: existingUser.id } }
+      });
+
+      if (existingMember?.active) {
+        throw new ConflictException("User is already an active member of this business");
+      }
+
+      return this.prisma.$transaction(async (tx) => {
+        const member = existingMember
+          ? await tx.businessMember.update({
+              data: {
+                active: true,
+                role: input.role,
+                staffMemberId: input.staffMemberId ?? null,
+                status: BusinessMemberStatus.ACTIVE
+              },
+              where: { id: existingMember.id }
+            })
+          : await tx.businessMember.create({
+              data: {
+                active: true,
+                businessId: business.id,
+                role: input.role,
+                staffMemberId: input.staffMemberId ?? null,
+                status: BusinessMemberStatus.ACTIVE,
+                userId: existingUser.id
+              }
+            });
+
+        await this.audit.create(tx, {
+          action: "member.added",
+          after: { email: emailLower, memberId: member.id, role: input.role },
+          businessId: business.id,
+          entity: "business_member",
+          entityId: member.id,
+          user
+        });
+
+        await this.outbox.create(tx, {
+          aggregateId: member.id,
+          businessId: business.id,
+          payload: {
+            businessId: business.id,
+            directAdd: true,
+            email: emailLower,
+            memberId: member.id,
+            role: input.role,
+            userId: existingUser.id
+          },
+          routingKey: EventRoutingKeys.MemberInvited,
+          type: EventTypes.MemberInvited,
+          version: 1
+        });
+
+        return member;
+      });
+    }
+
+    const pendingInvite = await this.prisma.businessMember.findFirst({
+      where: { businessId: business.id, inviteEmail: emailLower, userId: null }
+    });
+    if (pendingInvite) {
+      throw new ConflictException("A pending invite already exists for this email");
+    }
+
+    const rawToken = randomBytes(32).toString("base64url");
+    const inviteTokenHash = createHash("sha256").update(rawToken).digest("hex");
+    const inviteExpiresAt = new Date();
+    inviteExpiresAt.setDate(inviteExpiresAt.getDate() + 7);
+
+    return this.prisma.$transaction(async (tx) => {
+      const member = await tx.businessMember.create({
+        data: {
+          active: false,
+          businessId: business.id,
+          inviteEmail: emailLower,
+          inviteExpiresAt,
+          inviteTokenHash,
+          role: input.role,
+          staffMemberId: input.staffMemberId ?? null,
+          status: BusinessMemberStatus.PENDING_INVITE
+        },
+        select: {
+          active: true,
+          businessId: true,
+          createdAt: true,
+          id: true,
+          inviteEmail: true,
+          inviteExpiresAt: true,
+          role: true,
+          staffMemberId: true,
+          status: true,
+          updatedAt: true,
+          userId: true
+        }
+      });
+
+      await this.audit.create(tx, {
+        action: "member.invited",
+        after: { email: emailLower, memberId: member.id, role: input.role },
+        businessId: business.id,
+        entity: "business_member",
+        entityId: member.id,
+        user
+      });
+
+      await this.outbox.create(tx, {
+        aggregateId: member.id,
+        businessId: business.id,
+        payload: {
+          businessId: business.id,
+          directAdd: false,
+          email: emailLower,
+          isPendingInvite: true,
+          memberId: member.id,
+          role: input.role
+        },
+        routingKey: EventRoutingKeys.MemberInvited,
+        type: EventTypes.MemberInvited,
+        version: 1
+      });
+
+      // inviteToken only returned once — caller uses it to generate the invite link
+      return { ...member, inviteToken: rawToken };
+    });
+  }
+
+  async changeMemberRole(user: AuthenticatedUser, memberId: string, input: ChangeMemberRoleDto) {
+    const business = await this.requireCurrentBusiness(user);
+
+    const member = await this.prisma.businessMember.findFirst({
+      where: { businessId: business.id, id: memberId }
+    });
+    if (!member) throw new NotFoundException("Member not found");
+    if (member.role === BusinessMemberRole.OWNER) {
+      throw new ConflictException("Cannot change the role of the business owner");
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.businessMember.update({
+        data: { role: input.role },
+        where: { id: memberId }
+      });
+
+      await this.audit.create(tx, {
+        action: "member.role_changed",
+        after: { role: input.role },
+        before: { role: member.role },
+        businessId: business.id,
+        entity: "business_member",
+        entityId: memberId,
+        user
+      });
+
+      await this.outbox.create(tx, {
+        aggregateId: memberId,
+        businessId: business.id,
+        payload: { businessId: business.id, memberId, newRole: input.role, previousRole: member.role },
+        routingKey: EventRoutingKeys.MemberRoleChanged,
+        type: EventTypes.MemberRoleChanged,
+        version: 1
+      });
+
+      return updated;
+    });
+  }
+
+  async deactivateMember(user: AuthenticatedUser, memberId: string) {
+    const business = await this.requireCurrentBusiness(user);
+
+    const member = await this.prisma.businessMember.findFirst({
+      where: { businessId: business.id, id: memberId }
+    });
+    if (!member) throw new NotFoundException("Member not found");
+    if (member.role === BusinessMemberRole.OWNER) {
+      throw new ConflictException("Cannot deactivate the business owner");
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.businessMember.update({
+        data: { active: false, status: BusinessMemberStatus.INACTIVE },
+        where: { id: memberId }
+      });
+
+      await this.audit.create(tx, {
+        action: "member.deactivated",
+        before: { active: member.active, role: member.role },
+        businessId: business.id,
+        entity: "business_member",
+        entityId: memberId,
+        user
+      });
+
+      return updated;
+    });
+  }
+
+  async listServiceStaff(user: AuthenticatedUser, serviceId: string) {
+    const business = await this.requireCurrentBusiness(user);
+    await this.requireService(business.id, serviceId);
+
+    return this.prisma.serviceStaffMember.findMany({
+      include: { staffMember: { select: { active: true, email: true, id: true, name: true } } },
+      orderBy: { createdAt: "asc" },
+      where: { serviceId }
+    });
+  }
+
+  async assignStaffToService(user: AuthenticatedUser, serviceId: string, staffMemberId: string) {
+    const business = await this.requireCurrentBusiness(user);
+    await this.requireService(business.id, serviceId);
+    await this.requireStaffMember(business.id, staffMemberId);
+
+    return this.prisma.$transaction(async (tx) => {
+      const assignment = await tx.serviceStaffMember.upsert({
+        create: { serviceId, staffMemberId },
+        update: {},
+        where: { serviceId_staffMemberId: { serviceId, staffMemberId } }
+      });
+
+      await this.audit.create(tx, {
+        action: "service.staff_assigned",
+        after: { serviceId, staffMemberId },
+        businessId: business.id,
+        entity: "service_staff_member",
+        entityId: assignment.id,
+        user
+      });
+
+      return assignment;
+    });
+  }
+
+  async unassignStaffFromService(user: AuthenticatedUser, serviceId: string, staffMemberId: string) {
+    const business = await this.requireCurrentBusiness(user);
+    await this.requireService(business.id, serviceId);
+
+    const assignment = await this.prisma.serviceStaffMember.findUnique({
+      where: { serviceId_staffMemberId: { serviceId, staffMemberId } }
+    });
+    if (!assignment) throw new NotFoundException("Staff assignment not found");
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.serviceStaffMember.delete({
+        where: { serviceId_staffMemberId: { serviceId, staffMemberId } }
+      });
+
+      await this.audit.create(tx, {
+        action: "service.staff_unassigned",
+        before: { serviceId, staffMemberId },
+        businessId: business.id,
+        entity: "service_staff_member",
+        entityId: assignment.id,
+        user
+      });
+
+      return { deleted: true };
     });
   }
 
@@ -431,6 +712,21 @@ export class BusinessesService {
         user
       });
 
+      await this.outbox.create(tx, {
+        aggregateId: staffMember.id,
+        businessId: business.id,
+        payload: {
+          active: staffMember.active,
+          businessId: business.id,
+          email: staffMember.email,
+          name: staffMember.name,
+          staffMemberId: staffMember.id
+        },
+        routingKey: EventRoutingKeys.StaffMemberCreated,
+        type: EventTypes.StaffMemberCreated,
+        version: 1
+      });
+
       return staffMember;
     });
   }
@@ -446,14 +742,33 @@ export class BusinessesService {
         where: { id: staffMemberId }
       });
 
+      const isDeactivation = input.active === false && before.active;
+      const eventType = isDeactivation ? EventTypes.StaffMemberDeactivated : EventTypes.StaffMemberUpdated;
+      const routingKey = isDeactivation ? EventRoutingKeys.StaffMemberDeactivated : EventRoutingKeys.StaffMemberUpdated;
+
       await this.audit.create(tx, {
-        action: "staff.updated",
+        action: isDeactivation ? "staff.deactivated" : "staff.updated",
         after: updated,
         before,
         businessId: business.id,
         entity: "staff_member",
         entityId: staffMemberId,
         user
+      });
+
+      await this.outbox.create(tx, {
+        aggregateId: updated.id,
+        businessId: business.id,
+        payload: {
+          active: updated.active,
+          businessId: business.id,
+          email: updated.email,
+          name: updated.name,
+          staffMemberId: updated.id
+        },
+        routingKey,
+        type: eventType,
+        version: 1
       });
 
       return updated;
@@ -704,18 +1019,18 @@ export class BusinessesService {
   }
 
   async requireCurrentBusiness(user: AuthenticatedUser) {
+    // Fast path: BusinessContextGuard already resolved businessId
+    if (user.businessId) {
+      const business = await this.prisma.business.findUnique({ where: { id: user.businessId } });
+      if (business) return business;
+    }
+
+    // Fallback: resolve by user association (used when guard is not applied, e.g. createCurrent)
     const business = await this.prisma.business.findFirst({
       where: {
         OR: [
           { ownerId: user.id },
-          {
-            members: {
-              some: {
-                active: true,
-                userId: user.id
-              }
-            }
-          }
+          { members: { some: { active: true, userId: user.id } } }
         ]
       }
     });

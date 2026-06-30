@@ -3,7 +3,7 @@
 import { AlertTriangle, CalendarClock, CalendarDays, CheckCircle2, Clock, ExternalLink, ShieldAlert, TrendingDown, TrendingUp, Users, Wand2, Scissors } from "lucide-react";
 import Link from "next/link";
 
-import type { Appointment, CurrentBusiness, DashboardMetrics } from "../../../lib/api";
+import type { Appointment, CurrentBusiness, DashboardMetrics, StaffMetrics } from "../../../lib/api";
 import { formatDateTime, formatMoney, formatPercent } from "../../../lib/api";
 import { buildRecurringCustomerBars, buildTopServiceBars, buildWeeklyChartBars } from "../../../lib/dashboard-metrics";
 import { countCoveredWeekdays, statusClass } from "./dashboard-helpers";
@@ -66,7 +66,7 @@ export function HomeView({
   );
 }
 
-export function MetricsPanel({ metrics }: { metrics: DashboardMetrics | null }) {
+export function MetricsPanel({ metrics, staffMetrics = [] }: { metrics: DashboardMetrics | null; staffMetrics?: StaffMetrics[] }) {
   const weeklyBars = buildWeeklyChartBars(metrics);
   const serviceBars = buildTopServiceBars(metrics);
   const recurringBars = buildRecurringCustomerBars(metrics);
@@ -178,6 +178,48 @@ export function MetricsPanel({ metrics }: { metrics: DashboardMetrics | null }) 
           <RiskyCustomersTable metrics={metrics} />
         </section>
       </section>
+
+      {staffMetrics.length > 0 ? (
+        <section className="panel stack">
+          <header className="panel-header">
+            <div>
+              <h2>Metricas por profesional</h2>
+              <p>Resumen del mes actual por cada miembro del equipo.</p>
+            </div>
+            <span className="badge badge-soft">{staffMetrics.length} profesionales</span>
+          </header>
+          <div className="table-shell">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Profesional</th>
+                  <th>Turnos</th>
+                  <th>Completados</th>
+                  <th>Cancelados</th>
+                  <th>No-shows</th>
+                  <th>Tasa no-show</th>
+                  <th>Ingreso est.</th>
+                  <th>Ocupacion</th>
+                </tr>
+              </thead>
+              <tbody>
+                {staffMetrics.map((staff) => (
+                  <tr key={staff.staffMemberId}>
+                    <td><strong>{staff.staffMemberName}</strong></td>
+                    <td>{staff.totalAppointments}</td>
+                    <td>{staff.completedAppointments}</td>
+                    <td>{staff.cancelledAppointments}</td>
+                    <td>{staff.noShowAppointments}</td>
+                    <td>{formatPercent(staff.noShowRate)}%</td>
+                    <td>{formatMoney(staff.estimatedRevenueCents)}</td>
+                    <td>{Math.floor(staff.occupancyMinutes / 60)}h {staff.occupancyMinutes % 60}m</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
     </section>
   );
 }

@@ -152,6 +152,9 @@ describe("AppointmentsService", () => {
           id: "service-1"
         })
       },
+      serviceStaffMember: {
+        findMany: vi.fn().mockResolvedValue([])
+      },
       staffMember: {
         findMany: vi.fn().mockResolvedValue([{ id: "staff-1" }, { id: "staff-2" }])
       }

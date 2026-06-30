@@ -26,8 +26,10 @@ import type {
   Appointment,
   AvailabilitySlot,
   BusinessMember,
+  BusinessMemberRole,
   CalendarConnection,
   CurrentBusiness,
+  CurrentUser,
   CustomerDetail,
   CustomerListResponse,
   CustomerProfile,
@@ -36,6 +38,7 @@ import type {
   NotificationTemplate,
   OnboardingStatus,
   ReminderSettings,
+  StaffMetrics,
   WaitlistEntry
 } from "../../../lib/api";
 import { formatDateTime, formatMoney, formatSlotTime, requestJson } from "../../../lib/api";
@@ -96,6 +99,7 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
   const [business, setBusiness] = useState<CurrentBusiness | null>(null);
   const [businessMembers, setBusinessMembers] = useState<BusinessMember[]>([]);
   const [calendarConnections, setCalendarConnections] = useState<CalendarConnection[]>([]);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [customers, setCustomers] = useState<CustomerProfile[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -104,6 +108,7 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
   const [notificationTemplates, setNotificationTemplates] = useState<NotificationTemplate[]>([]);
   const [onboardingStatus, setOnboardingStatus] = useState<OnboardingStatus | null>(null);
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings | null>(null);
+  const [staffMetrics, setStaffMetrics] = useState<StaffMetrics[]>([]);
   const [token, setToken] = useState<string | null>(null);
   const [waitlistEntries, setWaitlistEntries] = useState<WaitlistEntry[]>([]);
 
@@ -174,7 +179,9 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
         currentWaitlistEntries,
         currentBusinessMembers,
         currentCalendarConnections,
-        currentOnboardingStatus
+        currentOnboardingStatus,
+        currentUser,
+        currentStaffMetrics
       ] = await Promise.all([
         requestJson<CurrentBusiness | null>("/businesses/current", {
           headers: { Authorization: `Bearer ${activeToken}` }
@@ -208,11 +215,18 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
         }).catch(() => []),
         requestJson<OnboardingStatus>("/onboarding/status", {
           headers: { Authorization: `Bearer ${activeToken}` }
-        }).catch(() => null)
+        }).catch(() => null),
+        requestJson<CurrentUser>("/auth/me", {
+          headers: { Authorization: `Bearer ${activeToken}` }
+        }).catch(() => null),
+        requestJson<StaffMetrics[]>("/metrics/staff", {
+          headers: { Authorization: `Bearer ${activeToken}` }
+        }).catch(() => [])
       ]);
       setBusiness(currentBusiness);
       setBusinessMembers(currentBusinessMembers);
       setCalendarConnections(currentCalendarConnections);
+      setCurrentUser(currentUser);
       setAppointments(currentAppointments);
       setCustomers(Array.isArray(currentCustomers) ? currentCustomers : currentCustomers.items);
       setMetrics(currentMetrics);
@@ -220,6 +234,7 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
       setNotificationHistory(currentNotificationHistory);
       setNotificationTemplates(currentNotificationTemplates);
       setOnboardingStatus(currentOnboardingStatus ?? currentBusiness?.onboarding ?? null);
+      setStaffMetrics(currentStaffMetrics ?? []);
       setWaitlistEntries(currentWaitlistEntries);
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : "No se pudo cargar el dashboard");
@@ -778,18 +793,69 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
     await handleOnboardingProgress(input);
   }, [handleOnboardingProgress]);
 
+  async function handleInviteMember(input: { email: string; role: BusinessMemberRole; staffMemberId?: string }): SubmitResult {
+    setError(null);
+    try {
+      await authRequest("/businesses/current/members", {
+        body: JSON.stringify(input),
+        method: "POST"
+      });
+      await refresh();
+      toast.success("Invitacion enviada");
+      return true;
+    } catch (inviteError) {
+      const message = inviteError instanceof Error ? inviteError.message : "No se pudo enviar la invitacion";
+      setError(message);
+      toast.error(message);
+      return false;
+    }
+  }
+
+  async function handleChangeMemberRole(memberId: string, role: BusinessMemberRole): Promise<void> {
+    setError(null);
+    try {
+      await authRequest(`/businesses/current/members/${memberId}/role`, {
+        body: JSON.stringify({ role }),
+        method: "PATCH"
+      });
+      await refresh();
+      toast.success("Rol actualizado");
+    } catch (roleError) {
+      const message = roleError instanceof Error ? roleError.message : "No se pudo cambiar el rol";
+      setError(message);
+      toast.error(message);
+    }
+  }
+
+  async function handleDeactivateMember(memberId: string): Promise<void> {
+    setError(null);
+    try {
+      await authRequest(`/businesses/current/members/${memberId}`, {
+        method: "DELETE"
+      });
+      await refresh();
+      toast.success("Miembro desactivado");
+    } catch (deactivateError) {
+      const message = deactivateError instanceof Error ? deactivateError.message : "No se pudo desactivar el miembro";
+      setError(message);
+      toast.error(message);
+    }
+  }
+
   function logout() {
     window.localStorage.removeItem("turnoflow.token");
     setAppointments([]);
     setBusiness(null);
     setBusinessMembers([]);
     setCalendarConnections([]);
+    setCurrentUser(null);
     setCustomers([]);
     setMetrics(null);
     setNotificationHistory([]);
     setNotificationTemplates([]);
     setOnboardingStatus(null);
     setReminderSettings(null);
+    setStaffMetrics([]);
     setToken(null);
     setWaitlistEntries([]);
   }
@@ -803,6 +869,9 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
     );
   }
 
+  const currentUserRole = currentUser
+    ? businessMembers.find((m) => m.user?.id === currentUser.id)?.role ?? null
+    : null;
   const effectiveOnboarding = onboardingStatus ?? business?.onboarding ?? null;
   const showAutomaticOnboarding = activeView === "home" && shouldAutoOpenOnboarding(effectiveOnboarding);
 
@@ -944,6 +1013,7 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
           <TeamView
             business={business}
             calendarConnections={calendarConnections}
+            currentUserRole={currentUserRole}
             members={businessMembers}
             onCalendarDisconnect={(connectionId) => {
               void handleCalendarDisconnect(connectionId);
@@ -954,6 +1024,13 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
             onCalendarSyncFuture={(connectionId) => {
               void handleCalendarSyncFuture(connectionId);
             }}
+            onChangeMemberRole={(memberId, role) => {
+              void handleChangeMemberRole(memberId, role);
+            }}
+            onDeactivateMember={(memberId) => {
+              void handleDeactivateMember(memberId);
+            }}
+            onInviteMember={(input) => handleInviteMember(input)}
           />
         ) : null}
         {activeView === "reminders" ? (
@@ -974,7 +1051,7 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
             <BookingAdminView business={business} />
           </>
         ) : null}
-        {activeView === "metrics" ? <MetricsPanel metrics={metrics} /> : null}
+        {activeView === "metrics" ? <MetricsPanel metrics={metrics} staffMetrics={staffMetrics} /> : null}
       </section>
     </DashboardShell>
   );
@@ -1185,20 +1262,55 @@ function WaitlistView({
 function TeamView({
   business,
   calendarConnections,
+  currentUserRole,
   members,
   onCalendarDisconnect,
   onCalendarStart,
-  onCalendarSyncFuture
+  onCalendarSyncFuture,
+  onChangeMemberRole,
+  onDeactivateMember,
+  onInviteMember
 }: {
   business: CurrentBusiness | null;
   calendarConnections: CalendarConnection[];
+  currentUserRole: BusinessMemberRole | null;
   members: BusinessMember[];
   onCalendarDisconnect: (connectionId: string) => void;
   onCalendarStart: () => void;
   onCalendarSyncFuture: (connectionId: string) => void;
+  onChangeMemberRole: (memberId: string, role: BusinessMemberRole) => void;
+  onDeactivateMember: (memberId: string) => void;
+  onInviteMember: (input: { email: string; role: BusinessMemberRole; staffMemberId?: string }) => SubmitResult;
 }) {
+  const [showInviteForm, setShowInviteForm] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<BusinessMemberRole>("PROFESSIONAL");
+  const [inviteStaffId, setInviteStaffId] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const isOwner = currentUserRole === "OWNER";
+
   if (!business) {
     return <EmptyState title="Sin negocio configurado" description="Crea el negocio para habilitar equipo, permisos e integraciones." />;
+  }
+
+  const unlinkedStaff = business.staffMembers.filter(
+    (staff) => staff.active && !members.some((m) => m.staffMember?.id === staff.id && m.status === "ACTIVE")
+  );
+
+  async function handleInviteSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    setSubmitting(true);
+    const success = await onInviteMember({
+      email: inviteEmail,
+      role: inviteRole,
+      staffMemberId: inviteStaffId || undefined
+    });
+    if (success) {
+      setInviteEmail("");
+      setInviteStaffId("");
+      setShowInviteForm(false);
+    }
+    setSubmitting(false);
   }
 
   return (
@@ -1207,12 +1319,12 @@ function TeamView({
         <div className="appointments-command-copy">
           <span className="page-kicker">Equipo y permisos</span>
           <h2>Controla quien opera el negocio y prepara la sincronizacion de calendarios.</h2>
-          <p>Conecta una sola cuenta de Google Calendar para que todos los turnos del negocio se agenden automaticamente en ese calendario.</p>
+          <p>Invita colaboradores por email, asignales un rol y vinculalos a un profesional de la agenda.</p>
         </div>
         <div className="dashboard-banner-stats">
-          <Metric icon={<ShieldCheck size={18} />} label="Miembros" value={members.length} />
-          <Metric icon={<Users size={18} />} label="Profesionales" value={business.staffMembers.filter((staff) => staff.active).length} />
-          <Metric icon={<Link2 size={18} />} label="Google Calendar" value={calendarConnections.some((connection) => connection.status === "connected") ? "Activo" : "Pendiente"} />
+          <Metric icon={<ShieldCheck size={18} />} label="Miembros activos" value={members.filter((m) => m.status === "ACTIVE").length} />
+          <Metric icon={<Mail size={18} />} label="Invitaciones" value={members.filter((m) => m.status === "PENDING_INVITE").length} tone="warning" />
+          <Metric icon={<Link2 size={18} />} label="Google Calendar" value={calendarConnections.some((c) => c.status === "connected") ? "Activo" : "Pendiente"} />
         </div>
       </section>
 
@@ -1222,11 +1334,47 @@ function TeamView({
             <div>
               <h2 className="inline">
                 <ShieldCheck size={20} />
-                Miembros
+                Miembros del equipo
               </h2>
-              <p>Vista actual de permisos por usuario. La invitacion de nuevos miembros queda para el siguiente corte.</p>
+              <p>Usuarios con acceso al dashboard. Los roles controlan que puede ver y hacer cada uno.</p>
             </div>
+            {isOwner ? (
+              <button className="button-muted" onClick={() => setShowInviteForm(!showInviteForm)} type="button">
+                {showInviteForm ? "Cancelar" : "Invitar miembro"}
+              </button>
+            ) : null}
           </header>
+
+          {showInviteForm && isOwner ? (
+            <form className="stack" onSubmit={(e) => void handleInviteSubmit(e)} style={{ gap: "0.75rem", padding: "0.5rem 0" }}>
+              <label>
+                Email
+                <input onChange={(e) => setInviteEmail(e.target.value)} placeholder="juan@ejemplo.com" required type="email" value={inviteEmail} />
+              </label>
+              <label>
+                Rol
+                <select onChange={(e) => setInviteRole(e.target.value as BusinessMemberRole)} value={inviteRole}>
+                  <option value="RECEPTIONIST">Recepcion</option>
+                  <option value="PROFESSIONAL">Profesional</option>
+                </select>
+              </label>
+              {unlinkedStaff.length > 0 ? (
+                <label>
+                  Vincular a profesional (opcional)
+                  <select onChange={(e) => setInviteStaffId(e.target.value)} value={inviteStaffId}>
+                    <option value="">Sin vinculacion</option>
+                    {unlinkedStaff.map((staff) => (
+                      <option key={staff.id} value={staff.id}>{capitalizeFirst(staff.name)}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              <button className="button-primary" disabled={submitting} type="submit">
+                {submitting ? "Enviando..." : "Enviar invitacion"}
+              </button>
+            </form>
+          ) : null}
+
           {members.length === 0 ? (
             <EmptyState compact title="Sin miembros visibles" description="El owner se crea automaticamente al crear el negocio." />
           ) : (
@@ -1235,12 +1383,33 @@ function TeamView({
                 <article className="management-card" key={member.id}>
                   <div className="management-card-header">
                     <div className="management-card-copy">
-                      <strong>{capitalizeFirst(member.user.name)}</strong>
-                      <span>{member.user.email}</span>
-                      {member.staffMember ? <span>Asignado a {capitalizeFirst(member.staffMember.name)}</span> : null}
+                      <strong>{member.user ? capitalizeFirst(member.user.name) : member.inviteEmail ?? "Invitacion pendiente"}</strong>
+                      <span>{member.user?.email ?? member.inviteEmail}</span>
+                      {member.staffMember ? <span>Profesional: {capitalizeFirst(member.staffMember.name)}</span> : null}
                     </div>
-                    <span className="badge badge-soft">{businessRoleLabel(member.role)}</span>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.25rem" }}>
+                      <span className="badge badge-soft">{businessRoleLabel(member.role)}</span>
+                      {member.status === "PENDING_INVITE" ? <span className="badge badge-warning">Pendiente</span> : null}
+                      {!member.active && member.status !== "PENDING_INVITE" ? <span className="badge badge-danger">Inactivo</span> : null}
+                    </div>
                   </div>
+                  {isOwner && member.role !== "OWNER" && member.status === "ACTIVE" ? (
+                    <div className="management-card-actions">
+                      {member.role !== "RECEPTIONIST" ? (
+                        <button className="button-muted" onClick={() => onChangeMemberRole(member.id, "RECEPTIONIST")} type="button">
+                          → Recepcion
+                        </button>
+                      ) : null}
+                      {member.role !== "PROFESSIONAL" ? (
+                        <button className="button-muted" onClick={() => onChangeMemberRole(member.id, "PROFESSIONAL")} type="button">
+                          → Profesional
+                        </button>
+                      ) : null}
+                      <button className="button-danger" onClick={() => onDeactivateMember(member.id)} type="button">
+                        Desactivar
+                      </button>
+                    </div>
+                  ) : null}
                 </article>
               ))}
             </div>
@@ -1309,12 +1478,12 @@ function TeamView({
 
 function businessRoleLabel(role: BusinessMember["role"]) {
   const labels: Record<BusinessMember["role"], string> = {
-    owner: "Owner",
-    professional: "Profesional",
-    receptionist: "Recepcion"
+    OWNER: "Owner",
+    PROFESSIONAL: "Profesional",
+    RECEPTIONIST: "Recepcion"
   };
 
-  return labels[role];
+  return labels[role] ?? role;
 }
 
 function calendarStatusLabel(status: CalendarConnection["status"]) {

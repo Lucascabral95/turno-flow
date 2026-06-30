@@ -1,5 +1,5 @@
-import { Injectable } from "@nestjs/common";
-import { AppointmentStatus } from "@prisma/client";
+import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { AppointmentStatus, BusinessMemberRole } from "@prisma/client";
 
 import type { AuthenticatedUser } from "../common/authenticated-user";
 import { BusinessesService } from "../businesses/businesses.service";
@@ -194,6 +194,177 @@ export class DashboardService {
     };
   }
 
+  async getStaffMetricsList(user: AuthenticatedUser) {
+    const business = await this.businesses.requireCurrentBusiness(user);
+    const monthRange = this.monthRange(new Date());
+
+    const staffMembers = await this.prisma.staffMember.findMany({
+      select: { id: true, name: true },
+      where: { active: true, businessId: business.id }
+    });
+
+    const dailyMetrics = await this.prisma.staffMemberMetricsDaily.findMany({
+      where: {
+        businessId: business.id,
+        date: { gte: monthRange.start, lt: monthRange.end }
+      }
+    });
+
+    const aggregated = new Map<string, { cancelledAppointments: number; completedAppointments: number; estimatedRevenueCents: number; noShowAppointments: number; occupancyMinutes: number; totalAppointments: number }>();
+
+    for (const row of dailyMetrics) {
+      const current = aggregated.get(row.staffMemberId) ?? {
+        cancelledAppointments: 0,
+        completedAppointments: 0,
+        estimatedRevenueCents: 0,
+        noShowAppointments: 0,
+        occupancyMinutes: 0,
+        totalAppointments: 0
+      };
+      aggregated.set(row.staffMemberId, {
+        cancelledAppointments: current.cancelledAppointments + row.cancelledAppointments,
+        completedAppointments: current.completedAppointments + row.completedAppointments,
+        estimatedRevenueCents: current.estimatedRevenueCents + row.estimatedRevenueCents,
+        noShowAppointments: current.noShowAppointments + row.noShowAppointments,
+        occupancyMinutes: current.occupancyMinutes + row.occupancyMinutes,
+        totalAppointments: current.totalAppointments + row.totalAppointments
+      });
+    }
+
+    // Fallback: if no daily metrics exist yet, count directly from appointments
+    const hasDailyMetrics = dailyMetrics.length > 0;
+    if (!hasDailyMetrics) {
+      const appointments = await this.prisma.appointment.findMany({
+        select: {
+          service: { select: { durationMinutes: true, priceCents: true } },
+          staffMemberId: true,
+          status: true
+        },
+        where: {
+          businessId: business.id,
+          startsAt: { gte: monthRange.start, lt: monthRange.end }
+        }
+      });
+
+      for (const apt of appointments) {
+        const isCancelled = apt.status === AppointmentStatus.CANCELLED_BY_BUSINESS || apt.status === AppointmentStatus.CANCELLED_BY_CUSTOMER;
+        const current = aggregated.get(apt.staffMemberId) ?? {
+          cancelledAppointments: 0,
+          completedAppointments: 0,
+          estimatedRevenueCents: 0,
+          noShowAppointments: 0,
+          occupancyMinutes: 0,
+          totalAppointments: 0
+        };
+        aggregated.set(apt.staffMemberId, {
+          cancelledAppointments: current.cancelledAppointments + (isCancelled ? 1 : 0),
+          completedAppointments: current.completedAppointments + (apt.status === AppointmentStatus.COMPLETED ? 1 : 0),
+          estimatedRevenueCents: current.estimatedRevenueCents + (isCancelled ? 0 : apt.service.priceCents),
+          noShowAppointments: current.noShowAppointments + (apt.status === AppointmentStatus.NO_SHOW ? 1 : 0),
+          occupancyMinutes: current.occupancyMinutes + (apt.status === AppointmentStatus.COMPLETED ? apt.service.durationMinutes : 0),
+          totalAppointments: current.totalAppointments + 1
+        });
+      }
+    }
+
+    return staffMembers.map((staff) => {
+      const m = aggregated.get(staff.id) ?? {
+        cancelledAppointments: 0,
+        completedAppointments: 0,
+        estimatedRevenueCents: 0,
+        noShowAppointments: 0,
+        occupancyMinutes: 0,
+        totalAppointments: 0
+      };
+      return {
+        cancelledAppointments: m.cancelledAppointments,
+        completedAppointments: m.completedAppointments,
+        estimatedRevenueCents: m.estimatedRevenueCents,
+        noShowRate: m.totalAppointments === 0 ? 0 : m.noShowAppointments / m.totalAppointments,
+        noShowAppointments: m.noShowAppointments,
+        occupancyMinutes: m.occupancyMinutes,
+        staffMemberId: staff.id,
+        staffMemberName: staff.name,
+        totalAppointments: m.totalAppointments
+      };
+    });
+  }
+
+  async getStaffMemberMetrics(user: AuthenticatedUser, staffMemberId: string) {
+    const business = await this.businesses.requireCurrentBusiness(user);
+
+    // PROFESSIONAL can only see their own metrics
+    if (user.role === BusinessMemberRole.PROFESSIONAL && user.staffMemberId !== staffMemberId) {
+      throw new ForbiddenException("Access restricted to your own metrics");
+    }
+
+    const staffMember = await this.prisma.staffMember.findFirst({
+      select: { id: true, name: true },
+      where: { businessId: business.id, id: staffMemberId }
+    });
+
+    if (!staffMember) {
+      throw new NotFoundException("Staff member not found");
+    }
+
+    const monthRange = this.monthRange(new Date());
+    const weekRange = this.lastSevenDaysRange(new Date());
+
+    const [monthlyMetrics, weeklyMetrics] = await Promise.all([
+      this.prisma.staffMemberMetricsDaily.findMany({
+        orderBy: { date: "asc" },
+        where: {
+          businessId: business.id,
+          date: { gte: monthRange.start, lt: monthRange.end },
+          staffMemberId
+        }
+      }),
+      this.prisma.staffMemberMetricsDaily.findMany({
+        orderBy: { date: "asc" },
+        where: {
+          businessId: business.id,
+          date: { gte: weekRange.start, lt: weekRange.end },
+          staffMemberId
+        }
+      })
+    ]);
+
+    // Fallback to appointments if no daily metrics yet
+    const monthlyAppointments = monthlyMetrics.length === 0
+      ? await this.prisma.appointment.findMany({
+          select: {
+            service: { select: { durationMinutes: true, priceCents: true } },
+            startsAt: true,
+            status: true
+          },
+          where: {
+            businessId: business.id,
+            staffMemberId,
+            startsAt: { gte: monthRange.start, lt: monthRange.end }
+          }
+        })
+      : [];
+
+    const monthlySummary = monthlyMetrics.length > 0
+      ? this.sumStaffDailyMetrics(monthlyMetrics)
+      : this.sumStaffMetricsFromAppointments(monthlyAppointments);
+
+    const weeklyBreakdown = this.staffWeeklyBreakdown(weekRange.start, weeklyMetrics);
+
+    return {
+      cancelledAppointments: monthlySummary.cancelledAppointments,
+      completedAppointments: monthlySummary.completedAppointments,
+      estimatedRevenueCents: monthlySummary.estimatedRevenueCents,
+      noShowAppointments: monthlySummary.noShowAppointments,
+      noShowRate: monthlySummary.totalAppointments === 0 ? 0 : monthlySummary.noShowAppointments / monthlySummary.totalAppointments,
+      occupancyMinutes: monthlySummary.occupancyMinutes,
+      staffMemberId: staffMember.id,
+      staffMemberName: staffMember.name,
+      totalAppointments: monthlySummary.totalAppointments,
+      weeklyBreakdown
+    };
+  }
+
   private sumDailyMetrics(
     metrics: Array<{
       activeAppointments: number;
@@ -368,6 +539,81 @@ export class DashboardService {
     });
 
     return days;
+  }
+
+  private sumStaffDailyMetrics(
+    metrics: Array<{
+      cancelledAppointments: number;
+      completedAppointments: number;
+      estimatedRevenueCents: number;
+      noShowAppointments: number;
+      occupancyMinutes: number;
+      totalAppointments: number;
+    }>
+  ) {
+    return metrics.reduce(
+      (summary, day) => ({
+        cancelledAppointments: summary.cancelledAppointments + day.cancelledAppointments,
+        completedAppointments: summary.completedAppointments + day.completedAppointments,
+        estimatedRevenueCents: summary.estimatedRevenueCents + day.estimatedRevenueCents,
+        noShowAppointments: summary.noShowAppointments + day.noShowAppointments,
+        occupancyMinutes: summary.occupancyMinutes + day.occupancyMinutes,
+        totalAppointments: summary.totalAppointments + day.totalAppointments
+      }),
+      { cancelledAppointments: 0, completedAppointments: 0, estimatedRevenueCents: 0, noShowAppointments: 0, occupancyMinutes: 0, totalAppointments: 0 }
+    );
+  }
+
+  private sumStaffMetricsFromAppointments(
+    appointments: Array<{
+      service: { durationMinutes: number; priceCents: number };
+      status: AppointmentStatus;
+    }>
+  ) {
+    return appointments.reduce(
+      (summary, apt) => {
+        const isCancelled = apt.status === AppointmentStatus.CANCELLED_BY_BUSINESS || apt.status === AppointmentStatus.CANCELLED_BY_CUSTOMER;
+        return {
+          cancelledAppointments: summary.cancelledAppointments + (isCancelled ? 1 : 0),
+          completedAppointments: summary.completedAppointments + (apt.status === AppointmentStatus.COMPLETED ? 1 : 0),
+          estimatedRevenueCents: summary.estimatedRevenueCents + (isCancelled ? 0 : apt.service.priceCents),
+          noShowAppointments: summary.noShowAppointments + (apt.status === AppointmentStatus.NO_SHOW ? 1 : 0),
+          occupancyMinutes: summary.occupancyMinutes + (apt.status === AppointmentStatus.COMPLETED ? apt.service.durationMinutes : 0),
+          totalAppointments: summary.totalAppointments + 1
+        };
+      },
+      { cancelledAppointments: 0, completedAppointments: 0, estimatedRevenueCents: 0, noShowAppointments: 0, occupancyMinutes: 0, totalAppointments: 0 }
+    );
+  }
+
+  private staffWeeklyBreakdown(
+    startDate: Date,
+    metrics: Array<{
+      cancelledAppointments: number;
+      completedAppointments: number;
+      date: Date;
+      estimatedRevenueCents: number;
+      noShowAppointments: number;
+      occupancyMinutes: number;
+      totalAppointments: number;
+    }>
+  ) {
+    const byDate = new Map(metrics.map((d) => [d.date.toISOString().slice(0, 10), d]));
+    return Array.from({ length: 7 }, (_, i) => {
+      const date = new Date(startDate);
+      date.setUTCDate(startDate.getUTCDate() + i);
+      const key = date.toISOString().slice(0, 10);
+      const d = byDate.get(key);
+      return {
+        cancelledAppointments: d?.cancelledAppointments ?? 0,
+        completedAppointments: d?.completedAppointments ?? 0,
+        date: key,
+        estimatedRevenueCents: d?.estimatedRevenueCents ?? 0,
+        noShowAppointments: d?.noShowAppointments ?? 0,
+        occupancyMinutes: d?.occupancyMinutes ?? 0,
+        totalAppointments: d?.totalAppointments ?? 0
+      };
+    });
   }
 
   private monthRange(now: Date) {

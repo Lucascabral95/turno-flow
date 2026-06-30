@@ -1,7 +1,7 @@
-import { ConflictException, Injectable, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
-import type { Prisma } from "@prisma/client";
+import { BusinessMemberStatus, type Prisma } from "@prisma/client";
 import { compare, hash } from "bcryptjs";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 
@@ -9,6 +9,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import type { LoginDto } from "./dto/login.dto";
 import type { RegisterDto } from "./dto/register.dto";
 import type { RefreshTokenDto } from "./dto/refresh-token.dto";
+import type { AcceptInviteDto } from "./dto/accept-invite.dto";
 
 export type AuthTokens = {
   accessToken: string;
@@ -116,6 +117,56 @@ export class AuthService {
       accessToken: await this.sign(storedToken.user.id, storedToken.user.email),
       refreshToken
     };
+  }
+
+  async acceptInvite(input: AcceptInviteDto): Promise<AuthTokens> {
+    const tokenHash = createHash("sha256").update(input.token).digest("hex");
+
+    const invite = await this.prisma.businessMember.findFirst({
+      where: {
+        inviteExpiresAt: { gt: new Date() },
+        inviteTokenHash: tokenHash,
+        userId: null
+      }
+    });
+
+    if (!invite?.inviteEmail) {
+      throw new BadRequestException("Invalid or expired invite token");
+    }
+
+    const existingUser = await this.prisma.user.findUnique({ where: { email: invite.inviteEmail } });
+
+    let userId: string;
+    let userEmail: string;
+
+    if (existingUser) {
+      userId = existingUser.id;
+      userEmail = existingUser.email;
+    } else {
+      const newUser = await this.prisma.user.create({
+        data: {
+          email: invite.inviteEmail,
+          name: input.name,
+          passwordHash: await hash(input.password, 12)
+        }
+      });
+      userId = newUser.id;
+      userEmail = newUser.email;
+    }
+
+    await this.prisma.businessMember.update({
+      data: {
+        active: true,
+        inviteEmail: null,
+        inviteExpiresAt: null,
+        inviteTokenHash: null,
+        status: BusinessMemberStatus.ACTIVE,
+        userId
+      },
+      where: { id: invite.id }
+    });
+
+    return this.createSession(userId, userEmail);
   }
 
   async logout(input: RefreshTokenDto): Promise<{ loggedOut: true }> {

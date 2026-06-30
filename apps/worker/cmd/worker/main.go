@@ -40,6 +40,12 @@ var eventBindingKeys = []string{
 	"slot.released",
 	"waitlist.offer_expired",
 	"waitlist.offer_rejected",
+	"staff.created",
+	"staff.updated",
+	"staff.deactivated",
+	"member.invited",
+	"member.accepted",
+	"member.role_changed",
 }
 
 func main() {
