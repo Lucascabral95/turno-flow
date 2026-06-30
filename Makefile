@@ -14,7 +14,7 @@ WORKER_BINARY := .cache/turnoflow-worker.exe
 WAIT_FOR_POSTGRES := $$deadline = (Get-Date).AddSeconds(60); while ((Get-Date) -lt $$deadline) { try { $$client = New-Object System.Net.Sockets.TcpClient; $$client.Connect("127.0.0.1", 5432); $$client.Close(); exit 0 } catch { Start-Sleep -Seconds 2 } }; Write-Error "PostgreSQL did not become reachable on localhost:5432 within 60 seconds."; exit 1
 
 .PHONY: help install worker-tidy
-.PHONY: up up-build up-build-classic up-logs down logs api-dev web-dev worker-dev
+.PHONY: up up-fresh up-build up-build-classic up-logs down logs api-dev web-dev worker-dev
 .PHONY: db-up db-migrate db-generate db-studio db-seed
 .PHONY: lint typecheck test api-test web-test worker-test
 .PHONY: build api-build web-build worker-build
@@ -28,7 +28,8 @@ help:
 	@echo   make worker-tidy      Tidy Go worker dependencies
 	@echo.
 	@echo Development:
-	@echo   make up               Rebuild images and start Docker Compose services in the background
+	@echo   make up               Build with cache and start Docker Compose services in the background
+	@echo   make up-fresh         Rebuild images without cache and start (slow, use when deps change)
 	@echo   make up-build         Alias of make up
 	@echo   make up-build-classic Rebuild with Docker classic builder for proxy/cache issues
 	@echo   make up-logs          Start Docker Compose services in the foreground
@@ -70,13 +71,20 @@ worker-tidy:
 	$(POWERSHELL) '$(GO_CACHE) go mod tidy'
 
 up:
-	$(DOCKER_COMPOSE) up --build -d
+	$(DOCKER_COMPOSE) up -d --build
+
+web:
+	docker compose up -d --build web
+
+up-fresh:
+	$(DOCKER_COMPOSE) build --no-cache
+	$(DOCKER_COMPOSE) up -d --force-recreate
 
 up-build:
-	$(DOCKER_COMPOSE) up --build -d
+	$(DOCKER_COMPOSE) up -d --build
 
 up-build-classic:
-	$(POWERSHELL) '$$env:DOCKER_BUILDKIT = "0"; $$env:COMPOSE_DOCKER_CLI_BUILD = "0"; $(DOCKER_COMPOSE) up --build -d'
+	$(POWERSHELL) '$$env:DOCKER_BUILDKIT = "0"; $$env:COMPOSE_DOCKER_CLI_BUILD = "0"; $(DOCKER_COMPOSE) build --no-cache; if ($$LASTEXITCODE -ne 0) { exit $$LASTEXITCODE }; $(DOCKER_COMPOSE) up -d --force-recreate'
 
 up-logs:
 	$(DOCKER_COMPOSE) up

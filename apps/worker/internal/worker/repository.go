@@ -8,6 +8,7 @@ import (
 	"github.com/turnoflow/turnoflow/apps/worker/internal/domain"
 )
 
+
 type NotificationStatus string
 
 const (
@@ -151,11 +152,33 @@ type OutboxEventInput struct {
 	Version     int
 }
 
+type AdvanceRecurringSeriesInput struct {
+	AppointmentID      string
+	BusinessID         string
+	CancellationToken  string
+	Conflict           bool
+	CustomerEmail      string
+	CustomerID         string
+	CustomerName       string
+	CustomerPhone      *string
+	EndsAt             time.Time
+	ServiceDurationMin int
+	ServiceID          string
+	ServiceName        string
+	SeriesID           string
+	StaffMemberID      string
+	StaffMemberName    string
+	StartsAt           time.Time
+}
+
 type Repository interface {
 	RunOnce(ctx context.Context, eventID string, eventType string, fn func(context.Context, Tx) error) (bool, error)
 	CreateAttendanceReviewAlerts(ctx context.Context, now time.Time, limit int) (int, error)
 	CreateNotificationLog(ctx context.Context, input NotificationLog) error
 	ClaimDueNotifications(ctx context.Context, now time.Time, limit int, maxAttempts int) ([]DueNotification, error)
+	ClaimDueRecurringSeries(ctx context.Context, now time.Time, batchSize int) ([]domain.RecurringSeries, error)
+	IsSlotTaken(ctx context.Context, staffMemberID string, startsAt, endsAt time.Time) (bool, error)
+	AdvanceRecurringSeries(ctx context.Context, input AdvanceRecurringSeriesInput) error
 	ExpireWaitlistOffers(ctx context.Context, now time.Time) error
 	MarkNotificationFailed(ctx context.Context, notification DueNotification, lastError string, nextAttemptAt *time.Time) error
 	MarkNotificationSent(ctx context.Context, notification DueNotification, sentAt time.Time) error

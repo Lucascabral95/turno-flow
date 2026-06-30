@@ -141,6 +141,23 @@ enum AppointmentPaymentStatus {
   @@map("appointment_payment_status")
 }
 
+enum RecurringIntervalUnit {
+  DAY   @map("day")
+  WEEK  @map("week")
+  MONTH @map("month")
+
+  @@map("recurring_interval_unit")
+}
+
+enum RecurringSeriesStatus {
+  ACTIVE    @map("active")
+  PAUSED    @map("paused")
+  CANCELLED @map("cancelled")
+  COMPLETED @map("completed")
+
+  @@map("recurring_series_status")
+}
+
 model User {
   id            String           @id @default(uuid()) @db.Uuid
   email         String           @unique
@@ -207,11 +224,12 @@ model Business {
   auditLogs              AuditLog[]
   notificationTemplates  NotificationTemplate[]
   calendarConnections    CalendarConnection[]
-  calendarEventSyncs     CalendarEventSync[]
-  customerNotes          CustomerNote[]
-  onboarding             BusinessOnboarding?
-  onboardingEvents       BusinessOnboardingEvent[]
-  appointmentPayments    AppointmentPayment[]
+  calendarEventSyncs        CalendarEventSync[]
+  customerNotes             CustomerNote[]
+  onboarding                BusinessOnboarding?
+  onboardingEvents          BusinessOnboardingEvent[]
+  appointmentPayments       AppointmentPayment[]
+  recurringSeries           RecurringAppointmentSeries[]
 
   @@map("businesses")
 }
@@ -283,6 +301,7 @@ model StaffMember {
   calendarConnections  CalendarConnection[]
   serviceAssignments   ServiceStaffMember[]
   metricsDaily         StaffMemberMetricsDaily[]
+  recurringSeries      RecurringAppointmentSeries[]
 
   @@index([businessId])
   @@map("staff_members")
@@ -307,6 +326,7 @@ model Service {
   appointments       Appointment[]
   waitlistEntries    WaitlistEntry[]
   staffAssignments   ServiceStaffMember[]
+  recurringSeries    RecurringAppointmentSeries[]
 
   @@index([businessId])
   @@map("services")
@@ -381,6 +401,7 @@ model Customer {
   notifications         Notification[]
   notes                 CustomerNote[]
   appointmentPayments   AppointmentPayment[]
+  recurringSeries       RecurringAppointmentSeries[]
 
   @@unique([businessId, email])
   @@index([businessId, riskLevel, riskScore])
@@ -418,19 +439,22 @@ model Appointment {
   endsAt              DateTime           @map("ends_at") @db.Timestamptz(3)
   status              AppointmentStatus  @default(CONFIRMED)
   cancellationToken   String             @unique @map("cancellation_token")
-  attendanceAlertedAt DateTime?          @map("attendance_alerted_at") @db.Timestamptz(3)
-  createdAt           DateTime           @default(now()) @map("created_at")
-  updatedAt           DateTime           @updatedAt @map("updated_at")
-  notifications       Notification[]
-  notificationLogs    NotificationLog[]
-  appointmentEvents   AppointmentEvent[]
-  waitlistOffers      WaitlistOffer[]
-  calendarEventSyncs  CalendarEventSync[]
-  payments            AppointmentPayment[]
+  attendanceAlertedAt  DateTime?                   @map("attendance_alerted_at") @db.Timestamptz(3)
+  recurringSeriesId    String?                     @map("recurring_series_id") @db.Uuid
+  recurringSeries      RecurringAppointmentSeries? @relation(fields: [recurringSeriesId], references: [id], onDelete: SetNull)
+  createdAt            DateTime                    @default(now()) @map("created_at")
+  updatedAt            DateTime                    @updatedAt @map("updated_at")
+  notifications        Notification[]
+  notificationLogs     NotificationLog[]
+  appointmentEvents    AppointmentEvent[]
+  waitlistOffers       WaitlistOffer[]
+  calendarEventSyncs   CalendarEventSync[]
+  payments             AppointmentPayment[]
 
   @@index([businessId, startsAt])
   @@index([staffMemberId, startsAt])
   @@index([status, endsAt, attendanceAlertedAt])
+  @@index([recurringSeriesId, status, startsAt])
   @@map("appointments")
 }
 
@@ -724,6 +748,31 @@ model StaffMemberMetricsDaily {
   @@id([businessId, staffMemberId, date])
   @@index([businessId, staffMemberId, date])
   @@map("staff_member_metrics_daily")
+}
+
+model RecurringAppointmentSeries {
+  id                 String                @id @default(uuid()) @db.Uuid
+  businessId         String                @map("business_id") @db.Uuid
+  business           Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customerId         String                @map("customer_id") @db.Uuid
+  customer           Customer              @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  serviceId          String                @map("service_id") @db.Uuid
+  service            Service               @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  staffMemberId      String                @map("staff_member_id") @db.Uuid
+  staffMember        StaffMember           @relation(fields: [staffMemberId], references: [id], onDelete: Restrict)
+  intervalValue      Int                   @map("interval_value")
+  intervalUnit       RecurringIntervalUnit @map("interval_unit")
+  nextOccurrenceAt   DateTime              @map("next_occurrence_at") @db.Timestamptz(3)
+  advanceNoticeDays  Int                   @default(7) @map("advance_notice_days")
+  status             RecurringSeriesStatus @default(ACTIVE) @map("status")
+  maxOccurrences     Int?                  @map("max_occurrences")
+  occurrencesCreated Int                   @default(0) @map("occurrences_created")
+  createdAt          DateTime              @default(now()) @map("created_at")
+  updatedAt          DateTime              @updatedAt @map("updated_at")
+  appointments       Appointment[]
+
+  @@index([businessId, status, nextOccurrenceAt])
+  @@map("recurring_appointment_series")
 }
 
 model ProcessedEvent {

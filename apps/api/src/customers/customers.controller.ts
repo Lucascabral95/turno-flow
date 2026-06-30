@@ -5,13 +5,18 @@ import { AuthGuard } from "../auth/auth.guard";
 import type { AuthenticatedUser } from "../common/authenticated-user";
 import { CurrentUser } from "../common/current-user.decorator";
 import { CustomersService } from "./customers.service";
-import { CreateCustomerNoteDto, ListCustomersQueryDto, UpdateCustomerDto } from "./dto/customer.dto";
+import { CreateCustomerDto, CreateCustomerNoteDto, ListCustomersQueryDto, UpdateCustomerDto } from "./dto/customer.dto";
 
 @ApiTags("customers")
 @UseGuards(AuthGuard)
 @Controller("customers")
 export class CustomersController {
   constructor(private readonly customers: CustomersService) {}
+
+  @Post()
+  create(@CurrentUser() user: AuthenticatedUser, @Body() input: CreateCustomerDto) {
+    return this.customers.create(user, input);
+  }
 
   @Get()
   list(@CurrentUser() user: AuthenticatedUser, @Query() query: ListCustomersQueryDto) {

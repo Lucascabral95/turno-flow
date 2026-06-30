@@ -20,6 +20,25 @@ export function weekdayUtc(value: Date): number {
   return value.getUTCDay();
 }
 
+const WEEKDAY_MAP: Record<string, number> = {
+  Fri: 5,
+  Mon: 1,
+  Sat: 6,
+  Sun: 0,
+  Thu: 4,
+  Tue: 2,
+  Wed: 3
+};
+
+export function weekdayInTimeZone(date: string, timeZone: string): number {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "short"
+  });
+  const weekday = formatter.format(new Date(`${date}T12:00:00.000Z`));
+  return WEEKDAY_MAP[weekday] ?? 0;
+}
+
 export function minutesSinceMidnight(value: string): number {
   const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value);
 

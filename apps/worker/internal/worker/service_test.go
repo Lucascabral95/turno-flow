@@ -1027,6 +1027,18 @@ func assertError(message string) error {
 	return errors.New(message)
 }
 
+func (repository *fakeRepository) ClaimDueRecurringSeries(_ context.Context, _ time.Time, _ int) ([]domain.RecurringSeries, error) {
+	return nil, nil
+}
+
+func (repository *fakeRepository) IsSlotTaken(_ context.Context, _ string, _, _ time.Time) (bool, error) {
+	return false, nil
+}
+
+func (repository *fakeRepository) AdvanceRecurringSeries(_ context.Context, _ AdvanceRecurringSeriesInput) error {
+	return nil
+}
+
 func hasOutboxEvent(events []OutboxEventInput, eventType string, routingKey string) bool {
 	for _, event := range events {
 		if event.Type == eventType && event.RoutingKey == routingKey {

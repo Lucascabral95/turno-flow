@@ -244,6 +244,9 @@ func runScheduledJobs(ctx context.Context, service *worker.Service, logger *slog
 	runScheduledJob(ctx, logger, "expire_waitlist_offers", func(ctx context.Context) error {
 		return service.ExpireWaitlistOffers(ctx, now)
 	})
+	runScheduledJob(ctx, logger, "create_recurring_appointments", func(ctx context.Context) error {
+		return service.CreateRecurringAppointments(ctx, now)
+	})
 }
 
 func runScheduledJob(ctx context.Context, logger *slog.Logger, name string, fn func(context.Context) error) {
