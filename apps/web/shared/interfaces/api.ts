@@ -104,6 +104,27 @@ export type AvailabilitySlot = {
   startsAt: string;
 };
 
+export type RecurringIntervalUnit = "DAY" | "WEEK" | "MONTH";
+export type RecurringSeriesStatus = "ACTIVE" | "PAUSED" | "CANCELLED" | "COMPLETED";
+
+export type RecurringAppointmentSeries = {
+  advanceNoticeDays: number;
+  createdAt: string;
+  customer: { email: string; id: string; name: string };
+  customerId: string;
+  id: string;
+  intervalUnit: RecurringIntervalUnit;
+  intervalValue: number;
+  maxOccurrences: number | null;
+  nextOccurrenceAt: string;
+  occurrencesCreated: number;
+  service: { durationMinutes: number; id: string; name: string };
+  serviceId: string;
+  staffMember: { id: string; name: string };
+  staffMemberId: string;
+  status: RecurringSeriesStatus;
+};
+
 export type Appointment = {
   cancellationToken: string;
   customer: {
@@ -122,6 +143,7 @@ export type Appointment = {
     submittedDepositCents: number;
   };
   payments?: AppointmentPayment[];
+  recurringSeriesId: string | null;
   service: Service;
   staffMember: StaffMember;
   startsAt: string;

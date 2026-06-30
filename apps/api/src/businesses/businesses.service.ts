@@ -7,7 +7,7 @@ import { activeAppointmentStatuses } from "../appointments/status";
 import { calculateAvailability, type AvailabilitySlot } from "../appointments/availability";
 import type { AuthenticatedUser } from "../common/authenticated-user";
 import { toSlug } from "../common/slug";
-import { minutesSinceMidnight, parseDateOnly, weekdayUtc, zonedDayBounds } from "../common/time";
+import { minutesSinceMidnight, parseDateOnly, weekdayInTimeZone, zonedDayBounds } from "../common/time";
 import { EventRoutingKeys, EventTypes } from "../events/event-types";
 import { OutboxService } from "../events/outbox.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -820,7 +820,7 @@ export class BusinessesService {
           active: true,
           businessId: business.id,
           staffMember: { active: true },
-          weekday: weekdayUtc(requestedDate)
+          weekday: weekdayInTimeZone(date, business.timezone)
         }
       }),
       this.prisma.availabilityException.findMany({

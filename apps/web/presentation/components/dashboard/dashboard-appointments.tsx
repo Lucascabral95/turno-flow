@@ -1,10 +1,11 @@
 "use client";
 
-import { AlertTriangle, CalendarDays, CheckCircle2, ClipboardList, Clock, Download, ShieldAlert, TrendingDown, TrendingUp } from "lucide-react";
+import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, ClipboardList, Clock, Download, Repeat2, ShieldAlert, TrendingDown, TrendingUp } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import type { Appointment, AvailabilitySlot, CurrentBusiness, DashboardMetrics } from "../../../lib/api";
+import type { Appointment, AvailabilitySlot, BusinessMemberRole, CurrentBusiness, DashboardMetrics, RecurringAppointmentSeries } from "../../../lib/api";
 import { formatDateTime, formatMoney, formatSlotTime } from "../../../lib/api";
 import {
   appointmentDisplayStatus,
@@ -23,19 +24,23 @@ const PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 export function AppointmentsView({
   appointments,
   business,
+  currentUserRole,
   metrics,
   onFetchRescheduleSlots,
   onPaymentStatus,
   onReschedule,
-  onStatus
+  onStatus,
+  recurringSeries
 }: {
   appointments: Appointment[];
   business: CurrentBusiness | null;
+  currentUserRole: BusinessMemberRole | null;
   metrics: DashboardMetrics | null;
   onFetchRescheduleSlots: (appointmentId: string, date: string) => Promise<AvailabilitySlot[]>;
   onPaymentStatus: (paymentId: string, action: "confirm" | "reject" | "void") => void;
   onReschedule: (appointmentId: string, startsAt: string, staffMemberId?: string) => void;
   onStatus: (appointmentId: string, status: "completed" | "no_show" | "cancelled_by_business") => void;
+  recurringSeries: RecurringAppointmentSeries[];
 }) {
   const now = useLiveNow();
   const activeAppointments = appointments.filter((appointment) => isOperationalAppointment(appointment, now)).length;
@@ -75,6 +80,9 @@ export function AppointmentsView({
         onStatus={onStatus}
       />
       <AppointmentHistoryPanel appointments={appointments} />
+      {currentUserRole !== "PROFESSIONAL" ? (
+        <RecurringCTABanner activeSeries={recurringSeries.filter((s) => s.status === "ACTIVE" || s.status === "PAUSED").length} />
+      ) : null}
     </section>
   );
 }
@@ -259,7 +267,10 @@ function AppointmentsOperationsPanel({
                   <tr className={displayStatus.overdue ? styles.overdueRow : undefined} key={appointment.id}>
                     <td>
                       <div className="table-primary">
-                        <strong>{capitalizeFirst(appointment.customer.name)}</strong>
+                        <strong>
+                          {capitalizeFirst(appointment.customer.name)}
+                          {appointment.recurringSeriesId ? <span className="badge badge-soft" style={{ marginLeft: "4px", fontSize: "0.7em" }}>↺</span> : null}
+                        </strong>
                         <span>{appointment.customer.email}</span>
                         {appointment.customer.phone ? <span>{appointment.customer.phone}</span> : null}
                       </div>
@@ -660,7 +671,10 @@ function AppointmentHistoryPanel({ appointments }: { appointments: Appointment[]
                   <tr className={displayStatus.overdue ? styles.overdueRow : undefined} key={appointment.id}>
                     <td>
                       <div className="table-primary">
-                        <strong>{capitalizeFirst(appointment.customer.name)}</strong>
+                        <strong>
+                          {capitalizeFirst(appointment.customer.name)}
+                          {appointment.recurringSeriesId ? <span className="badge badge-soft" style={{ marginLeft: "4px", fontSize: "0.7em" }}>↺</span> : null}
+                        </strong>
                         <span>{appointment.customer.email}</span>
                         {appointment.customer.phone ? <span>{appointment.customer.phone}</span> : null}
                       </div>
@@ -871,4 +885,39 @@ function toDatetimeLocalValue(value: string): string {
 
 function toDateInputValue(value: string): string {
   return toDatetimeLocalValue(value).slice(0, 10);
+}
+
+
+function RecurringCTABanner({ activeSeries }: { activeSeries: number }) {
+  return (
+    <section
+      className="panel"
+      style={{
+        alignItems: "center",
+        display: "flex",
+        gap: "16px",
+        justifyContent: "space-between"
+      }}
+    >
+      <div style={{ alignItems: "center", display: "flex", gap: "12px" }}>
+        <Repeat2 color="#635bff" size={22} style={{ flexShrink: 0 }} />
+        <div>
+          <strong style={{ fontSize: "0.95rem" }}>Turnos recurrentes</strong>
+          <p style={{ color: "#6f7382", fontSize: "0.83rem", margin: "2px 0 0" }}>
+            {activeSeries > 0
+              ? `${activeSeries} serie${activeSeries !== 1 ? "s" : ""} activa${activeSeries !== 1 ? "s" : ""} · los turnos quedan bloqueados en la agenda automáticamente`
+              : "Automatizá turnos para clientes regulares · bloqueo de agenda y Google Calendar incluido"}
+          </p>
+        </div>
+      </div>
+      <Link
+        className="button-link button-ghost"
+        href="/dashboard/recurrente"
+        style={{ flexShrink: 0 }}
+      >
+        Gestionar series
+        <ArrowRight size={15} />
+      </Link>
+    </section>
+  );
 }

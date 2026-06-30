@@ -28,11 +28,15 @@ const (
 	EventStaffMemberCreated        = "StaffMemberCreated"
 	EventStaffMemberDeactivated    = "StaffMemberDeactivated"
 	EventStaffMemberUpdated        = "StaffMemberUpdated"
-	EventWaitlistCandidateMatched  = "WaitlistCandidateMatched"
-	EventWaitlistOfferAccepted     = "WaitlistOfferAccepted"
-	EventWaitlistOfferCreated      = "WaitlistOfferCreated"
-	EventWaitlistOfferExpired      = "WaitlistOfferExpired"
-	EventWaitlistOfferRejected     = "WaitlistOfferRejected"
+	EventWaitlistCandidateMatched        = "WaitlistCandidateMatched"
+	EventWaitlistOfferAccepted           = "WaitlistOfferAccepted"
+	EventWaitlistOfferCreated            = "WaitlistOfferCreated"
+	EventWaitlistOfferExpired            = "WaitlistOfferExpired"
+	EventWaitlistOfferRejected           = "WaitlistOfferRejected"
+	EventRecurringSeriesCreated          = "RecurringSeriesCreated"
+	EventRecurringAppointmentScheduled   = "RecurringAppointmentScheduled"
+	EventRecurringSeriesCompleted        = "RecurringSeriesCompleted"
+	EventRecurringSeriesConflict         = "RecurringSeriesConflict"
 )
 
 type Event struct {

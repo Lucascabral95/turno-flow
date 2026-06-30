@@ -918,3 +918,230 @@ func notificationEventPayload(notification worker.DueNotification, lastError *st
 
 	return body, nil
 }
+
+func (repository *Repository) ClaimDueRecurringSeries(ctx context.Context, now time.Time, batchSize int) ([]domain.RecurringSeries, error) {
+	tx, err := repository.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin recurring series claim: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	rows, err := tx.Query(ctx, `
+		WITH due AS (
+			SELECT id FROM recurring_appointment_series
+			WHERE status = 'active'
+				AND next_occurrence_at - (advance_notice_days || ' days')::interval <= $1
+				AND next_occurrence_at > $1
+			ORDER BY next_occurrence_at ASC
+			LIMIT $2
+			FOR UPDATE SKIP LOCKED
+		)
+		UPDATE recurring_appointment_series SET updated_at = NOW() FROM due
+		WHERE recurring_appointment_series.id = due.id
+		RETURNING
+			recurring_appointment_series.id,
+			recurring_appointment_series.business_id,
+			recurring_appointment_series.customer_id,
+			recurring_appointment_series.service_id,
+			recurring_appointment_series.staff_member_id,
+			recurring_appointment_series.interval_value,
+			recurring_appointment_series.interval_unit,
+			recurring_appointment_series.next_occurrence_at,
+			recurring_appointment_series.advance_notice_days,
+			recurring_appointment_series.max_occurrences,
+			recurring_appointment_series.occurrences_created,
+			(SELECT email FROM customers WHERE id = recurring_appointment_series.customer_id),
+			(SELECT name  FROM customers WHERE id = recurring_appointment_series.customer_id),
+			(SELECT phone FROM customers WHERE id = recurring_appointment_series.customer_id),
+			(SELECT name             FROM services     WHERE id = recurring_appointment_series.service_id),
+			(SELECT duration_minutes FROM services     WHERE id = recurring_appointment_series.service_id),
+			(SELECT name FROM staff_members WHERE id = recurring_appointment_series.staff_member_id)
+	`, now, batchSize)
+	if err != nil {
+		return nil, fmt.Errorf("claim due recurring series: %w", err)
+	}
+	defer rows.Close()
+
+	var series []domain.RecurringSeries
+	for rows.Next() {
+		var s domain.RecurringSeries
+		if err := rows.Scan(
+			&s.ID, &s.BusinessID, &s.CustomerID, &s.ServiceID, &s.StaffMemberID,
+			&s.IntervalValue, &s.IntervalUnit, &s.NextOccurrenceAt, &s.AdvanceNoticeDays,
+			&s.MaxOccurrences, &s.OccurrencesCreated,
+			&s.CustomerEmail, &s.CustomerName, &s.CustomerPhone,
+			&s.ServiceName, &s.ServiceDurationMin,
+			&s.StaffMemberName,
+		); err != nil {
+			return nil, fmt.Errorf("scan recurring series: %w", err)
+		}
+		series = append(series, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate recurring series: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit recurring series claim: %w", err)
+	}
+
+	return series, nil
+}
+
+func (repository *Repository) IsSlotTaken(ctx context.Context, staffMemberID string, startsAt, endsAt time.Time) (bool, error) {
+	var taken bool
+	err := repository.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM appointments
+			WHERE staff_member_id = $1
+				AND status NOT IN ('cancelled_by_customer', 'cancelled_by_business')
+				AND starts_at < $3
+				AND ends_at > $2
+		)
+	`, staffMemberID, startsAt, endsAt).Scan(&taken)
+	if err != nil {
+		return false, fmt.Errorf("check slot taken: %w", err)
+	}
+	return taken, nil
+}
+
+func (repository *Repository) AdvanceRecurringSeries(ctx context.Context, input worker.AdvanceRecurringSeriesInput) error {
+	tx, err := repository.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin advance recurring series: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if !input.Conflict {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO appointments (
+				id, business_id, service_id, staff_member_id, customer_id,
+				starts_at, ends_at, status, cancellation_token, recurring_series_id,
+				created_at, updated_at
+			) VALUES (
+				$1, $2, $3, $4, $5,
+				$6, $7, 'confirmed', $8, $9,
+				NOW(), NOW()
+			)
+		`, input.AppointmentID, input.BusinessID, input.ServiceID, input.StaffMemberID, input.CustomerID,
+			input.StartsAt, input.EndsAt, input.CancellationToken, input.SeriesID); err != nil {
+			return fmt.Errorf("insert recurring appointment: %w", err)
+		}
+
+		var phoneVal any
+		if input.CustomerPhone != nil {
+			phoneVal = *input.CustomerPhone
+		}
+		payloadBytes, err := json.Marshal(map[string]any{
+			"appointmentId":     input.AppointmentID,
+			"businessId":        input.BusinessID,
+			"cancellationToken": input.CancellationToken,
+			"customer": map[string]any{
+				"completedAppointments": 0,
+				"email":                 input.CustomerEmail,
+				"id":                    input.CustomerID,
+				"name":                  input.CustomerName,
+				"noShowCount":           0,
+				"phone":                 phoneVal,
+				"requiresDeposit":       false,
+				"riskLevel":             "low",
+				"riskScore":             0,
+				"totalAppointments":     0,
+			},
+			"endsAt":            input.EndsAt,
+			"recurringSeriesId": input.SeriesID,
+			"service": map[string]any{
+				"durationMinutes": input.ServiceDurationMin,
+				"id":              input.ServiceID,
+				"name":            input.ServiceName,
+				"priceCents":      0,
+			},
+			"staffMember": map[string]any{
+				"id":   input.StaffMemberID,
+				"name": input.StaffMemberName,
+			},
+			"source":   "recurring",
+			"startsAt": input.StartsAt,
+			"status":   "confirmed",
+		})
+		if err != nil {
+			return fmt.Errorf("marshal recurring appointment booked payload: %w", err)
+		}
+
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO outbox_events (type, version, business_id, aggregate_id, routing_key, payload, created_at, updated_at)
+			VALUES ('AppointmentBooked', 1, $1, $2, 'appointment.booked', $3, NOW(), NOW())
+		`, input.BusinessID, input.AppointmentID, payloadBytes); err != nil {
+			return fmt.Errorf("insert recurring booked outbox event: %w", err)
+		}
+	} else {
+		conflictPayload, err := json.Marshal(map[string]any{
+			"businessId":        input.BusinessID,
+			"nextOccurrenceAt":  input.StartsAt,
+			"recurringSeriesId": input.SeriesID,
+		})
+		if err != nil {
+			return fmt.Errorf("marshal conflict payload: %w", err)
+		}
+
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO outbox_events (type, version, business_id, aggregate_id, routing_key, payload, created_at, updated_at)
+			VALUES ('RecurringSeriesConflict', 1, $1, $2::uuid, 'recurring.conflict', $3, NOW(), NOW())
+		`, input.BusinessID, input.SeriesID, conflictPayload); err != nil {
+			return fmt.Errorf("insert recurring conflict outbox event: %w", err)
+		}
+	}
+
+	var newOccurrencesCreated int
+	var newStatus string
+	err = tx.QueryRow(ctx, `
+		UPDATE recurring_appointment_series
+		SET
+			occurrences_created = occurrences_created + $2,
+			next_occurrence_at = CASE interval_unit
+				WHEN 'day'   THEN next_occurrence_at + (interval_value || ' days')::interval
+				WHEN 'week'  THEN next_occurrence_at + (interval_value || ' weeks')::interval
+				WHEN 'month' THEN next_occurrence_at + (interval_value || ' months')::interval
+			END,
+			status = CASE
+				WHEN max_occurrences IS NOT NULL AND occurrences_created + $2 >= max_occurrences THEN 'completed'
+				ELSE status
+			END,
+			updated_at = NOW()
+		WHERE id = $1
+		RETURNING occurrences_created, status
+	`, input.SeriesID, boolToInt(!input.Conflict)).Scan(&newOccurrencesCreated, &newStatus)
+	if err != nil {
+		return fmt.Errorf("advance recurring series schedule: %w", err)
+	}
+
+	if newStatus == "completed" {
+		completedPayload, err := json.Marshal(map[string]any{
+			"businessId":         input.BusinessID,
+			"occurrencesCreated": newOccurrencesCreated,
+			"recurringSeriesId":  input.SeriesID,
+		})
+		if err != nil {
+			return fmt.Errorf("marshal completed payload: %w", err)
+		}
+
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO outbox_events (type, version, business_id, aggregate_id, routing_key, payload, created_at, updated_at)
+			VALUES ('RecurringSeriesCompleted', 1, $1, $2::uuid, 'recurring.series_completed', $3, NOW(), NOW())
+		`, input.BusinessID, input.SeriesID, completedPayload); err != nil {
+			return fmt.Errorf("insert series completed outbox event: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit advance recurring series: %w", err)
+	}
+
+	return nil
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}

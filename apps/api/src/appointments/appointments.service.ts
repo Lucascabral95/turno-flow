@@ -4,7 +4,7 @@ import { AppointmentPaymentStatus, AppointmentPaymentType, AppointmentStatus, Pr
 import { AuditService } from "../audit/audit.service";
 import type { AuthenticatedUser } from "../common/authenticated-user";
 import { createPublicToken } from "../common/tokens";
-import { dateOnlyInTimeZone, parseDateOnly, weekdayUtc, zonedDayBounds } from "../common/time";
+import { dateOnlyInTimeZone, parseDateOnly, weekdayInTimeZone, zonedDayBounds } from "../common/time";
 import { BusinessesService } from "../businesses/businesses.service";
 import { EventRoutingKeys, EventTypes } from "../events/event-types";
 import { OutboxService } from "../events/outbox.service";
@@ -129,7 +129,7 @@ export class AppointmentsService {
           active: true,
           businessId: business.id,
           staffMember: { active: true },
-          weekday: weekdayUtc(requestedDate)
+          weekday: weekdayInTimeZone(date, business.timezone)
         }
       }),
       this.prisma.availabilityException.findMany({
@@ -1104,7 +1104,7 @@ export class AppointmentsService {
     return matchingSlot.staffMemberId;
   }
 
-  private async assertStaffMemberCanTakeSlot(
+  async assertStaffMemberCanTakeSlot(
     tx: Prisma.TransactionClient,
     businessId: string,
     serviceId: string,
@@ -1286,7 +1286,7 @@ export class AppointmentsService {
           active: true,
           businessId,
           staffMember: { active: true },
-          weekday: weekdayUtc(requestedDate)
+          weekday: weekdayInTimeZone(date, business.timezone)
         }
       }),
       tx.availabilityException.findMany({

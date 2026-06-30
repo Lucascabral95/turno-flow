@@ -46,6 +46,10 @@ var eventBindingKeys = []string{
 	"member.invited",
 	"member.accepted",
 	"member.role_changed",
+	"recurring.series_created",
+	"recurring.appointment_scheduled",
+	"recurring.series_completed",
+	"recurring.conflict",
 }
 
 func main() {

@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, BellRing, CalendarClock, CalendarDays, ClipboardList, ExternalLink, Home, Hourglass, LogIn, RefreshCcw, Settings2, ShieldCheck, UserPlus, Users, Wand2 } from "lucide-react";
+import { BarChart3, BellRing, CalendarClock, CalendarDays, ClipboardList, ExternalLink, Home, Hourglass, LogIn, RefreshCcw, Repeat2, RotateCcw, Settings2, ShieldCheck, UserPlus, Users, Wand2 } from "lucide-react";
 import Link from "next/link";
 import type { FormEvent, ReactNode } from "react";
 
@@ -71,6 +71,10 @@ export function PageHeader({
             <Link className="button-link button-ghost" href={`/${business.slug}`}>
               <ExternalLink size={17} />
               Pagina publica
+            </Link>
+            <Link className="button-link button-ghost" href="/dashboard/recurrente">
+              <RotateCcw size={17} />
+              Recurrentes
             </Link>
             <Link className="button-link button-primary" href={`/${business.slug}/book`}>
               <CalendarClock size={17} />
@@ -167,6 +171,7 @@ function DashboardTabs({ activeView }: { activeView: DashboardView }) {
       <TabLink active={activeView === "reminders"} href="/dashboard/recordatorios" icon={<BellRing size={18} />} label="Recordatorios" />
       <TabLink active={activeView === "booking"} href="/dashboard/reservar" icon={<CalendarClock size={18} />} label="Reservar" />
       <TabLink active={activeView === "metrics"} href="/dashboard/metricas" icon={<BarChart3 size={18} />} label="Metricas" />
+      <TabLink active={activeView === "recurring"} href="/dashboard/recurrente" icon={<Repeat2 size={18} />} label="Recurrentes" />
     </nav>
   );
 }
@@ -235,6 +240,10 @@ function viewMeta(view: DashboardView): { description: string; title: string } {
     setup: {
       description: "Gestiona negocio, servicios y profesionales reservables.",
       title: "Configuracion"
+    },
+    recurring: {
+      description: "Series de turnos periodicos creadas automaticamente para clientes regulares.",
+      title: "Recurrentes"
     }
   };
 

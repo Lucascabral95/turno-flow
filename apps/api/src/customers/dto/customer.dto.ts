@@ -1,5 +1,5 @@
 import { Type } from "class-transformer";
-import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
+import { IsBoolean, IsEmail, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from "class-validator";
 
 export class ListCustomersQueryDto {
   @IsString()
@@ -57,4 +57,19 @@ export class CreateCustomerNoteDto {
   @IsString()
   @MaxLength(2000)
   content!: string;
+}
+
+export class CreateCustomerDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  name!: string;
+
+  @IsEmail()
+  email!: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(40)
+  phone?: string;
 }

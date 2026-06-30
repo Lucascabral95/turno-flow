@@ -35,7 +35,11 @@ export const EventTypes = {
   StaffMemberDeactivated: "StaffMemberDeactivated",
   MemberInvited: "MemberInvited",
   MemberAccepted: "MemberAccepted",
-  MemberRoleChanged: "MemberRoleChanged"
+  MemberRoleChanged: "MemberRoleChanged",
+  RecurringSeriesCreated: "RecurringSeriesCreated",
+  RecurringAppointmentScheduled: "RecurringAppointmentScheduled",
+  RecurringSeriesCompleted: "RecurringSeriesCompleted",
+  RecurringSeriesConflict: "RecurringSeriesConflict"
 } as const;
 
 export type EventType = (typeof EventTypes)[keyof typeof EventTypes];
@@ -77,7 +81,11 @@ export const EventRoutingKeys = {
   StaffMemberDeactivated: "staff.deactivated",
   MemberInvited: "member.invited",
   MemberAccepted: "member.accepted",
-  MemberRoleChanged: "member.role_changed"
+  MemberRoleChanged: "member.role_changed",
+  RecurringSeriesCreated: "recurring.series_created",
+  RecurringAppointmentScheduled: "recurring.appointment_scheduled",
+  RecurringSeriesCompleted: "recurring.series_completed",
+  RecurringSeriesConflict: "recurring.conflict"
 } as const satisfies Record<keyof typeof EventTypes, string>;
 
 export type EventRoutingKey = (typeof EventRoutingKeys)[keyof typeof EventRoutingKeys];

@@ -37,6 +37,7 @@ import type {
   NotificationHistoryItem,
   NotificationTemplate,
   OnboardingStatus,
+  RecurringAppointmentSeries,
   ReminderSettings,
   StaffMetrics,
   WaitlistEntry
@@ -60,6 +61,7 @@ import { formNumber, formString } from "../../../lib/form";
 import { shouldAutoOpenOnboarding } from "../../../lib/onboarding";
 import { AppointmentsView } from "./dashboard-appointments";
 import { AuthView, DashboardShell, PageHeader } from "./dashboard-chrome";
+import { RecurringPanel } from "./dashboard-recurring";
 import { CustomersView } from "./dashboard-customers";
 import {
   appointmentStatusMessage,
@@ -87,7 +89,8 @@ export type DashboardView =
   | "team"
   | "reminders"
   | "booking"
-  | "metrics";
+  | "metrics"
+  | "recurring";
 
 type SubmitResult = Promise<boolean>;
 type AuthMode = "login" | "register";
@@ -108,6 +111,7 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
   const [notificationTemplates, setNotificationTemplates] = useState<NotificationTemplate[]>([]);
   const [onboardingStatus, setOnboardingStatus] = useState<OnboardingStatus | null>(null);
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings | null>(null);
+  const [recurringSeries, setRecurringSeries] = useState<RecurringAppointmentSeries[]>([]);
   const [staffMetrics, setStaffMetrics] = useState<StaffMetrics[]>([]);
   const [token, setToken] = useState<string | null>(null);
   const [waitlistEntries, setWaitlistEntries] = useState<WaitlistEntry[]>([]);
@@ -160,6 +164,24 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
     });
   }
 
+  async function authRequestWithTimeout<T>(
+    path: string,
+    options: RequestInit = {},
+    timeoutMs = 30_000
+  ): Promise<T> {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      return await authRequest<T>(path, {
+        ...options,
+        signal: controller.signal
+      });
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  }
+
   async function refresh(activeToken = token) {
     if (!activeToken) {
       return;
@@ -181,7 +203,8 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
         currentCalendarConnections,
         currentOnboardingStatus,
         currentUser,
-        currentStaffMetrics
+        currentStaffMetrics,
+        currentRecurringSeries
       ] = await Promise.all([
         requestJson<CurrentBusiness | null>("/businesses/current", {
           headers: { Authorization: `Bearer ${activeToken}` }
@@ -221,6 +244,9 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
         }).catch(() => null),
         requestJson<StaffMetrics[]>("/metrics/staff", {
           headers: { Authorization: `Bearer ${activeToken}` }
+        }).catch(() => []),
+        requestJson<RecurringAppointmentSeries[]>("/appointments/recurring-series", {
+          headers: { Authorization: `Bearer ${activeToken}` }
         }).catch(() => [])
       ]);
       setBusiness(currentBusiness);
@@ -234,6 +260,7 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
       setNotificationHistory(currentNotificationHistory);
       setNotificationTemplates(currentNotificationTemplates);
       setOnboardingStatus(currentOnboardingStatus ?? currentBusiness?.onboarding ?? null);
+      setRecurringSeries(currentRecurringSeries ?? []);
       setStaffMetrics(currentStaffMetrics ?? []);
       setWaitlistEntries(currentWaitlistEntries);
     } catch (refreshError) {
@@ -562,6 +589,17 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
     return authRequest<AvailabilitySlot[]>(`/appointments/${appointmentId}/reschedule-slots?date=${date}`);
   }
 
+  const fetchAvailabilitySlots = useCallback(async (serviceId: string, date: string): Promise<AvailabilitySlot[]> => {
+    if (!token) {
+      throw new Error("No hay sesion activa");
+    }
+
+    const params = new URLSearchParams({ date, serviceId });
+    return requestJson<AvailabilitySlot[]>(`/availability/slots?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  }, [token]);
+
   const fetchCustomers = useCallback(async (filters: {
     deposit: "all" | "required" | "not_required";
     page: number;
@@ -854,6 +892,7 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
     setNotificationHistory([]);
     setNotificationTemplates([]);
     setOnboardingStatus(null);
+    setRecurringSeries([]);
     setReminderSettings(null);
     setStaffMetrics([]);
     setToken(null);
@@ -976,6 +1015,7 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
           <AppointmentsView
             appointments={appointments}
             business={business}
+            currentUserRole={currentUserRole}
             metrics={metrics}
             onFetchRescheduleSlots={fetchRescheduleSlots}
             onPaymentStatus={(paymentId, action) => {
@@ -987,6 +1027,7 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
             onStatus={(appointmentId, status) => {
               void updateAppointmentStatus(appointmentId, status);
             }}
+            recurringSeries={recurringSeries}
           />
         ) : null}
         {activeView === "customers" ? (
@@ -1052,6 +1093,59 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
           </>
         ) : null}
         {activeView === "metrics" ? <MetricsPanel metrics={metrics} staffMetrics={staffMetrics} /> : null}
+        {activeView === "recurring" ? (
+          <section className="panel stack">
+            <RecurringPanel
+              business={business}
+              currentUserRole={currentUserRole}
+              customers={customers}
+              onFetchAvailabilitySlots={fetchAvailabilitySlots}
+              onCreateCustomer={async (dto) => {
+                try {
+                  return await authRequest<CustomerProfile>("/customers", {
+                    body: JSON.stringify(dto),
+                    headers: { "Content-Type": "application/json" },
+                    method: "POST"
+                  });
+                } catch {
+                  return null;
+                }
+              }}
+              onCreateSeries={async (dto) => {
+                try {
+                  await authRequest("/appointments/recurring-series", {
+                    body: JSON.stringify(dto),
+                    headers: { "Content-Type": "application/json" },
+                    method: "POST"
+                  });
+                  await refresh();
+                  return true;
+                } catch {
+                  return false;
+                }
+              }}
+              onDeleteSeries={async (id) => {
+                try {
+                  await authRequestWithTimeout<{ cancelledAppointments: number; id: string }>(`/appointments/recurring-series/${id}`, {
+                    method: "DELETE"
+                  });
+
+                  const updatedSeries = await authRequestWithTimeout<RecurringAppointmentSeries[]>(
+                    "/appointments/recurring-series",
+                    {},
+                    10_000
+                  );
+                  setRecurringSeries(updatedSeries);
+                  void refresh();
+                  return true;
+                } catch {
+                  return false;
+                }
+              }}
+              series={recurringSeries}
+            />
+          </section>
+        ) : null}
       </section>
     </DashboardShell>
   );

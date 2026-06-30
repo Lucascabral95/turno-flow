@@ -54,6 +54,10 @@ func TestRabbitMQContracts(t *testing.T) {
 		"member.invited",
 		"member.accepted",
 		"member.role_changed",
+		"recurring.series_created",
+		"recurring.appointment_scheduled",
+		"recurring.series_completed",
+		"recurring.conflict",
 	}
 	if !reflect.DeepEqual(eventBindingKeys, expectedBindings) {
 		t.Fatalf("unexpected binding keys %#v", eventBindingKeys)

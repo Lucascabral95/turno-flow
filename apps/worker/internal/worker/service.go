@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -131,6 +132,56 @@ func (service *Service) ExpireWaitlistOffers(ctx context.Context, now time.Time)
 func (service *Service) ProcessAttendanceAlerts(ctx context.Context, now time.Time) error {
 	_, err := service.repository.CreateAttendanceReviewAlerts(ctx, now, service.options.AttendanceReviewBatchSize)
 	return err
+}
+
+func (service *Service) CreateRecurringAppointments(ctx context.Context, now time.Time) error {
+	series, err := service.repository.ClaimDueRecurringSeries(ctx, now, 50)
+	if err != nil {
+		return fmt.Errorf("claim due recurring series: %w", err)
+	}
+
+	for _, s := range series {
+		endsAt := s.NextOccurrenceAt.Add(time.Duration(s.ServiceDurationMin) * time.Minute)
+		taken, err := service.repository.IsSlotTaken(ctx, s.StaffMemberID, s.NextOccurrenceAt, endsAt)
+		if err != nil {
+			slog.ErrorContext(ctx, "recurring series slot check failed", "seriesId", s.ID, "error", err)
+			continue
+		}
+
+		token, err := createToken()
+		if err != nil {
+			slog.ErrorContext(ctx, "recurring series token generation failed", "seriesId", s.ID, "error", err)
+			continue
+		}
+
+		appointmentID, err := randomUUID()
+		if err != nil {
+			slog.ErrorContext(ctx, "recurring series uuid generation failed", "seriesId", s.ID, "error", err)
+			continue
+		}
+		if advErr := service.repository.AdvanceRecurringSeries(ctx, AdvanceRecurringSeriesInput{
+			AppointmentID:      appointmentID,
+			BusinessID:         s.BusinessID,
+			CancellationToken:  token,
+			Conflict:           taken,
+			CustomerEmail:      s.CustomerEmail,
+			CustomerID:         s.CustomerID,
+			CustomerName:       s.CustomerName,
+			CustomerPhone:      s.CustomerPhone,
+			EndsAt:             endsAt,
+			ServiceDurationMin: s.ServiceDurationMin,
+			ServiceID:          s.ServiceID,
+			ServiceName:        s.ServiceName,
+			SeriesID:           s.ID,
+			StaffMemberID:      s.StaffMemberID,
+			StaffMemberName:    s.StaffMemberName,
+			StartsAt:           s.NextOccurrenceAt,
+		}); advErr != nil {
+			slog.ErrorContext(ctx, "advance recurring series failed", "seriesId", s.ID, "conflict", taken, "error", advErr)
+		}
+	}
+
+	return nil
 }
 
 func (service *Service) defaultHandlers() map[string]eventHandler {
@@ -436,6 +487,10 @@ func (service *Service) sendAppointmentBookedNotification(
 }
 
 func (service *Service) scheduleAppointmentReminder(ctx context.Context, tx Tx, appointment domain.AppointmentPayload) error {
+	if appointment.Customer.ID == "" {
+		return nil
+	}
+
 	settings, err := tx.GetReminderSettings(ctx, appointment.BusinessID)
 	if err != nil {
 		return fmt.Errorf("get reminder settings: %w", err)
@@ -885,6 +940,16 @@ func createToken() (string, error) {
 	}
 
 	return base64.RawURLEncoding.EncodeToString(bytes), nil
+}
+
+func randomUUID() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate uuid: %w", err)
+	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:]), nil
 }
 
 func calculateCustomerRisk(attendance CustomerAttendance, now time.Time) CustomerRiskSnapshot {

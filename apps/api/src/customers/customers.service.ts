@@ -5,7 +5,7 @@ import { AuditService } from "../audit/audit.service";
 import { BusinessesService } from "../businesses/businesses.service";
 import type { AuthenticatedUser } from "../common/authenticated-user";
 import { PrismaService } from "../prisma/prisma.service";
-import type { CreateCustomerNoteDto, ListCustomersQueryDto, UpdateCustomerDto } from "./dto/customer.dto";
+import type { CreateCustomerDto, CreateCustomerNoteDto, ListCustomersQueryDto, UpdateCustomerDto } from "./dto/customer.dto";
 
 const activeAppointmentStatuses: AppointmentStatus[] = [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED];
 const cancelledAppointmentStatuses: AppointmentStatus[] = [
@@ -41,6 +41,24 @@ export class CustomersService {
       pageSize,
       total: filteredCustomers.length
     };
+  }
+
+  async create(user: AuthenticatedUser, dto: CreateCustomerDto) {
+    const business = await this.businesses.requireCurrentBusiness(user);
+    const email = dto.email.toLowerCase().trim();
+    return this.prisma.customer.upsert({
+      create: {
+        businessId: business.id,
+        email,
+        name: dto.name.trim(),
+        phone: dto.phone?.trim() ?? null
+      },
+      update: {
+        name: dto.name.trim(),
+        ...(dto.phone !== undefined ? { phone: dto.phone.trim() || null } : {})
+      },
+      where: { businessId_email: { businessId: business.id, email } }
+    });
   }
 
   async get(user: AuthenticatedUser, customerId: string) {
