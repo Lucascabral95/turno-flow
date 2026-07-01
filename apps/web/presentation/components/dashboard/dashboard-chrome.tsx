@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, BellRing, CalendarClock, CalendarDays, ClipboardList, ExternalLink, Home, Hourglass, LogIn, RefreshCcw, Repeat2, RotateCcw, Settings2, ShieldCheck, UserPlus, Users, Wand2 } from "lucide-react";
+import { BarChart3, BellRing, CalendarClock, CalendarDays, ClipboardList, ExternalLink, Home, Hourglass, LogIn, RefreshCcw, Repeat2, RotateCcw, Settings2, ShieldCheck, Star, UserPlus, Users, Wand2 } from "lucide-react";
 import Link from "next/link";
 import type { FormEvent, ReactNode } from "react";
 
@@ -172,6 +172,7 @@ function DashboardTabs({ activeView }: { activeView: DashboardView }) {
       <TabLink active={activeView === "booking"} href="/dashboard/reservar" icon={<CalendarClock size={18} />} label="Reservar" />
       <TabLink active={activeView === "metrics"} href="/dashboard/metricas" icon={<BarChart3 size={18} />} label="Metricas" />
       <TabLink active={activeView === "recurring"} href="/dashboard/recurrente" icon={<Repeat2 size={18} />} label="Recurrentes" />
+      <TabLink active={activeView === "reviews"} href="/dashboard/resenas" icon={<Star size={18} />} label="Reseñas" />
     </nav>
   );
 }
@@ -244,6 +245,10 @@ function viewMeta(view: DashboardView): { description: string; title: string } {
     recurring: {
       description: "Series de turnos periodicos creadas automaticamente para clientes regulares.",
       title: "Recurrentes"
+    },
+    reviews: {
+      description: "Calificaciones y comentarios que dejaron tus clientes despues de cada turno.",
+      title: "Reseñas"
     }
   };
 

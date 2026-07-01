@@ -23,6 +23,7 @@ import { HealthModule } from "./health/health.module";
 import { PaymentsModule } from "./payments/payments.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { PublicModule } from "./public/public.module";
+import { ReviewsModule } from "./reviews/reviews.module";
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { PublicModule } from "./public/public.module";
     DashboardModule,
     PaymentsModule,
     PublicModule,
+    ReviewsModule,
     HealthModule
   ]
 })
@@ -57,6 +59,7 @@ export class AppModule implements NestModule {
         { path: "public/businesses/:slug/waitlist", method: RequestMethod.POST },
         { path: "public/waitlist-offers/:token/accept", method: RequestMethod.POST },
         { path: "public/waitlist-offers/:token/reject", method: RequestMethod.POST },
+        { path: "public/reviews/:token", method: RequestMethod.POST },
         { path: "customer-portal/login-link", method: RequestMethod.POST },
         { path: "customer-portal/sessions", method: RequestMethod.POST }
       );

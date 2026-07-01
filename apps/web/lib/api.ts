@@ -1,6 +1,7 @@
 export type {
   Appointment,
   AppointmentPayment,
+  AppointmentReview,
   AvailabilityException,
   AvailabilityRule,
   AvailabilitySlot,
@@ -26,6 +27,7 @@ export type {
   OnboardingStepKey,
   OnboardingTaskStatus,
   PaymentSettings,
+  PublicAppointmentReview,
   ReminderSettings,
   RecurringAppointmentSeries,
   RecurringIntervalUnit,

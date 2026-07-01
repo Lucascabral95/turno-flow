@@ -1,0 +1,85 @@
+@use "../../../app/styles/tokens" as *;
+
+.reviewsView {
+  min-width: 0;
+}
+
+.statCard {
+  background: $surface;
+  border: 1px solid $border;
+  border-radius: 12px;
+  display: grid;
+  gap: 2px;
+  padding: 10px 14px;
+
+  span {
+    color: $muted;
+    font-size: 0.74rem;
+    font-weight: 760;
+    text-transform: uppercase;
+  }
+
+  strong {
+    color: $ink;
+    font-size: 1.3rem;
+  }
+}
+
+.reviewList {
+  display: grid;
+  gap: 12px;
+}
+
+.reviewCard {
+  background: $surface;
+  border: 1px solid $border;
+  border-radius: $radius;
+  box-shadow: $shadow-soft;
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+}
+
+.reviewCardHeader {
+  align-items: flex-start;
+  display: flex;
+  justify-content: space-between;
+
+  strong {
+    color: $ink;
+    font-size: 1rem;
+  }
+
+  p {
+    color: $muted;
+    margin: 2px 0 0;
+  }
+}
+
+.stars {
+  color: $warning;
+  display: flex;
+  gap: 2px;
+}
+
+.pendingBadge {
+  background: $surface-soft;
+  border: 1px solid $border;
+  border-radius: 999px;
+  color: $muted;
+  font-size: 0.74rem;
+  font-weight: 760;
+  padding: 3px 10px;
+}
+
+.comment {
+  color: $ink;
+  font-style: italic;
+  margin: 0;
+}
+
+.meta {
+  color: $muted;
+  font-size: 0.78rem;
+  margin: 0;
+}

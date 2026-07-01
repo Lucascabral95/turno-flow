@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -486,6 +487,65 @@ func TestHandleEventStillAcceptsLegacyNoShowEvent(t *testing.T) {
 	}
 }
 
+func TestHandleEventRequestsReviewAndUpdatesRiskAfterCompletion(t *testing.T) {
+	ctx := context.Background()
+	repository := newFakeRepository()
+	sender := &fakeSender{}
+	service := NewService(repository, sender, "http://localhost:3000", "noreply@example.test")
+	event := bookedEvent(t)
+	event.EventID = "00000000-0000-0000-0000-000000000012"
+	event.Type = domain.EventAppointmentCompleted
+
+	if err := service.HandleEvent(ctx, event); err != nil {
+		t.Fatalf("handle appointment completed event: %v", err)
+	}
+
+	if len(repository.customerRiskUpdates) != 1 {
+		t.Fatalf("expected one customer risk update, got %d", len(repository.customerRiskUpdates))
+	}
+
+	if len(repository.appointmentReviews) != 1 {
+		t.Fatalf("expected one appointment review request, got %d", len(repository.appointmentReviews))
+	}
+	review := repository.appointmentReviews[0]
+	if review.AppointmentID != "appointment-1" || review.BusinessID != "business-1" || review.CustomerID != "customer-1" {
+		t.Fatalf("unexpected review request %#v", review)
+	}
+	if review.Token == "" {
+		t.Fatal("expected a non-empty review token")
+	}
+
+	if len(sender.messages) != 1 {
+		t.Fatalf("expected one review request email, got %d", len(sender.messages))
+	}
+	message := sender.messages[0]
+	for _, expected := range []string{
+		"Contanos como te fue en Business One",
+		"Hola Original Customer",
+		"Business One (business-one)",
+		"Corte",
+		fmt.Sprintf("http://localhost:3000/reviews/%s", review.Token),
+	} {
+		if !strings.Contains(message.Subject+" "+message.Text, expected) {
+			t.Fatalf("expected review request email to contain %q, got subject=%q text=%q", expected, message.Subject, message.Text)
+		}
+	}
+
+	if !hasNotificationLog(repository.notificationLogs, "appointment_review_requested") {
+		t.Fatal("expected appointment_review_requested notification log")
+	}
+
+	if err := service.HandleEvent(ctx, event); err != nil {
+		t.Fatalf("redeliver appointment completed event: %v", err)
+	}
+	if len(repository.appointmentReviews) != 1 {
+		t.Fatalf("expected review request to remain idempotent, got %d", len(repository.appointmentReviews))
+	}
+	if len(sender.messages) != 1 {
+		t.Fatalf("expected no duplicate review request email on redelivery, got %d", len(sender.messages))
+	}
+}
+
 func TestHandleEventRecalculatesMetricsAfterCancellation(t *testing.T) {
 	ctx := context.Background()
 	repository := newFakeRepository()
@@ -652,6 +712,7 @@ func TestSendDueRemindersMarksNotificationFailedWithRetry(t *testing.T) {
 }
 
 type fakeRepository struct {
+	appointmentReviews          []AppointmentReviewInput
 	attendance                  CustomerAttendance
 	attendanceAlertRuns         []attendanceAlertRun
 	candidate                   *domain.WaitlistCandidate
@@ -797,6 +858,16 @@ func (repository *fakeRepository) MarkNotificationSent(_ context.Context, notifi
 func (repository *fakeRepository) CreateWaitlistOffer(_ context.Context, _ WaitlistOfferInput) (string, error) {
 	repository.offerCount++
 	return "waitlist-offer-1", nil
+}
+
+func (repository *fakeRepository) CreateAppointmentReview(_ context.Context, input AppointmentReviewInput) (string, error) {
+	for _, existing := range repository.appointmentReviews {
+		if existing.AppointmentID == input.AppointmentID {
+			return "", nil
+		}
+	}
+	repository.appointmentReviews = append(repository.appointmentReviews, input)
+	return "review-1", nil
 }
 
 func (repository *fakeRepository) GetCalendarSyncTarget(_ context.Context, _ string) (*CalendarSyncTarget, error) {
@@ -1046,6 +1117,16 @@ func (repository *fakeRepository) AdvanceRecurringSeries(_ context.Context, _ Ad
 func hasOutboxEvent(events []OutboxEventInput, eventType string, routingKey string) bool {
 	for _, event := range events {
 		if event.Type == eventType && event.RoutingKey == routingKey {
+			return true
+		}
+	}
+
+	return false
+}
+
+func hasNotificationLog(logs []NotificationLog, template string) bool {
+	for _, log := range logs {
+		if log.Template == template {
 			return true
 		}
 	}

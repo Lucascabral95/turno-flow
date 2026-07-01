@@ -190,7 +190,7 @@ func (service *Service) defaultHandlers() map[string]eventHandler {
 			return service.handleAppointmentBooked(ctx, tx, event.Payload)
 		},
 		domain.EventAppointmentCancelled:         service.handleAppointmentCancelledEvent,
-		domain.EventAppointmentCompleted:         service.handleCustomerRiskEventEvent,
+		domain.EventAppointmentCompleted:         service.handleAppointmentCompletedEvent,
 		domain.EventAppointmentMarkedAsNoShow:    service.handleCustomerRiskEventEvent,
 		domain.EventAppointmentMarkedNoShow:      service.handleCustomerRiskEventEvent,
 		domain.EventAppointmentRescheduled:       service.handleAppointmentRescheduledEvent,
@@ -283,6 +283,73 @@ func (service *Service) handleWaitlistOpportunityEvent(ctx context.Context, tx T
 
 func (service *Service) handleCustomerRiskEventEvent(ctx context.Context, tx Tx, event domain.Event) error {
 	return service.handleCustomerRiskEvent(ctx, tx, event.Payload, eventOccurredAt(event))
+}
+
+func (service *Service) handleAppointmentCompletedEvent(ctx context.Context, tx Tx, event domain.Event) error {
+	if err := service.handleCustomerRiskEvent(ctx, tx, event.Payload, eventOccurredAt(event)); err != nil {
+		return err
+	}
+
+	var appointment domain.AppointmentPayload
+	if err := json.Unmarshal(event.Payload, &appointment); err != nil {
+		return fmt.Errorf("decode appointment completed payload: %w", err)
+	}
+
+	return service.requestAppointmentReview(ctx, tx, appointment)
+}
+
+func (service *Service) requestAppointmentReview(ctx context.Context, tx Tx, appointment domain.AppointmentPayload) error {
+	if appointment.Customer.ID == "" {
+		return nil
+	}
+
+	token, err := createToken()
+	if err != nil {
+		return err
+	}
+
+	reviewID, err := tx.CreateAppointmentReview(ctx, AppointmentReviewInput{
+		AppointmentID: appointment.AppointmentID,
+		BusinessID:    appointment.BusinessID,
+		CustomerID:    appointment.Customer.ID,
+		Token:         token,
+	})
+	if err != nil {
+		return fmt.Errorf("create appointment review: %w", err)
+	}
+	if reviewID == "" {
+		return nil
+	}
+
+	reviewURL := fmt.Sprintf("%s/reviews/%s", service.appBaseURL, token)
+	sendErr := service.sender.Send(ctx, email.Message{
+		From:    service.emailFrom,
+		To:      appointment.Customer.Email,
+		Subject: fmt.Sprintf("Contanos como te fue en %s", appointment.BusinessName),
+		Text: fmt.Sprintf(
+			"Hola %s,\n\nGracias por visitar %s (%s). Nos ayudarias mucho si nos contas como te fue con %s: %s",
+			appointment.Customer.Name,
+			appointment.BusinessName,
+			appointment.BusinessSlug,
+			appointment.Service.Name,
+			reviewURL,
+		),
+	})
+
+	logInput := NotificationLog{
+		AppointmentID: &appointment.AppointmentID,
+		BusinessID:    appointment.BusinessID,
+		Email:         appointment.Customer.Email,
+		Status:        NotificationSent,
+		Template:      "appointment_review_requested",
+	}
+	if sendErr != nil {
+		errorMessage := sendErr.Error()
+		logInput.LastError = &errorMessage
+		logInput.Status = NotificationFailed
+	}
+
+	return tx.CreateNotificationLog(ctx, logInput)
 }
 
 func ignoreEvent(context.Context, Tx, domain.Event) error {
