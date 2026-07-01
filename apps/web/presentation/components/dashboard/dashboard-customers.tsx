@@ -379,6 +379,12 @@ function CustomerDetailPanel({
         <span className={riskBadgeClass(detail.riskLevel)}>{detail.riskLevel}</span>
       </header>
 
+      {detail.marketingOptOut ? (
+        <p className={styles.reactivationNote}>Se dio de baja de los emails de reactivacion.</p>
+      ) : detail.lastReactivationSentAt ? (
+        <p className={styles.reactivationNote}>Ultimo email de reactivacion: {formatDateTime(detail.lastReactivationSentAt)}</p>
+      ) : null}
+
       <section className={styles.detailMetrics}>
         <Summary label="Turnos" value={detail.totalAppointments} />
         <Summary label="Asistencia" value={formatPercent(detail.attendanceRate / 100)} />

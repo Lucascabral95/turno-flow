@@ -217,11 +217,19 @@ func decodeEvent(body []byte) (domain.Event, error) {
 }
 
 func runScheduler(ctx context.Context, cfg config.Config, service *worker.Service, logger *slog.Logger) {
-	logger.Info("scheduler started", "interval_seconds", cfg.SchedulerIntervalSeconds)
+	logger.Info(
+		"scheduler started",
+		"interval_seconds", cfg.SchedulerIntervalSeconds,
+		"reactivation_interval_seconds", cfg.ReactivationIntervalSeconds,
+	)
 	runScheduledJobs(ctx, service, logger, time.Now().UTC())
+	runReactivationJob(ctx, service, logger, time.Now().UTC())
 
 	ticker := time.NewTicker(cfg.SchedulerInterval())
 	defer ticker.Stop()
+
+	reactivationTicker := time.NewTicker(cfg.ReactivationInterval())
+	defer reactivationTicker.Stop()
 
 	for {
 		select {
@@ -230,8 +238,16 @@ func runScheduler(ctx context.Context, cfg config.Config, service *worker.Servic
 			return
 		case now := <-ticker.C:
 			runScheduledJobs(ctx, service, logger, now.UTC())
+		case now := <-reactivationTicker.C:
+			runReactivationJob(ctx, service, logger, now.UTC())
 		}
 	}
+}
+
+func runReactivationJob(ctx context.Context, service *worker.Service, logger *slog.Logger, now time.Time) {
+	runScheduledJob(ctx, logger, "send_reactivation_campaign", func(ctx context.Context) error {
+		return service.SendReactivationCampaign(ctx, now)
+	})
 }
 
 func runScheduledJobs(ctx context.Context, service *worker.Service, logger *slog.Logger, now time.Time) {

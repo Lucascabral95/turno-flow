@@ -7,6 +7,7 @@ import { CustomersService } from "./customers.service";
 
 @Module({
   controllers: [CustomersController],
+  exports: [CustomersService],
   imports: [AuditModule, BusinessesModule],
   providers: [CustomersService]
 })

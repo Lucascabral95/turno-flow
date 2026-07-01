@@ -139,6 +139,12 @@
   }
 }
 
+.reactivationNote {
+  color: $muted;
+  font-size: 0.78rem;
+  margin: -4px 0 0;
+}
+
 .detailMetrics {
   display: grid;
   gap: 10px;

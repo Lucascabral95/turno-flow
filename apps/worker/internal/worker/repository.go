@@ -150,6 +150,15 @@ type AppointmentReviewInput struct {
 	Token         string
 }
 
+type ReactivationTarget struct {
+	BusinessID    string
+	BusinessName  string
+	BusinessSlug  string
+	CustomerEmail string
+	CustomerID    string
+	CustomerName  string
+}
+
 type OutboxEventInput struct {
 	AggregateID string
 	BusinessID  string
@@ -184,11 +193,13 @@ type Repository interface {
 	CreateNotificationLog(ctx context.Context, input NotificationLog) error
 	ClaimDueNotifications(ctx context.Context, now time.Time, limit int, maxAttempts int) ([]DueNotification, error)
 	ClaimDueRecurringSeries(ctx context.Context, now time.Time, batchSize int) ([]domain.RecurringSeries, error)
+	ClaimReactivationTargets(ctx context.Context, now time.Time, inactivityDays int, cooldownDays int, limit int) ([]ReactivationTarget, error)
 	IsSlotTaken(ctx context.Context, staffMemberID string, startsAt, endsAt time.Time) (bool, error)
 	AdvanceRecurringSeries(ctx context.Context, input AdvanceRecurringSeriesInput) error
 	ExpireWaitlistOffers(ctx context.Context, now time.Time) error
 	MarkNotificationFailed(ctx context.Context, notification DueNotification, lastError string, nextAttemptAt *time.Time) error
 	MarkNotificationSent(ctx context.Context, notification DueNotification, sentAt time.Time) error
+	SetCustomerUnsubscribeToken(ctx context.Context, customerID string, unsubscribeToken string) error
 }
 
 type Tx interface {
@@ -206,5 +217,6 @@ type Tx interface {
 	RecalculateBusinessMetricsDaily(ctx context.Context, businessID string, metricDate time.Time) (BusinessMetricsDailySnapshot, error)
 	RecordCalendarEventSync(ctx context.Context, result CalendarEventSyncResult) error
 	UpdateCalendarConnectionToken(ctx context.Context, update CalendarConnectionTokenUpdate) error
+	UpdateCustomerLastAppointment(ctx context.Context, customerID string, lastAppointmentAt time.Time) error
 	UpdateCustomerRisk(ctx context.Context, risk CustomerRiskSnapshot) error
 }

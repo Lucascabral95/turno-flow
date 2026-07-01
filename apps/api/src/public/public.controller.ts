@@ -8,6 +8,7 @@ import {
   CreateWaitlistEntryDto,
   RescheduleAppointmentDto
 } from "../appointments/dto/appointment.dto";
+import { CustomersService } from "../customers/customers.service";
 import { SubmitReviewDto } from "../reviews/dto/review.dto";
 import { ReviewsService } from "../reviews/reviews.service";
 
@@ -16,6 +17,7 @@ import { ReviewsService } from "../reviews/reviews.service";
 export class PublicController {
   constructor(
     private readonly appointments: AppointmentsService,
+    private readonly customers: CustomersService,
     private readonly reviews: ReviewsService
   ) {}
 
@@ -91,5 +93,10 @@ export class PublicController {
   @Post("reviews/:token")
   submitReview(@Param("token") token: string, @Body() input: SubmitReviewDto) {
     return this.reviews.submit(token, input);
+  }
+
+  @Post("unsubscribe/:token")
+  unsubscribe(@Param("token") token: string) {
+    return this.customers.unsubscribeFromMarketing(token);
   }
 }

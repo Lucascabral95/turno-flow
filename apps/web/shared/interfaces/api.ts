@@ -307,7 +307,9 @@ export type CustomerProfile = {
   id: string;
   lastAppointmentAt: string | null;
   lastNotePreview: string | null;
+  lastReactivationSentAt: string | null;
   lastRiskCalculatedAt: string | null;
+  marketingOptOut: boolean;
   name: string;
   nextAppointmentAt: string | null;
   noShowCount: number;

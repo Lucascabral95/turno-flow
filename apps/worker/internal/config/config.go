@@ -26,6 +26,10 @@ type Config struct {
 	MaxNotificationAttempts      int
 	RabbitMQPrefetch             int
 	RabbitMQURL                  string
+	ReactivationBatchSize        int
+	ReactivationCooldownDays     int
+	ReactivationInactivityDays   int
+	ReactivationIntervalSeconds  int
 	ReminderBatchSize            int
 	SchedulerIntervalSeconds     int
 	SMTPHost                     string
@@ -53,6 +57,10 @@ func Load() Config {
 		MaxNotificationAttempts:      getEnvPositiveInt("MAX_NOTIFICATION_ATTEMPTS", 3),
 		RabbitMQPrefetch:             getEnvPositiveInt("RABBITMQ_PREFETCH", workerConcurrency*2),
 		RabbitMQURL:                  getEnv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/"),
+		ReactivationBatchSize:        getEnvPositiveInt("REACTIVATION_BATCH_SIZE", 50),
+		ReactivationCooldownDays:     getEnvPositiveInt("REACTIVATION_COOLDOWN_DAYS", 30),
+		ReactivationInactivityDays:   getEnvPositiveInt("REACTIVATION_INACTIVITY_DAYS", 60),
+		ReactivationIntervalSeconds:  getEnvPositiveInt("REACTIVATION_INTERVAL_SECONDS", 86_400),
 		ReminderBatchSize:            getEnvPositiveInt("REMINDER_BATCH_SIZE", 25),
 		SchedulerIntervalSeconds:     getEnvPositiveInt("SCHEDULER_INTERVAL_SECONDS", 60),
 		SMTPHost:                     getEnv("SMTP_HOST", "smtp.gmail.com"),
@@ -81,6 +89,10 @@ func (config Config) HasGoogleCalendarSync() bool {
 
 func (config Config) SchedulerInterval() time.Duration {
 	return time.Duration(config.SchedulerIntervalSeconds) * time.Second
+}
+
+func (config Config) ReactivationInterval() time.Duration {
+	return time.Duration(config.ReactivationIntervalSeconds) * time.Second
 }
 
 func (config Config) ShouldRunConsumer() bool {
@@ -115,6 +127,18 @@ func (config Config) Validate() error {
 	}
 	if config.SchedulerIntervalSeconds <= 0 {
 		return fmt.Errorf("scheduler interval must be positive")
+	}
+	if config.ReactivationIntervalSeconds <= 0 {
+		return fmt.Errorf("reactivation interval must be positive")
+	}
+	if config.ReactivationInactivityDays <= 0 {
+		return fmt.Errorf("reactivation inactivity days must be positive")
+	}
+	if config.ReactivationCooldownDays <= 0 {
+		return fmt.Errorf("reactivation cooldown days must be positive")
+	}
+	if config.ReactivationBatchSize <= 0 {
+		return fmt.Errorf("reactivation batch size must be positive")
 	}
 	if !config.HasGoogleCalendarSync() && (config.GoogleCalendarClientID != "" || config.GoogleCalendarClientSecret != "" || config.CalendarTokenEncryptionKey != "") {
 		return fmt.Errorf("google calendar sync requires GOOGLE_CALENDAR_CLIENT_ID, GOOGLE_CALENDAR_CLIENT_SECRET and CALENDAR_TOKEN_ENCRYPTION_KEY together")

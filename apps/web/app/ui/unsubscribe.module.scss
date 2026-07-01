@@ -1,0 +1,39 @@
+@use "../styles/tokens" as *;
+
+.unsubscribe {
+  display: grid;
+  margin: 0 auto;
+  max-width: 480px;
+  min-height: 60vh;
+  padding: 28px;
+  place-content: center;
+}
+
+.card {
+  display: grid;
+  gap: 12px;
+
+  h1 {
+    color: $ink;
+    font-size: 1.4rem;
+    letter-spacing: 0;
+    margin: 0;
+  }
+
+  p {
+    color: $muted;
+    margin: 0;
+  }
+}
+
+.successBox {
+  align-items: flex-start;
+  background: rgb(16 185 129 / 10%);
+  border: 1px solid rgb(16 185 129 / 20%);
+  border-radius: 14px;
+  color: $success;
+  display: flex;
+  font-weight: 760;
+  gap: 10px;
+  padding: 12px;
+}

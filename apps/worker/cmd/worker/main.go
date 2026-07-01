@@ -86,9 +86,12 @@ func main() {
 	}
 
 	service := worker.NewServiceWithOptions(repository, sender, cfg.AppBaseURL, cfg.EmailFrom, worker.Options{
-		AttendanceReviewBatchSize: cfg.AttendanceBatchSize,
-		DueNotificationBatchSize:  cfg.ReminderBatchSize,
-		MaxNotificationAttempts:   cfg.MaxNotificationAttempts,
+		AttendanceReviewBatchSize:  cfg.AttendanceBatchSize,
+		DueNotificationBatchSize:   cfg.ReminderBatchSize,
+		MaxNotificationAttempts:    cfg.MaxNotificationAttempts,
+		ReactivationBatchSize:      cfg.ReactivationBatchSize,
+		ReactivationCooldownDays:   cfg.ReactivationCooldownDays,
+		ReactivationInactivityDays: cfg.ReactivationInactivityDays,
 	})
 	if cfg.HasGoogleCalendarSync() {
 		calendarClient, tokenCodec, err := createCalendarSync(cfg)
