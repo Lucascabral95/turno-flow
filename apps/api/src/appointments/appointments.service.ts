@@ -23,6 +23,9 @@ import type {
 
 const DEFAULT_BUSINESS_TIMEZONE = "America/Argentina/Buenos_Aires";
 const appointmentInclude = {
+  business: {
+    select: { name: true, slug: true }
+  },
   customer: true,
   payments: {
     orderBy: { submittedAt: "desc" }
@@ -329,6 +332,103 @@ export class AppointmentsService {
     }
 
     return this.getRescheduleSlotsForAppointment(appointment, date);
+  }
+
+  async listAppointmentsForCustomer(businessId: string, customerId: string) {
+    const appointments = await this.prisma.appointment.findMany({
+      include: appointmentInclude,
+      orderBy: { startsAt: "desc" },
+      take: 100,
+      where: { businessId, customerId }
+    });
+
+    return appointments.map((appointment) => this.serializeAppointment(appointment));
+  }
+
+  async cancelAppointmentForCustomer(businessId: string, customerId: string, appointmentId: string) {
+    const appointment = await this.prisma.appointment.findUnique({
+      include: appointmentInclude,
+      where: { id: appointmentId }
+    });
+
+    if (!appointment || appointment.businessId !== businessId || appointment.customerId !== customerId) {
+      throw new NotFoundException("Appointment not found");
+    }
+
+    if (!activeAppointmentStatuses.includes(appointment.status)) {
+      throw new ConflictException("Appointment is not active");
+    }
+
+    const cancelledAppointment = await this.prisma.$transaction(async (tx) => {
+      const business = await tx.business.findUniqueOrThrow({
+        select: { timezone: true },
+        where: { id: appointment.businessId }
+      });
+
+      const updatedAppointment = await tx.appointment.update({
+        data: { status: AppointmentStatus.CANCELLED_BY_CUSTOMER },
+        include: appointmentInclude,
+        where: { id: appointment.id }
+      });
+
+      await tx.appointmentEvent.create({
+        data: {
+          appointmentId: appointment.id,
+          businessId: appointment.businessId,
+          eventType: EventTypes.AppointmentCancelled,
+          metadata: {
+            cancelledBy: "customer",
+            status: "cancelled_by_customer"
+          }
+        }
+      });
+
+      await this.outbox.create(tx, {
+        aggregateId: appointment.id,
+        businessId: appointment.businessId,
+        payload: this.appointmentPayload(updatedAppointment, business.timezone),
+        routingKey: EventRoutingKeys.AppointmentCancelled,
+        type: EventTypes.AppointmentCancelled,
+        version: 1
+      });
+
+      await this.outbox.create(tx, {
+        aggregateId: appointment.id,
+        businessId: appointment.businessId,
+        payload: this.appointmentPayload(updatedAppointment, business.timezone),
+        routingKey: EventRoutingKeys.SlotReleased,
+        type: EventTypes.SlotReleased,
+        version: 1
+      });
+
+      return updatedAppointment;
+    });
+
+    return this.serializeAppointment(cancelledAppointment);
+  }
+
+  async bookAppointmentForCustomer(
+    businessId: string,
+    customerId: string,
+    input: { serviceId: string; staffMemberId: string | undefined; startsAt: Date }
+  ) {
+    const customer = await this.prisma.customer.findFirst({
+      where: { businessId, id: customerId }
+    });
+
+    if (!customer) {
+      throw new NotFoundException("Customer not found");
+    }
+
+    return this.createAppointmentInTransaction({
+      businessId,
+      customerEmail: customer.email,
+      customerName: customer.name,
+      customerPhone: customer.phone ?? undefined,
+      serviceId: input.serviceId,
+      staffMemberId: input.staffMemberId,
+      startsAt: input.startsAt
+    });
   }
 
   async createWaitlistEntry(slug: string, input: CreateWaitlistEntryDto) {
@@ -1380,6 +1480,8 @@ export class AppointmentsService {
     return {
       appointmentId: appointment.id,
       businessId: appointment.businessId,
+      businessName: appointment.business.name,
+      businessSlug: appointment.business.slug,
       cancellationToken: appointment.cancellationToken,
       customer: {
         completedAppointments: appointment.customer.completedAppointments,

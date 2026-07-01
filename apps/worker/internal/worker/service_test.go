@@ -149,8 +149,9 @@ func TestHandleEventSendsEmailWhenAppointmentIsRescheduled(t *testing.T) {
 	}
 	message := sender.messages[0]
 	for _, expected := range []string{
-		"Tu turno fue reprogramado",
+		"Tu turno en Business One fue reprogramado",
 		"Hola Original Customer",
+		"Business One (business-one)",
 		"Corte",
 		"Nuevo horario: 17/06/2026 09:00 (America/Argentina/Buenos_Aires)",
 		"Horario anterior: 17/06/2026 07:00 (America/Argentina/Buenos_Aires)",
@@ -231,8 +232,9 @@ func TestHandleEventSchedulesReminderOnlyOnceForAppointmentBooked(t *testing.T) 
 	}
 	message := sender.messages[0]
 	for _, expected := range []string{
-		"Tu turno fue confirmado",
+		"Tu turno en Business One fue confirmado",
 		"Hola Original Customer",
+		"Business One (business-one)",
 		"Corte",
 		"17/06/2026 07:00 (America/Argentina/Buenos_Aires)",
 		"http://localhost:3000/cancel/appointment-1?token=cancel-token",
@@ -986,6 +988,8 @@ func appointmentPayload() domain.AppointmentPayload {
 	payload := domain.AppointmentPayload{
 		AppointmentID:     "appointment-1",
 		BusinessID:        "business-1",
+		BusinessName:      "Business One",
+		BusinessSlug:      "business-one",
 		CancellationToken: "cancel-token",
 		Customer: domain.Customer{
 			CompletedAppointments: 0,

@@ -15,6 +15,7 @@ import {
   PublicReadRateLimitMiddleware,
   PublicWriteRateLimitMiddleware,
 } from "./common/rate-limit.middleware";
+import { CustomerPortalModule } from "./customer-portal/customer-portal.module";
 import { CustomersModule } from "./customers/customers.module";
 import { DashboardModule } from "./dashboard/dashboard.module";
 import { EventsModule } from "./events/events.module";
@@ -34,6 +35,7 @@ import { PublicModule } from "./public/public.module";
     AuthModule,
     BusinessesModule,
     CalendarModule,
+    CustomerPortalModule,
     CustomersModule,
     AppointmentsModule,
     DashboardModule,
@@ -54,7 +56,9 @@ export class AppModule implements NestModule {
         { path: "public/businesses/:slug/appointments", method: RequestMethod.POST },
         { path: "public/businesses/:slug/waitlist", method: RequestMethod.POST },
         { path: "public/waitlist-offers/:token/accept", method: RequestMethod.POST },
-        { path: "public/waitlist-offers/:token/reject", method: RequestMethod.POST }
+        { path: "public/waitlist-offers/:token/reject", method: RequestMethod.POST },
+        { path: "customer-portal/login-link", method: RequestMethod.POST },
+        { path: "customer-portal/sessions", method: RequestMethod.POST }
       );
 
     consumer

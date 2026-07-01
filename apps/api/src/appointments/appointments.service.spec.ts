@@ -193,6 +193,10 @@ describe("AppointmentsService", () => {
       status: WaitlistOfferStatus.PENDING,
       waitlistEntryId: "00000000-0000-0000-0000-000000000004",
       appointment: {
+        business: {
+          name: "Business One",
+          slug: "business-one"
+        },
         businessId: "00000000-0000-0000-0000-000000000001",
         cancellationToken: "cancel-token",
         customer: {
@@ -278,6 +282,10 @@ describe("AppointmentsService", () => {
   it("rebalances customer attendance counters when a no-show is corrected to completed", async () => {
     const business = { id: "business-1" };
     const appointment = {
+      business: {
+        name: "Business One",
+        slug: "business-one"
+      },
       businessId: business.id,
       customer: {
         completedAppointments: 1,

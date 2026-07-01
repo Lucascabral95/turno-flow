@@ -39,7 +39,8 @@ export const EventTypes = {
   RecurringSeriesCreated: "RecurringSeriesCreated",
   RecurringAppointmentScheduled: "RecurringAppointmentScheduled",
   RecurringSeriesCompleted: "RecurringSeriesCompleted",
-  RecurringSeriesConflict: "RecurringSeriesConflict"
+  RecurringSeriesConflict: "RecurringSeriesConflict",
+  CustomerPortalLoginRequested: "CustomerPortalLoginRequested"
 } as const;
 
 export type EventType = (typeof EventTypes)[keyof typeof EventTypes];
@@ -85,7 +86,8 @@ export const EventRoutingKeys = {
   RecurringSeriesCreated: "recurring.series_created",
   RecurringAppointmentScheduled: "recurring.appointment_scheduled",
   RecurringSeriesCompleted: "recurring.series_completed",
-  RecurringSeriesConflict: "recurring.conflict"
+  RecurringSeriesConflict: "recurring.conflict",
+  CustomerPortalLoginRequested: "customer.portal_login_requested"
 } as const satisfies Record<keyof typeof EventTypes, string>;
 
 export type EventRoutingKey = (typeof EventRoutingKeys)[keyof typeof EventRoutingKeys];

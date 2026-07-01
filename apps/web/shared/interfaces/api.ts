@@ -263,6 +263,15 @@ export type NotificationHistoryItem = {
   template: string;
 };
 
+export type CustomerPortalProfile = {
+  completedAppointments: number;
+  email: string;
+  id: string;
+  name: string;
+  phone: string | null;
+  totalAppointments: number;
+};
+
 export type CustomerProfile = {
   appointments: Appointment[];
   attendanceRate: number;
