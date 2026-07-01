@@ -78,7 +78,8 @@ export class AppModule implements NestModule {
         { path: "public/businesses/:slug", method: RequestMethod.GET },
         { path: "public/businesses/:slug/services", method: RequestMethod.GET },
         { path: "public/businesses/:slug/availability", method: RequestMethod.GET },
-        { path: "public/businesses/:slug/slots", method: RequestMethod.GET }
+        { path: "public/businesses/:slug/slots", method: RequestMethod.GET },
+        { path: "public/businesses/:slug/reviews", method: RequestMethod.GET }
       );
 
     consumer

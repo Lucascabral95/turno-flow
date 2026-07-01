@@ -63,6 +63,47 @@ export class ReviewsService {
     return { rating: updated.rating, submittedAt: updated.submittedAt };
   }
 
+  async listPublicReviewsByBusiness(slug: string) {
+    const business = await this.prisma.business.findUnique({
+      select: { id: true },
+      where: { slug }
+    });
+
+    if (!business) {
+      throw new NotFoundException("Business not found");
+    }
+
+    const [aggregate, highlights] = await Promise.all([
+      this.prisma.appointmentReview.aggregate({
+        _avg: { rating: true },
+        _count: { rating: true },
+        where: { businessId: business.id, submittedAt: { not: null } }
+      }),
+      this.prisma.appointmentReview.findMany({
+        include: { customer: { select: { name: true } } },
+        orderBy: { submittedAt: "desc" },
+        take: 5,
+        where: {
+          businessId: business.id,
+          comment: { not: null },
+          rating: { gte: 4 },
+          submittedAt: { not: null }
+        }
+      })
+    ]);
+
+    return {
+      averageRating: aggregate._avg.rating ?? null,
+      highlights: highlights.map((review) => ({
+        comment: review.comment,
+        customerName: review.customer.name,
+        rating: review.rating,
+        submittedAt: review.submittedAt
+      })),
+      totalCount: aggregate._count.rating
+    };
+  }
+
   async listForBusiness(user: AuthenticatedUser) {
     const business = await this.businesses.requireCurrentBusiness(user);
 

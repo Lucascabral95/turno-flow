@@ -12,6 +12,7 @@ import {
   Phone,
   Save,
   Scissors,
+  Star,
   Trash2,
   User,
   UserPlus
@@ -21,7 +22,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
-import type { Appointment, AvailabilitySlot, Business, CurrentBusiness, Service, StaffMember } from "../../../lib/api";
+import type { Appointment, AvailabilitySlot, Business, CurrentBusiness, PublicBusinessReviewSummary, Service, StaffMember } from "../../../lib/api";
 import { formatDateTime, formatMoney, formatSlotTime, requestJson } from "../../../lib/api";
 import {
   type BookingFormValues,
@@ -43,6 +44,7 @@ export function PublicBusinessLanding({ businessSlug }: { businessSlug: string }
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [ownerBusiness, setOwnerBusiness] = useState<CurrentBusiness | null>(null);
+  const [reviews, setReviews] = useState<PublicBusinessReviewSummary | null>(null);
   const [services, setServices] = useState<Service[]>([]);
 
   useEffect(() => {
@@ -53,7 +55,7 @@ export function PublicBusinessLanding({ businessSlug }: { businessSlug: string }
       setError(null);
       try {
         const token = window.localStorage.getItem("turnoflow.token");
-        const [businessResponse, serviceResponse, currentBusiness] = await Promise.all([
+        const [businessResponse, serviceResponse, currentBusiness, reviewsResponse] = await Promise.all([
           requestJson<Business>(`/public/businesses/${businessSlug}`),
           requestJson<Service[]>(`/public/businesses/${businessSlug}/services`),
           token
@@ -62,7 +64,8 @@ export function PublicBusinessLanding({ businessSlug }: { businessSlug: string }
                   Authorization: `Bearer ${token}`
                 }
               }).catch(() => null)
-            : Promise.resolve(null)
+            : Promise.resolve(null),
+          requestJson<PublicBusinessReviewSummary>(`/public/businesses/${businessSlug}/reviews`).catch(() => null)
         ]);
 
         if (!active) {
@@ -72,6 +75,7 @@ export function PublicBusinessLanding({ businessSlug }: { businessSlug: string }
         setBusiness(businessResponse);
         setServices(serviceResponse);
         setOwnerBusiness(currentBusiness?.slug === businessSlug ? currentBusiness : null);
+        setReviews(reviewsResponse);
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "No se pudo cargar la pagina publica");
       } finally {
@@ -160,6 +164,35 @@ export function PublicBusinessLanding({ businessSlug }: { businessSlug: string }
           </>
         )}
       </section>
+
+      {reviews && reviews.totalCount > 0 ? (
+        <section className="panel stack">
+          <header className="panel-header">
+            <div>
+              <h2 className="inline">
+                <Star size={20} />
+                Reseñas
+              </h2>
+              <p>
+                {reviews.averageRating?.toFixed(1) ?? "-"}★ · {reviews.totalCount} opinion{reviews.totalCount === 1 ? "" : "es"} de clientes
+              </p>
+            </div>
+          </header>
+          <div className={styles.reviewGrid}>
+            {reviews.highlights.map((review, index) => (
+              <article className={styles.reviewCard} key={index}>
+                <div className={styles.reviewStars} aria-label={`${review.rating} de 5 estrellas`}>
+                  {[1, 2, 3, 4, 5].map((value) => (
+                    <Star fill={value <= (review.rating ?? 0) ? "currentColor" : "none"} key={value} size={14} />
+                  ))}
+                </div>
+                <p>&ldquo;{review.comment}&rdquo;</p>
+                <span>{review.customerName}</span>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </main>
   );
 }

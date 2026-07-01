@@ -28,6 +28,7 @@ export type {
   OnboardingTaskStatus,
   PaymentSettings,
   PublicAppointmentReview,
+  PublicBusinessReviewSummary,
   ReminderSettings,
   RecurringAppointmentSeries,
   RecurringIntervalUnit,
