@@ -21,6 +21,69 @@
   grid-template-columns: minmax(0, 1.25fr) minmax(380px, 0.75fr);
 }
 
+.headerActions {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+
+  button {
+    align-items: center;
+    display: inline-flex;
+    gap: 6px;
+  }
+}
+
+.importPanel {
+  background: $surface-soft;
+  border: 1px dashed $border-strong;
+  border-radius: $radius;
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+
+  p {
+    color: $muted;
+    font-size: 0.86rem;
+    margin: 0;
+
+    code {
+      background: rgb(99 102 241 / 10%);
+      border-radius: 4px;
+      color: $primary;
+      padding: 1px 5px;
+    }
+  }
+}
+
+.importForm {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}
+
+.importSummary {
+  display: grid;
+  gap: 6px;
+
+  span {
+    color: $ink;
+    font-size: 0.86rem;
+    font-weight: 780;
+  }
+
+  ul {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    padding-left: 18px;
+  }
+
+  li {
+    color: $muted;
+    font-size: 0.8rem;
+  }
+}
+
 .customerToolbar {
   align-items: end;
   display: grid;

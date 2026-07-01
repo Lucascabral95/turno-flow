@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { AppointmentStatus, CustomerRiskLevel, Prisma } from "@prisma/client";
+import { parse } from "csv-parse/sync";
 
 import { AuditService } from "../audit/audit.service";
 import { BusinessesService } from "../businesses/businesses.service";
@@ -12,6 +13,11 @@ const cancelledAppointmentStatuses: AppointmentStatus[] = [
   AppointmentStatus.CANCELLED_BY_BUSINESS,
   AppointmentStatus.CANCELLED_BY_CUSTOMER
 ];
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const IMPORT_CHUNK_SIZE = 100;
+
+type ImportCsvRow = { email: string; name: string; phone: string | null };
+type ImportRowError = { email: string; message: string; row: number };
 
 @Injectable()
 export class CustomersService {
@@ -76,6 +82,70 @@ export class CustomersService {
       },
       where: { businessId_email: { businessId: business.id, email } }
     });
+  }
+
+  async importCsv(user: AuthenticatedUser, file: Express.Multer.File | undefined) {
+    const business = await this.businesses.requireCurrentBusiness(user);
+
+    if (!file || file.buffer.length === 0) {
+      throw new BadRequestException("CSV file is required");
+    }
+
+    const records = this.parseCustomerCsv(file.buffer);
+    const errors: ImportRowError[] = [];
+    const rowsByEmail = new Map<string, ImportCsvRow>();
+
+    records.forEach((record, index) => {
+      const row = index + 2;
+      const validated = this.validateImportRow(record, row);
+
+      if ("error" in validated) {
+        errors.push(validated.error);
+        return;
+      }
+
+      rowsByEmail.set(validated.row.email, validated.row);
+    });
+
+    const uniqueRows = [...rowsByEmail.values()];
+
+    if (uniqueRows.length === 0) {
+      return { errors, imported: 0, updated: 0 };
+    }
+
+    const existingEmails = new Set(
+      (
+        await this.prisma.customer.findMany({
+          select: { email: true },
+          where: { businessId: business.id, email: { in: uniqueRows.map((row) => row.email) } }
+        })
+      ).map((customer) => customer.email)
+    );
+
+    for (let index = 0; index < uniqueRows.length; index += IMPORT_CHUNK_SIZE) {
+      const chunk = uniqueRows.slice(index, index + IMPORT_CHUNK_SIZE);
+      await this.prisma.$transaction(async (tx) => {
+        for (const row of chunk) {
+          await tx.customer.upsert({
+            create: {
+              businessId: business.id,
+              email: row.email,
+              name: row.name,
+              phone: row.phone
+            },
+            update: {
+              name: row.name,
+              ...(row.phone !== null ? { phone: row.phone } : {})
+            },
+            where: { businessId_email: { businessId: business.id, email: row.email } }
+          });
+        }
+      });
+    }
+
+    const updated = uniqueRows.filter((row) => existingEmails.has(row.email)).length;
+
+    return { errors, imported: uniqueRows.length - updated, updated };
   }
 
   async get(user: AuthenticatedUser, customerId: string) {
@@ -248,6 +318,41 @@ export class CustomersService {
     });
 
     return this.serializeNote(note);
+  }
+
+  private parseCustomerCsv(buffer: Buffer): Array<Record<string, string>> {
+    try {
+      return parse(buffer, {
+        columns: (header: string[]) => header.map((column) => column.trim().toLowerCase()),
+        skip_empty_lines: true,
+        trim: true
+      }) as Array<Record<string, string>>;
+    } catch {
+      throw new BadRequestException("Could not parse CSV file");
+    }
+  }
+
+  private validateImportRow(
+    record: Record<string, string>,
+    row: number
+  ): { row: ImportCsvRow } | { error: ImportRowError } {
+    const name = record.name?.trim() ?? "";
+    const email = record.email?.trim().toLowerCase() ?? "";
+    const phone = record.phone?.trim() ?? "";
+
+    if (!name || name.length > 120) {
+      return { error: { email, message: "Invalid name", row } };
+    }
+
+    if (!email || email.length > 254 || !EMAIL_PATTERN.test(email)) {
+      return { error: { email, message: "Invalid email", row } };
+    }
+
+    if (phone.length > 40) {
+      return { error: { email, message: "Invalid phone", row } };
+    }
+
+    return { row: { email, name, phone: phone || null } };
   }
 
   private customerAuditPayload(customer: CustomerWithAppointments): Prisma.InputJsonObject {

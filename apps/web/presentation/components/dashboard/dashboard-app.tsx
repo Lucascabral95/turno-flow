@@ -32,6 +32,7 @@ import type {
   CurrentBusiness,
   CurrentUser,
   CustomerDetail,
+  CustomerImportResult,
   CustomerListResponse,
   CustomerProfile,
   DashboardMetrics,
@@ -684,6 +685,21 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
     });
   }, [token]);
 
+  const importCustomersCsv = useCallback(async (file: File): Promise<CustomerImportResult> => {
+    if (!token) {
+      throw new Error("No hay sesion activa");
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    return requestJson<CustomerImportResult>("/customers/import", {
+      body: formData,
+      headers: { Authorization: `Bearer ${token}` },
+      method: "POST"
+    });
+  }, [token]);
+
   async function handleReminderSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
@@ -1045,6 +1061,7 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
             onCreateNote={createCustomerNote}
             onFetchCustomer={fetchCustomerDetail}
             onFetchCustomers={fetchCustomers}
+            onImportCustomers={importCustomersCsv}
             onUpdateCustomer={updateCustomer}
           />
         ) : null}

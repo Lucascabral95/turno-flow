@@ -4,10 +4,11 @@ export function publicApiUrl(path: string): string {
 }
 
 export async function requestJson<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const isFormData = options.body instanceof FormData;
   const response = await fetch(publicApiUrl(path), {
     ...options,
     headers: {
-      "Content-Type": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       ...(options.headers ?? {})
     }
   });

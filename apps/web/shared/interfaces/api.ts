@@ -379,6 +379,12 @@ export type CustomerListResponse = {
   total: number;
 };
 
+export type CustomerImportResult = {
+  errors: Array<{ email: string; message: string; row: number }>;
+  imported: number;
+  updated: number;
+};
+
 export type BusinessMemberRole = "OWNER" | "RECEPTIONIST" | "PROFESSIONAL";
 export type BusinessMemberStatus = "ACTIVE" | "INACTIVE" | "PENDING_INVITE";
 

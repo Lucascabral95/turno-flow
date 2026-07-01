@@ -1,10 +1,10 @@
 "use client";
 
-import { CalendarClock, CheckCircle2, FileText, MessageSquarePlus, Search, ShieldAlert, TrendingUp, Users } from "lucide-react";
-import { useEffect, useState } from "react";
+import { CalendarClock, CheckCircle2, FileText, MessageSquarePlus, Search, ShieldAlert, TrendingUp, UploadCloud, Users } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import type { CustomerDetail, CustomerListResponse, CustomerProfile } from "../../../lib/api";
+import type { CustomerDetail, CustomerImportResult, CustomerListResponse, CustomerProfile } from "../../../lib/api";
 import { formatDateTime, formatMoney, formatPercent } from "../../../lib/api";
 import { appointmentStatusLabel, capitalizeFirst, riskBadgeClass } from "./dashboard-helpers";
 import { EmptyState, Metric } from "./dashboard-shared";
@@ -27,12 +27,14 @@ export function CustomersView({
   onCreateNote,
   onFetchCustomer,
   onFetchCustomers,
+  onImportCustomers,
   onUpdateCustomer
 }: {
   initialCustomers: CustomerProfile[];
   onCreateNote: (customerId: string, content: string) => Promise<CustomerDetail>;
   onFetchCustomer: (customerId: string) => Promise<CustomerDetail>;
   onFetchCustomers: (filters: CustomerFilters) => Promise<CustomerListResponse>;
+  onImportCustomers: (file: File) => Promise<CustomerImportResult>;
   onUpdateCustomer: (
     customerId: string,
     input: { name: string; phone: string; requiresDeposit: boolean }
@@ -51,10 +53,14 @@ export function CustomersView({
     riskLevel: "all",
     sort: "risk_desc"
   });
+  const [importOpen, setImportOpen] = useState(false);
+  const [importResult, setImportResult] = useState<CustomerImportResult | null>(null);
+  const [importSubmitting, setImportSubmitting] = useState(false);
   const [listLoading, setListLoading] = useState(false);
   const [noteContent, setNoteContent] = useState("");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(initialCustomers[0]?.id ?? null);
   const [total, setTotal] = useState(initialCustomers.length);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setCustomers(initialCustomers);
@@ -62,30 +68,31 @@ export function CustomersView({
     setSelectedCustomerId((current) => current ?? initialCustomers[0]?.id ?? null);
   }, [initialCustomers]);
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setListLoading(true);
-      onFetchCustomers(filters)
-        .then((response) => {
-          setCustomers(response.items);
-          setTotal(response.total);
-          setSelectedCustomerId((current) => {
-            if (current && response.items.some((customer) => customer.id === current)) {
-              return current;
-            }
+  const refreshCustomers = useCallback(() => {
+    setListLoading(true);
+    onFetchCustomers(filters)
+      .then((response) => {
+        setCustomers(response.items);
+        setTotal(response.total);
+        setSelectedCustomerId((current) => {
+          if (current && response.items.some((customer) => customer.id === current)) {
+            return current;
+          }
 
-            return response.items[0]?.id ?? null;
-          });
-        })
-        .catch((error) => {
-          const message = error instanceof Error ? error.message : "No se pudieron cargar clientes";
-          toast.error(message);
-        })
-        .finally(() => setListLoading(false));
-    }, 220);
-
-    return () => window.clearTimeout(timer);
+          return response.items[0]?.id ?? null;
+        });
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : "No se pudieron cargar clientes";
+        toast.error(message);
+      })
+      .finally(() => setListLoading(false));
   }, [filters, onFetchCustomers]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(refreshCustomers, 220);
+    return () => window.clearTimeout(timer);
+  }, [refreshCustomers]);
 
   useEffect(() => {
     if (!selectedCustomerId) {
@@ -169,6 +176,26 @@ export function CustomersView({
     }
   }
 
+  async function handleImportFile(file: File) {
+    setImportSubmitting(true);
+    setImportResult(null);
+
+    try {
+      const result = await onImportCustomers(file);
+      setImportResult(result);
+      toast.success(`${result.imported} importados, ${result.updated} actualizados${result.errors.length > 0 ? `, ${result.errors.length} con error` : ""}`);
+      refreshCustomers();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo importar el archivo CSV";
+      toast.error(message);
+    } finally {
+      setImportSubmitting(false);
+      if (importInputRef.current) {
+        importInputRef.current.value = "";
+      }
+    }
+  }
+
   return (
     <section className={`stack ${styles.customersView}`}>
       <section className="appointments-command panel">
@@ -195,8 +222,51 @@ export function CustomersView({
               </h2>
               <p>Busca, filtra y prioriza clientes segun recurrencia, riesgo y valor comercial.</p>
             </div>
-            <span className="badge badge-soft">{total} encontrados</span>
+            <div className={styles.headerActions}>
+              <span className="badge badge-soft">{total} encontrados</span>
+              <button className="button-muted" onClick={() => setImportOpen((current) => !current)} type="button">
+                <UploadCloud size={16} />
+                Importar clientes
+              </button>
+            </div>
           </header>
+
+          {importOpen ? (
+            <div className={styles.importPanel}>
+              <p>Subi un CSV con columnas <code>name, email, phone</code> (phone es opcional). Si el email ya existe, se actualiza nombre y telefono.</p>
+              <div className={styles.importForm}>
+                <input
+                  accept=".csv,text/csv"
+                  disabled={importSubmitting}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) {
+                      void handleImportFile(file);
+                    }
+                  }}
+                  ref={importInputRef}
+                  type="file"
+                />
+                {importSubmitting ? <span className="message">Importando...</span> : null}
+              </div>
+              {importResult ? (
+                <div className={styles.importSummary}>
+                  <span>
+                    {importResult.imported} importados · {importResult.updated} actualizados · {importResult.errors.length} con error
+                  </span>
+                  {importResult.errors.length > 0 ? (
+                    <ul>
+                      {importResult.errors.slice(0, 10).map((rowError, index) => (
+                        <li key={index}>
+                          Fila {rowError.row} ({rowError.email || "sin email"}): {rowError.message}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className={styles.customerToolbar}>
             <label>
