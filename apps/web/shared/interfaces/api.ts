@@ -292,6 +292,17 @@ export type AppointmentReview = {
   submittedAt: string | null;
 };
 
+export type PublicBusinessReviewSummary = {
+  averageRating: number | null;
+  highlights: Array<{
+    comment: string | null;
+    customerName: string;
+    rating: number | null;
+    submittedAt: string | null;
+  }>;
+  totalCount: number;
+};
+
 export type CustomerProfile = {
   appointments: Appointment[];
   attendanceRate: number;

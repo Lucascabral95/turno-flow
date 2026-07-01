@@ -31,6 +31,11 @@ export class PublicController {
     return this.appointments.listPublicServices(slug);
   }
 
+  @Get("businesses/:slug/reviews")
+  listPublicReviews(@Param("slug") slug: string) {
+    return this.reviews.listPublicReviewsByBusiness(slug);
+  }
+
   @Get("businesses/:slug/availability")
   getAvailability(@Param("slug") slug: string, @Query("serviceId", ParseUUIDPipe) serviceId: string, @Query("date") date: string) {
     return this.appointments.getAvailability(slug, serviceId, date);
