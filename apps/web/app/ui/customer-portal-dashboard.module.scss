@@ -1,0 +1,99 @@
+@use "../styles/tokens" as *;
+
+.portal {
+  display: grid;
+  gap: 18px;
+  margin: 0 auto;
+  max-width: 880px;
+  padding: 28px;
+}
+
+.header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+
+  h1 {
+    color: $ink;
+    font-size: 1.8rem;
+    margin: 4px 0 0;
+  }
+}
+
+.appointmentsPanel {
+  min-width: 0;
+}
+
+.appointmentList {
+  display: grid;
+  gap: 12px;
+}
+
+.appointmentCard {
+  background: $surface-soft;
+  border: 1px solid $border;
+  border-radius: $radius;
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+
+  strong {
+    color: $ink;
+    font-size: 1.02rem;
+  }
+
+  p {
+    color: $muted;
+    margin: 2px 0 0;
+  }
+}
+
+.muted {
+  color: $muted;
+}
+
+.appointmentActions {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.statusBadge {
+  background: $surface;
+  border: 1px solid $border;
+  border-radius: 999px;
+  color: $muted;
+  font-size: 0.78rem;
+  font-weight: 760;
+  padding: 4px 10px;
+}
+
+.rebookForm {
+  align-items: end;
+  border-top: 1px dashed $border;
+  display: flex;
+  gap: 10px;
+  padding-top: 10px;
+
+  label {
+    display: grid;
+    font-size: 0.82rem;
+    gap: 4px;
+  }
+}
+
+@media (max-width: 560px) {
+  .portal {
+    padding: 16px;
+  }
+
+  .appointmentActions {
+    flex-wrap: wrap;
+  }
+
+  .rebookForm {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

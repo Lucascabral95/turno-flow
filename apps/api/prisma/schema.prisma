@@ -230,6 +230,7 @@ model Business {
   onboardingEvents          BusinessOnboardingEvent[]
   appointmentPayments       AppointmentPayment[]
   recurringSeries           RecurringAppointmentSeries[]
+  customerPortalLoginTokens CustomerPortalLoginToken[]
 
   @@map("businesses")
 }
@@ -402,10 +403,26 @@ model Customer {
   notes                 CustomerNote[]
   appointmentPayments   AppointmentPayment[]
   recurringSeries       RecurringAppointmentSeries[]
+  portalLoginTokens     CustomerPortalLoginToken[]
 
   @@unique([businessId, email])
   @@index([businessId, riskLevel, riskScore])
   @@map("customers")
+}
+
+model CustomerPortalLoginToken {
+  id         String    @id @default(uuid()) @db.Uuid
+  businessId String    @map("business_id") @db.Uuid
+  business   Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customerId String    @map("customer_id") @db.Uuid
+  customer   Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(3)
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([customerId, createdAt])
+  @@map("customer_portal_login_tokens")
 }
 
 model CustomerNote {

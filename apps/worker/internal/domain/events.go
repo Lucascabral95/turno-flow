@@ -37,6 +37,7 @@ const (
 	EventRecurringAppointmentScheduled   = "RecurringAppointmentScheduled"
 	EventRecurringSeriesCompleted        = "RecurringSeriesCompleted"
 	EventRecurringSeriesConflict         = "RecurringSeriesConflict"
+	EventCustomerPortalLoginRequested    = "CustomerPortalLoginRequested"
 )
 
 type Event struct {
@@ -54,6 +55,8 @@ type Event struct {
 type AppointmentPayload struct {
 	AppointmentID     string    `json:"appointmentId"`
 	BusinessID        string    `json:"businessId"`
+	BusinessName      string    `json:"businessName"`
+	BusinessSlug      string    `json:"businessSlug"`
 	CancellationToken string    `json:"cancellationToken"`
 	Customer          Customer  `json:"customer"`
 	EndsAt            time.Time `json:"endsAt"`
@@ -109,6 +112,16 @@ type MemberPayload struct {
 	PreviousRole string `json:"previousRole,omitempty"`
 	Role        string `json:"role,omitempty"`
 	UserID      string `json:"userId,omitempty"`
+}
+
+type CustomerPortalLoginPayload struct {
+	BusinessID    string `json:"businessId"`
+	BusinessName  string `json:"businessName"`
+	BusinessSlug  string `json:"businessSlug"`
+	CustomerEmail string `json:"customerEmail"`
+	CustomerID    string `json:"customerId"`
+	CustomerName  string `json:"customerName"`
+	Token         string `json:"token"`
 }
 
 type WaitlistCandidate struct {

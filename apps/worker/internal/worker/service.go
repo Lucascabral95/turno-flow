@@ -189,17 +189,54 @@ func (service *Service) defaultHandlers() map[string]eventHandler {
 		domain.EventAppointmentBooked: func(ctx context.Context, tx Tx, event domain.Event) error {
 			return service.handleAppointmentBooked(ctx, tx, event.Payload)
 		},
-		domain.EventAppointmentCancelled:      service.handleAppointmentCancelledEvent,
-		domain.EventAppointmentCompleted:      service.handleCustomerRiskEventEvent,
-		domain.EventAppointmentMarkedAsNoShow: service.handleCustomerRiskEventEvent,
-		domain.EventAppointmentMarkedNoShow:   service.handleCustomerRiskEventEvent,
-		domain.EventAppointmentRescheduled:    service.handleAppointmentRescheduledEvent,
-		domain.EventCustomerRiskScoreUpdated:  ignoreEvent,
-		domain.EventWaitlistOfferAccepted:     ignoreEvent,
-		domain.EventWaitlistOfferCreated:      ignoreEvent,
-		domain.EventWaitlistOfferExpired:      service.handleWaitlistOpportunityEvent,
-		domain.EventWaitlistOfferRejected:     service.handleWaitlistOpportunityEvent,
+		domain.EventAppointmentCancelled:         service.handleAppointmentCancelledEvent,
+		domain.EventAppointmentCompleted:         service.handleCustomerRiskEventEvent,
+		domain.EventAppointmentMarkedAsNoShow:    service.handleCustomerRiskEventEvent,
+		domain.EventAppointmentMarkedNoShow:      service.handleCustomerRiskEventEvent,
+		domain.EventAppointmentRescheduled:       service.handleAppointmentRescheduledEvent,
+		domain.EventCustomerRiskScoreUpdated:     ignoreEvent,
+		domain.EventWaitlistOfferAccepted:        ignoreEvent,
+		domain.EventWaitlistOfferCreated:         ignoreEvent,
+		domain.EventWaitlistOfferExpired:         service.handleWaitlistOpportunityEvent,
+		domain.EventWaitlistOfferRejected:        service.handleWaitlistOpportunityEvent,
+		domain.EventCustomerPortalLoginRequested: service.handleCustomerPortalLoginRequestedEvent,
 	}
+}
+
+func (service *Service) handleCustomerPortalLoginRequestedEvent(ctx context.Context, tx Tx, event domain.Event) error {
+	var payload domain.CustomerPortalLoginPayload
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		return fmt.Errorf("decode customer portal login payload: %w", err)
+	}
+
+	loginURL := fmt.Sprintf("%s/portal/login?token=%s", service.appBaseURL, payload.Token)
+
+	sendErr := service.sender.Send(ctx, email.Message{
+		From:    service.emailFrom,
+		To:      payload.CustomerEmail,
+		Subject: fmt.Sprintf("Ingresa a tu portal de turnos de %s", payload.BusinessName),
+		Text: fmt.Sprintf(
+			"Hola %s, ingresa a tu portal de turnos de %s (%s) desde el siguiente enlace: %s. El enlace vence en 15 minutos.",
+			payload.CustomerName,
+			payload.BusinessName,
+			payload.BusinessSlug,
+			loginURL,
+		),
+	})
+
+	logInput := NotificationLog{
+		BusinessID: payload.BusinessID,
+		Email:      payload.CustomerEmail,
+		Status:     NotificationSent,
+		Template:   "customer_portal_login",
+	}
+	if sendErr != nil {
+		errorMessage := sendErr.Error()
+		logInput.LastError = &errorMessage
+		logInput.Status = NotificationFailed
+	}
+
+	return tx.CreateNotificationLog(ctx, logInput)
 }
 
 func (service *Service) handleAppointmentCancelledEvent(ctx context.Context, tx Tx, event domain.Event) error {
@@ -307,10 +344,12 @@ func (service *Service) sendAppointmentRescheduledNotification(
 	message := email.Message{
 		From:    service.emailFrom,
 		To:      appointment.Customer.Email,
-		Subject: "Tu turno fue reprogramado",
+		Subject: fmt.Sprintf("Tu turno en %s fue reprogramado", appointment.BusinessName),
 		Text: fmt.Sprintf(
-			"Hola %s,\n\nTu turno para %s fue reprogramado.\nNuevo horario: %s%s\n\nSi no podes asistir, podes gestionar tu turno desde: %s",
+			"Hola %s,\n\nTu turno en %s (%s) para %s fue reprogramado.\nNuevo horario: %s%s\n\nSi no podes asistir, podes gestionar tu turno desde: %s",
 			appointment.Customer.Name,
+			appointment.BusinessName,
+			appointment.BusinessSlug,
 			appointment.Service.Name,
 			formatBusinessDateTime(appointment.StartsAt, appointment.Timezone),
 			previousLine,
@@ -459,10 +498,12 @@ func (service *Service) sendAppointmentBookedNotification(
 	message := email.Message{
 		From:    service.emailFrom,
 		To:      appointment.Customer.Email,
-		Subject: "Tu turno fue confirmado",
+		Subject: fmt.Sprintf("Tu turno en %s fue confirmado", appointment.BusinessName),
 		Text: fmt.Sprintf(
-			"Hola %s,\n\nTu turno para %s quedo confirmado para %s.\n\nSi necesitas cancelar o reprogramar, podes gestionarlo desde: %s",
+			"Hola %s,\n\nTu turno en %s (%s) para %s quedo confirmado para %s.\n\nSi necesitas cancelar o reprogramar, podes gestionarlo desde: %s",
 			appointment.Customer.Name,
+			appointment.BusinessName,
+			appointment.BusinessSlug,
 			appointment.Service.Name,
 			formatBusinessDateTime(appointment.StartsAt, appointment.Timezone),
 			manageURL,

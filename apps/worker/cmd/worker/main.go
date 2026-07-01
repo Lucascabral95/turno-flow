@@ -50,6 +50,7 @@ var eventBindingKeys = []string{
 	"recurring.appointment_scheduled",
 	"recurring.series_completed",
 	"recurring.conflict",
+	"customer.portal_login_requested",
 }
 
 func main() {
