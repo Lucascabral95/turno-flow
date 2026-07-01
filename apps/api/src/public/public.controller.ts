@@ -8,11 +8,16 @@ import {
   CreateWaitlistEntryDto,
   RescheduleAppointmentDto
 } from "../appointments/dto/appointment.dto";
+import { SubmitReviewDto } from "../reviews/dto/review.dto";
+import { ReviewsService } from "../reviews/reviews.service";
 
 @ApiTags("public")
 @Controller("public")
 export class PublicController {
-  constructor(private readonly appointments: AppointmentsService) {}
+  constructor(
+    private readonly appointments: AppointmentsService,
+    private readonly reviews: ReviewsService
+  ) {}
 
   @Get("businesses/:slug")
   getBusiness(@Param("slug") slug: string) {
@@ -76,5 +81,15 @@ export class PublicController {
   @Post("waitlist-offers/:token/reject")
   rejectWaitlistOffer(@Param("token") token: string) {
     return this.appointments.rejectWaitlistOffer(token);
+  }
+
+  @Get("reviews/:token")
+  getReview(@Param("token") token: string) {
+    return this.reviews.getByToken(token);
+  }
+
+  @Post("reviews/:token")
+  submitReview(@Param("token") token: string, @Body() input: SubmitReviewDto) {
+    return this.reviews.submit(token, input);
   }
 }

@@ -463,6 +463,24 @@ func (repository *txRepository) CreateScheduledNotification(ctx context.Context,
 	return notificationID, nil
 }
 
+func (repository *txRepository) CreateAppointmentReview(ctx context.Context, input worker.AppointmentReviewInput) (string, error) {
+	var reviewID string
+	err := repository.tx.QueryRow(ctx, `
+		INSERT INTO appointment_reviews (business_id, appointment_id, customer_id, token)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (appointment_id) DO NOTHING
+		RETURNING id
+	`, input.BusinessID, input.AppointmentID, input.CustomerID, input.Token).Scan(&reviewID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("insert appointment review: %w", err)
+	}
+
+	return reviewID, nil
+}
+
 func (repository *txRepository) CreateWaitlistOffer(ctx context.Context, input worker.WaitlistOfferInput) (string, error) {
 	var offerID string
 	err := repository.tx.QueryRow(ctx, `

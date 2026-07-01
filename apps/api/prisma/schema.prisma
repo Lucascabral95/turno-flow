@@ -231,6 +231,7 @@ model Business {
   appointmentPayments       AppointmentPayment[]
   recurringSeries           RecurringAppointmentSeries[]
   customerPortalLoginTokens CustomerPortalLoginToken[]
+  appointmentReviews        AppointmentReview[]
 
   @@map("businesses")
 }
@@ -404,6 +405,7 @@ model Customer {
   appointmentPayments   AppointmentPayment[]
   recurringSeries       RecurringAppointmentSeries[]
   portalLoginTokens     CustomerPortalLoginToken[]
+  appointmentReviews    AppointmentReview[]
 
   @@unique([businessId, email])
   @@index([businessId, riskLevel, riskScore])
@@ -467,12 +469,31 @@ model Appointment {
   waitlistOffers       WaitlistOffer[]
   calendarEventSyncs   CalendarEventSync[]
   payments             AppointmentPayment[]
+  review               AppointmentReview?
 
   @@index([businessId, startsAt])
   @@index([staffMemberId, startsAt])
   @@index([status, endsAt, attendanceAlertedAt])
   @@index([recurringSeriesId, status, startsAt])
   @@map("appointments")
+}
+
+model AppointmentReview {
+  id            String    @id @default(uuid()) @db.Uuid
+  businessId    String    @map("business_id") @db.Uuid
+  business      Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  appointmentId String    @unique @map("appointment_id") @db.Uuid
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  customerId    String    @map("customer_id") @db.Uuid
+  customer      Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  token         String    @unique
+  rating        Int?
+  comment       String?
+  requestedAt   DateTime  @default(now()) @map("requested_at") @db.Timestamptz(3)
+  submittedAt   DateTime? @map("submitted_at") @db.Timestamptz(3)
+
+  @@index([businessId, submittedAt])
+  @@map("appointment_reviews")
 }
 
 model AppointmentPayment {

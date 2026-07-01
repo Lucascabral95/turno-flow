@@ -143,6 +143,13 @@ type WaitlistOfferInput struct {
 	WaitlistEntryID string
 }
 
+type AppointmentReviewInput struct {
+	AppointmentID string
+	BusinessID    string
+	CustomerID    string
+	Token         string
+}
+
 type OutboxEventInput struct {
 	AggregateID string
 	BusinessID  string
@@ -185,6 +192,7 @@ type Repository interface {
 }
 
 type Tx interface {
+	CreateAppointmentReview(ctx context.Context, input AppointmentReviewInput) (string, error)
 	CreateNotificationLog(ctx context.Context, input NotificationLog) error
 	CreateOutboxEvent(ctx context.Context, input OutboxEventInput) error
 	CreateScheduledNotification(ctx context.Context, input ScheduledNotificationInput) (string, error)

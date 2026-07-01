@@ -24,6 +24,7 @@ import { toast } from "sonner";
 
 import type {
   Appointment,
+  AppointmentReview,
   AvailabilitySlot,
   BusinessMember,
   BusinessMemberRole,
@@ -76,6 +77,7 @@ import {
 import { BookingAdminView, HomeView, MetricsPanel } from "./dashboard-overview";
 import { OnboardingChecklistCard, OnboardingWizard } from "./dashboard-onboarding";
 import { RemindersView } from "./dashboard-reminders";
+import { ReviewsView } from "./dashboard-reviews";
 import { Alert, EmptyState, InventoryList, LoadingState, Metric, SummaryValue } from "./dashboard-shared";
 import styles from "./dashboard-app.module.scss";
 export type DashboardView =
@@ -90,7 +92,8 @@ export type DashboardView =
   | "reminders"
   | "booking"
   | "metrics"
-  | "recurring";
+  | "recurring"
+  | "reviews";
 
 type SubmitResult = Promise<boolean>;
 type AuthMode = "login" | "register";
@@ -112,6 +115,7 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
   const [onboardingStatus, setOnboardingStatus] = useState<OnboardingStatus | null>(null);
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings | null>(null);
   const [recurringSeries, setRecurringSeries] = useState<RecurringAppointmentSeries[]>([]);
+  const [reviews, setReviews] = useState<AppointmentReview[]>([]);
   const [staffMetrics, setStaffMetrics] = useState<StaffMetrics[]>([]);
   const [token, setToken] = useState<string | null>(null);
   const [waitlistEntries, setWaitlistEntries] = useState<WaitlistEntry[]>([]);
@@ -204,7 +208,8 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
         currentOnboardingStatus,
         currentUser,
         currentStaffMetrics,
-        currentRecurringSeries
+        currentRecurringSeries,
+        currentReviews
       ] = await Promise.all([
         requestJson<CurrentBusiness | null>("/businesses/current", {
           headers: { Authorization: `Bearer ${activeToken}` }
@@ -247,6 +252,9 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
         }).catch(() => []),
         requestJson<RecurringAppointmentSeries[]>("/appointments/recurring-series", {
           headers: { Authorization: `Bearer ${activeToken}` }
+        }).catch(() => []),
+        requestJson<AppointmentReview[]>("/reviews", {
+          headers: { Authorization: `Bearer ${activeToken}` }
         }).catch(() => [])
       ]);
       setBusiness(currentBusiness);
@@ -261,6 +269,7 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
       setNotificationTemplates(currentNotificationTemplates);
       setOnboardingStatus(currentOnboardingStatus ?? currentBusiness?.onboarding ?? null);
       setRecurringSeries(currentRecurringSeries ?? []);
+      setReviews(currentReviews ?? []);
       setStaffMetrics(currentStaffMetrics ?? []);
       setWaitlistEntries(currentWaitlistEntries);
     } catch (refreshError) {
@@ -1146,6 +1155,7 @@ export function DashboardApp({ initialView = "home" }: { initialView?: Dashboard
             />
           </section>
         ) : null}
+        {activeView === "reviews" ? <ReviewsView reviews={reviews} /> : null}
       </section>
     </DashboardShell>
   );

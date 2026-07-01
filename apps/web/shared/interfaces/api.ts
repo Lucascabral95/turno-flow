@@ -272,6 +272,26 @@ export type CustomerPortalProfile = {
   totalAppointments: number;
 };
 
+export type PublicAppointmentReview = {
+  business: { name: string; slug: string };
+  comment: string | null;
+  rating: number | null;
+  service: Pick<Service, "id" | "name">;
+  staffMember: Pick<StaffMember, "id" | "name">;
+  startsAt: string;
+  submittedAt: string | null;
+};
+
+export type AppointmentReview = {
+  comment: string | null;
+  customer: { email: string; id: string; name: string };
+  id: string;
+  rating: number | null;
+  requestedAt: string;
+  service: Pick<Service, "id" | "name">;
+  submittedAt: string | null;
+};
+
 export type CustomerProfile = {
   appointments: Appointment[];
   attendanceRate: number;
