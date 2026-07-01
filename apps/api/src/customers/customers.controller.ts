@@ -1,4 +1,17 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors
+} from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiTags } from "@nestjs/swagger";
 
 import { AuthGuard } from "../auth/auth.guard";
@@ -6,6 +19,8 @@ import type { AuthenticatedUser } from "../common/authenticated-user";
 import { CurrentUser } from "../common/current-user.decorator";
 import { CustomersService } from "./customers.service";
 import { CreateCustomerDto, CreateCustomerNoteDto, ListCustomersQueryDto, UpdateCustomerDto } from "./dto/customer.dto";
+
+const IMPORT_MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024;
 
 @ApiTags("customers")
 @UseGuards(AuthGuard)
@@ -16,6 +31,12 @@ export class CustomersController {
   @Post()
   create(@CurrentUser() user: AuthenticatedUser, @Body() input: CreateCustomerDto) {
     return this.customers.create(user, input);
+  }
+
+  @Post("import")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: IMPORT_MAX_FILE_SIZE_BYTES } }))
+  importCsv(@CurrentUser() user: AuthenticatedUser, @UploadedFile() file: Express.Multer.File) {
+    return this.customers.importCsv(user, file);
   }
 
   @Get()

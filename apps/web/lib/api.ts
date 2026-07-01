@@ -13,6 +13,7 @@ export type {
   CurrentBusiness,
   CurrentUser,
   CustomerDetail,
+  CustomerImportResult,
   CustomerPortalProfile,
   CustomerListResponse,
   CustomerNote,

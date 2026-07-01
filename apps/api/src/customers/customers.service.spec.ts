@@ -151,6 +151,104 @@ describe("CustomersService", () => {
     await expect(service.update(user, "customer-foreign", { name: "Ana" })).rejects.toThrow("Customer not found");
     expect(customerUpdate).not.toHaveBeenCalled();
   });
+
+  it("imports valid CSV rows, updating existing emails and creating new ones", async () => {
+    const requireCurrentBusiness = vi.fn().mockResolvedValue(business);
+    const customerFindMany = vi.fn().mockResolvedValue([{ email: "existing@example.test" }]);
+    const customerUpsert = vi.fn().mockResolvedValue({});
+    const transaction = { customer: { upsert: customerUpsert } };
+    const service = new CustomersService(
+      audit as never,
+      { requireCurrentBusiness } as never,
+      {
+        $transaction: vi.fn((fn: (tx: typeof transaction) => Promise<unknown>) => fn(transaction)),
+        customer: { findMany: customerFindMany }
+      } as never
+    );
+    const csv = Buffer.from(
+      "name,email,phone\nExisting Customer,Existing@example.test,1122334455\nNew Customer,new@example.test,\n"
+    );
+
+    const result = await service.importCsv(user, { buffer: csv } as never);
+
+    expect(customerFindMany).toHaveBeenCalledWith({
+      select: { email: true },
+      where: { businessId: "business-1", email: { in: ["existing@example.test", "new@example.test"] } }
+    });
+    expect(customerUpsert).toHaveBeenCalledTimes(2);
+    expect(customerUpsert).toHaveBeenCalledWith({
+      create: { businessId: "business-1", email: "existing@example.test", name: "Existing Customer", phone: "1122334455" },
+      update: { name: "Existing Customer", phone: "1122334455" },
+      where: { businessId_email: { businessId: "business-1", email: "existing@example.test" } }
+    });
+    expect(customerUpsert).toHaveBeenCalledWith({
+      create: { businessId: "business-1", email: "new@example.test", name: "New Customer", phone: null },
+      update: { name: "New Customer" },
+      where: { businessId_email: { businessId: "business-1", email: "new@example.test" } }
+    });
+    expect(result).toEqual({ errors: [], imported: 1, updated: 1 });
+  });
+
+  it("collects per-row errors for invalid CSV data without failing the whole import", async () => {
+    const requireCurrentBusiness = vi.fn().mockResolvedValue(business);
+    const customerFindMany = vi.fn().mockResolvedValue([]);
+    const customerUpsert = vi.fn().mockResolvedValue({});
+    const transaction = { customer: { upsert: customerUpsert } };
+    const service = new CustomersService(
+      audit as never,
+      { requireCurrentBusiness } as never,
+      {
+        $transaction: vi.fn((fn: (tx: typeof transaction) => Promise<unknown>) => fn(transaction)),
+        customer: { findMany: customerFindMany }
+      } as never
+    );
+    const csv = Buffer.from("name,email,phone\n,missing-name@example.test,\nAna,not-an-email,\nBeto,beto@example.test,\n");
+
+    const result = await service.importCsv(user, { buffer: csv } as never);
+
+    expect(result.errors).toEqual([
+      { email: "missing-name@example.test", message: "Invalid name", row: 2 },
+      { email: "not-an-email", message: "Invalid email", row: 3 }
+    ]);
+    expect(result.imported).toBe(1);
+    expect(customerUpsert).toHaveBeenCalledTimes(1);
+  });
+
+  it("deduplicates repeated emails within the same CSV, keeping the last occurrence", async () => {
+    const requireCurrentBusiness = vi.fn().mockResolvedValue(business);
+    const customerFindMany = vi.fn().mockResolvedValue([]);
+    const customerUpsert = vi.fn().mockResolvedValue({});
+    const transaction = { customer: { upsert: customerUpsert } };
+    const service = new CustomersService(
+      audit as never,
+      { requireCurrentBusiness } as never,
+      {
+        $transaction: vi.fn((fn: (tx: typeof transaction) => Promise<unknown>) => fn(transaction)),
+        customer: { findMany: customerFindMany }
+      } as never
+    );
+    const csv = Buffer.from("name,email,phone\nAna Old,dup@example.test,\nAna New,dup@example.test,\n");
+
+    const result = await service.importCsv(user, { buffer: csv } as never);
+
+    expect(customerUpsert).toHaveBeenCalledTimes(1);
+    expect(customerUpsert).toHaveBeenCalledWith({
+      create: { businessId: "business-1", email: "dup@example.test", name: "Ana New", phone: null },
+      update: { name: "Ana New" },
+      where: { businessId_email: { businessId: "business-1", email: "dup@example.test" } }
+    });
+    expect(result).toEqual({ errors: [], imported: 1, updated: 0 });
+  });
+
+  it("rejects an import with no file", async () => {
+    const service = new CustomersService(
+      audit as never,
+      { requireCurrentBusiness: vi.fn().mockResolvedValue(business) } as never,
+      {} as never
+    );
+
+    await expect(service.importCsv(user, undefined)).rejects.toThrow("CSV file is required");
+  });
 });
 
 function buildCustomer(overrides: Partial<ReturnType<typeof baseCustomer>> = {}) {
