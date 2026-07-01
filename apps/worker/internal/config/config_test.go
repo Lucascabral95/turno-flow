@@ -14,6 +14,10 @@ func TestLoadUsesDefaultsWhenEnvironmentIsEmpty(t *testing.T) {
 	t.Setenv("MAX_NOTIFICATION_ATTEMPTS", "")
 	t.Setenv("RABBITMQ_URL", "")
 	t.Setenv("RABBITMQ_PREFETCH", "")
+	t.Setenv("REACTIVATION_BATCH_SIZE", "")
+	t.Setenv("REACTIVATION_COOLDOWN_DAYS", "")
+	t.Setenv("REACTIVATION_INACTIVITY_DAYS", "")
+	t.Setenv("REACTIVATION_INTERVAL_SECONDS", "")
 	t.Setenv("REMINDER_BATCH_SIZE", "")
 	t.Setenv("SCHEDULER_INTERVAL_SECONDS", "")
 	t.Setenv("SMTP_HOST", "")
@@ -57,6 +61,18 @@ func TestLoadUsesDefaultsWhenEnvironmentIsEmpty(t *testing.T) {
 	if cfg.RabbitMQPrefetch != 8 {
 		t.Fatalf("unexpected rabbitmq prefetch %d", cfg.RabbitMQPrefetch)
 	}
+	if cfg.ReactivationBatchSize != 50 {
+		t.Fatalf("unexpected reactivation batch size %d", cfg.ReactivationBatchSize)
+	}
+	if cfg.ReactivationCooldownDays != 30 {
+		t.Fatalf("unexpected reactivation cooldown days %d", cfg.ReactivationCooldownDays)
+	}
+	if cfg.ReactivationInactivityDays != 60 {
+		t.Fatalf("unexpected reactivation inactivity days %d", cfg.ReactivationInactivityDays)
+	}
+	if cfg.ReactivationIntervalSeconds != 86_400 {
+		t.Fatalf("unexpected reactivation interval seconds %d", cfg.ReactivationIntervalSeconds)
+	}
 	if cfg.ReminderBatchSize != 25 {
 		t.Fatalf("unexpected reminder batch size %d", cfg.ReminderBatchSize)
 	}
@@ -98,6 +114,10 @@ func TestLoadUsesEnvironmentOverrides(t *testing.T) {
 	t.Setenv("MAX_NOTIFICATION_ATTEMPTS", "5")
 	t.Setenv("RABBITMQ_URL", "amqp://rabbit.example:5672/")
 	t.Setenv("RABBITMQ_PREFETCH", "12")
+	t.Setenv("REACTIVATION_BATCH_SIZE", "75")
+	t.Setenv("REACTIVATION_COOLDOWN_DAYS", "45")
+	t.Setenv("REACTIVATION_INACTIVITY_DAYS", "90")
+	t.Setenv("REACTIVATION_INTERVAL_SECONDS", "3600")
 	t.Setenv("REMINDER_BATCH_SIZE", "40")
 	t.Setenv("SCHEDULER_INTERVAL_SECONDS", "30")
 	t.Setenv("SMTP_HOST", "smtp.example.test")
@@ -149,6 +169,18 @@ func TestLoadUsesEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.RabbitMQPrefetch != 12 {
 		t.Fatalf("unexpected rabbitmq prefetch %d", cfg.RabbitMQPrefetch)
+	}
+	if cfg.ReactivationBatchSize != 75 {
+		t.Fatalf("unexpected reactivation batch size %d", cfg.ReactivationBatchSize)
+	}
+	if cfg.ReactivationCooldownDays != 45 {
+		t.Fatalf("unexpected reactivation cooldown days %d", cfg.ReactivationCooldownDays)
+	}
+	if cfg.ReactivationInactivityDays != 90 {
+		t.Fatalf("unexpected reactivation inactivity days %d", cfg.ReactivationInactivityDays)
+	}
+	if cfg.ReactivationIntervalSeconds != 3600 {
+		t.Fatalf("unexpected reactivation interval seconds %d", cfg.ReactivationIntervalSeconds)
 	}
 	if cfg.ReminderBatchSize != 40 {
 		t.Fatalf("unexpected reminder batch size %d", cfg.ReminderBatchSize)

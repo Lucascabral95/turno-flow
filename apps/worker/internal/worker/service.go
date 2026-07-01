@@ -19,6 +19,9 @@ const (
 	attendanceReviewBatchSize          = 25
 	dueNotificationBatchSize           = 25
 	maxNotificationAttempts            = 3
+	reactivationBatchSize              = 50
+	reactivationCooldownDays           = 30
+	reactivationInactivityDays         = 60
 	customerRiskUpdatedRoutingKey      = "customer.risk_score_updated"
 	dailyMetricsCalculatedRoutingKey   = "metrics.daily_calculated"
 	reminderScheduledRoutingKey        = "reminder.scheduled"
@@ -30,9 +33,12 @@ const (
 )
 
 type Options struct {
-	AttendanceReviewBatchSize int
-	DueNotificationBatchSize  int
-	MaxNotificationAttempts   int
+	AttendanceReviewBatchSize  int
+	DueNotificationBatchSize   int
+	MaxNotificationAttempts    int
+	ReactivationBatchSize      int
+	ReactivationCooldownDays   int
+	ReactivationInactivityDays int
 }
 
 type eventHandler func(context.Context, Tx, domain.Event) error
@@ -77,9 +83,12 @@ func (service *Service) WithCalendarSync(calendar CalendarClient, codec TokenCod
 
 func DefaultOptions() Options {
 	return Options{
-		AttendanceReviewBatchSize: attendanceReviewBatchSize,
-		DueNotificationBatchSize:  dueNotificationBatchSize,
-		MaxNotificationAttempts:   maxNotificationAttempts,
+		AttendanceReviewBatchSize:  attendanceReviewBatchSize,
+		DueNotificationBatchSize:   dueNotificationBatchSize,
+		MaxNotificationAttempts:    maxNotificationAttempts,
+		ReactivationBatchSize:      reactivationBatchSize,
+		ReactivationCooldownDays:   reactivationCooldownDays,
+		ReactivationInactivityDays: reactivationInactivityDays,
 	}
 }
 
@@ -178,6 +187,62 @@ func (service *Service) CreateRecurringAppointments(ctx context.Context, now tim
 			StartsAt:           s.NextOccurrenceAt,
 		}); advErr != nil {
 			slog.ErrorContext(ctx, "advance recurring series failed", "seriesId", s.ID, "conflict", taken, "error", advErr)
+		}
+	}
+
+	return nil
+}
+
+func (service *Service) SendReactivationCampaign(ctx context.Context, now time.Time) error {
+	targets, err := service.repository.ClaimReactivationTargets(
+		ctx,
+		now,
+		service.options.ReactivationInactivityDays,
+		service.options.ReactivationCooldownDays,
+		service.options.ReactivationBatchSize,
+	)
+	if err != nil {
+		return fmt.Errorf("claim reactivation targets: %w", err)
+	}
+
+	for _, target := range targets {
+		token, err := createToken()
+		if err != nil {
+			slog.ErrorContext(ctx, "reactivation token generation failed", "customerId", target.CustomerID, "error", err)
+			continue
+		}
+
+		unsubscribeURL := fmt.Sprintf("%s/unsubscribe/%s", service.appBaseURL, token)
+		sendErr := service.sender.Send(ctx, email.Message{
+			From:    service.emailFrom,
+			To:      target.CustomerEmail,
+			Subject: fmt.Sprintf("Te extranamos en %s", target.BusinessName),
+			Text: fmt.Sprintf(
+				"Hola %s, hace un tiempo que no te vemos en %s (%s). Si queres reservar un nuevo turno, contactanos. Si preferis no recibir mas estos avisos, date de baja desde: %s",
+				target.CustomerName,
+				target.BusinessName,
+				target.BusinessSlug,
+				unsubscribeURL,
+			),
+		})
+
+		logInput := NotificationLog{
+			BusinessID: target.BusinessID,
+			Email:      target.CustomerEmail,
+			Status:     NotificationSent,
+			Template:   "customer_reactivation",
+		}
+		if sendErr != nil {
+			errorMessage := sendErr.Error()
+			logInput.LastError = &errorMessage
+			logInput.Status = NotificationFailed
+		}
+		if err := service.repository.CreateNotificationLog(ctx, logInput); err != nil {
+			return err
+		}
+
+		if err := service.repository.SetCustomerUnsubscribeToken(ctx, target.CustomerID, token); err != nil {
+			return err
 		}
 	}
 
@@ -293,6 +358,12 @@ func (service *Service) handleAppointmentCompletedEvent(ctx context.Context, tx 
 	var appointment domain.AppointmentPayload
 	if err := json.Unmarshal(event.Payload, &appointment); err != nil {
 		return fmt.Errorf("decode appointment completed payload: %w", err)
+	}
+
+	if appointment.Customer.ID != "" {
+		if err := tx.UpdateCustomerLastAppointment(ctx, appointment.Customer.ID, appointment.StartsAt); err != nil {
+			return fmt.Errorf("update customer last appointment: %w", err)
+		}
 	}
 
 	return service.requestAppointmentReview(ctx, tx, appointment)
@@ -530,6 +601,15 @@ func (options Options) withDefaults() Options {
 	}
 	if options.MaxNotificationAttempts <= 0 {
 		options.MaxNotificationAttempts = defaults.MaxNotificationAttempts
+	}
+	if options.ReactivationBatchSize <= 0 {
+		options.ReactivationBatchSize = defaults.ReactivationBatchSize
+	}
+	if options.ReactivationCooldownDays <= 0 {
+		options.ReactivationCooldownDays = defaults.ReactivationCooldownDays
+	}
+	if options.ReactivationInactivityDays <= 0 {
+		options.ReactivationInactivityDays = defaults.ReactivationInactivityDays
 	}
 
 	return options

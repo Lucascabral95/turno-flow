@@ -21,6 +21,23 @@ export class CustomersService {
     private readonly prisma: PrismaService
   ) {}
 
+  async unsubscribeFromMarketing(token: string) {
+    const customer = await this.prisma.customer.findUnique({
+      where: { unsubscribeToken: token }
+    });
+
+    if (!customer) {
+      throw new NotFoundException("Unsubscribe link not found");
+    }
+
+    await this.prisma.customer.update({
+      data: { marketingOptOut: true },
+      where: { id: customer.id }
+    });
+
+    return { unsubscribed: true };
+  }
+
   async list(user: AuthenticatedUser, query: ListCustomersQueryDto = {}) {
     const business = await this.businesses.requireCurrentBusiness(user);
     const page = query.page ?? 1;
@@ -378,7 +395,9 @@ export class CustomersService {
       id: customer.id,
       lastAppointmentAt: customer.appointments[0]?.startsAt.toISOString() ?? null,
       lastNotePreview: notes[0]?.content ?? null,
+      lastReactivationSentAt: customer.lastReactivationSentAt?.toISOString() ?? null,
       lastRiskCalculatedAt: customer.lastRiskCalculatedAt?.toISOString() ?? null,
+      marketingOptOut: customer.marketingOptOut,
       name: customer.name,
       nextAppointmentAt: activeAppointments
         .filter((appointment) => appointment.startsAt > new Date())
@@ -573,7 +592,9 @@ type CustomerWithAppointments = {
   completedAppointments: number;
   email: string;
   id: string;
+  lastReactivationSentAt: Date | null;
   lastRiskCalculatedAt: Date | null;
+  marketingOptOut: boolean;
   name: string;
   noShowCount: number;
   notes?: CustomerNoteWithUser[];

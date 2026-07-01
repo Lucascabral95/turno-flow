@@ -60,6 +60,7 @@ export class AppModule implements NestModule {
         { path: "public/waitlist-offers/:token/accept", method: RequestMethod.POST },
         { path: "public/waitlist-offers/:token/reject", method: RequestMethod.POST },
         { path: "public/reviews/:token", method: RequestMethod.POST },
+        { path: "public/unsubscribe/:token", method: RequestMethod.POST },
         { path: "customer-portal/login-link", method: RequestMethod.POST },
         { path: "customer-portal/sessions", method: RequestMethod.POST }
       );

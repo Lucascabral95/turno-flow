@@ -590,9 +590,12 @@ func TestServiceUsesConfiguredBatchSizes(t *testing.T) {
 	ctx := context.Background()
 	repository := newFakeRepository()
 	service := NewServiceWithOptions(repository, &fakeSender{}, "http://localhost:3000", "noreply@example.test", Options{
-		AttendanceReviewBatchSize: 7,
-		DueNotificationBatchSize:  9,
-		MaxNotificationAttempts:   4,
+		AttendanceReviewBatchSize:  7,
+		DueNotificationBatchSize:   9,
+		MaxNotificationAttempts:    4,
+		ReactivationBatchSize:      15,
+		ReactivationCooldownDays:   45,
+		ReactivationInactivityDays: 90,
 	})
 	now := time.Date(2026, 6, 19, 11, 0, 0, 0, time.UTC)
 
@@ -601,6 +604,9 @@ func TestServiceUsesConfiguredBatchSizes(t *testing.T) {
 	}
 	if err := service.SendDueReminders(ctx, now); err != nil {
 		t.Fatalf("send due reminders: %v", err)
+	}
+	if err := service.SendReactivationCampaign(ctx, now); err != nil {
+		t.Fatalf("send reactivation campaign: %v", err)
 	}
 
 	if repository.attendanceAlertRuns[0].limit != 7 {
@@ -611,6 +617,70 @@ func TestServiceUsesConfiguredBatchSizes(t *testing.T) {
 	}
 	if repository.lastMaxNotificationAttempts != 4 {
 		t.Fatalf("expected max notification attempts 4, got %d", repository.lastMaxNotificationAttempts)
+	}
+	if len(repository.reactivationClaims) != 1 {
+		t.Fatalf("expected one reactivation claim, got %d", len(repository.reactivationClaims))
+	}
+	claim := repository.reactivationClaims[0]
+	if claim.limit != 15 || claim.cooldownDays != 45 || claim.inactivityDays != 90 {
+		t.Fatalf("unexpected reactivation claim %#v", claim)
+	}
+}
+
+func TestSendReactivationCampaignEmailsTargetsAndStoresUnsubscribeToken(t *testing.T) {
+	ctx := context.Background()
+	repository := newFakeRepository()
+	repository.reactivationTargets = []ReactivationTarget{
+		{
+			BusinessID:    "business-1",
+			BusinessName:  "Business One",
+			BusinessSlug:  "business-one",
+			CustomerEmail: "inactive@example.test",
+			CustomerID:    "customer-1",
+			CustomerName:  "Inactive Customer",
+		},
+	}
+	sender := &fakeSender{}
+	service := NewService(repository, sender, "http://localhost:3000", "noreply@example.test")
+
+	if err := service.SendReactivationCampaign(ctx, time.Date(2026, 6, 19, 11, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("send reactivation campaign: %v", err)
+	}
+
+	if len(sender.messages) != 1 {
+		t.Fatalf("expected one reactivation email, got %d", len(sender.messages))
+	}
+	message := sender.messages[0]
+	for _, expected := range []string{
+		"Te extranamos en Business One",
+		"Hola Inactive Customer",
+		"Business One (business-one)",
+	} {
+		if !strings.Contains(message.Subject+" "+message.Text, expected) {
+			t.Fatalf("expected reactivation email to contain %q, got subject=%q text=%q", expected, message.Subject, message.Text)
+		}
+	}
+
+	if len(repository.unsubscribeTokens) != 1 {
+		t.Fatalf("expected one unsubscribe token stored, got %d", len(repository.unsubscribeTokens))
+	}
+	stored := repository.unsubscribeTokens[0]
+	if stored.customerID != "customer-1" || stored.unsubscribeToken == "" {
+		t.Fatalf("unexpected stored unsubscribe token %#v", stored)
+	}
+	if !strings.Contains(message.Text, fmt.Sprintf("http://localhost:3000/unsubscribe/%s", stored.unsubscribeToken)) {
+		t.Fatalf("expected email to contain unsubscribe link with stored token, got %q", message.Text)
+	}
+
+	if !hasNotificationLog(repository.notificationLogs, "customer_reactivation") {
+		t.Fatal("expected customer_reactivation notification log")
+	}
+
+	if err := service.SendReactivationCampaign(ctx, time.Date(2026, 6, 19, 11, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("second send reactivation campaign: %v", err)
+	}
+	if len(sender.messages) != 1 {
+		t.Fatalf("expected no additional email once targets are exhausted, got %d", len(sender.messages))
 	}
 }
 
@@ -712,27 +782,31 @@ func TestSendDueRemindersMarksNotificationFailedWithRetry(t *testing.T) {
 }
 
 type fakeRepository struct {
-	appointmentReviews          []AppointmentReviewInput
-	attendance                  CustomerAttendance
-	attendanceAlertRuns         []attendanceAlertRun
-	candidate                   *domain.WaitlistCandidate
-	customerRiskUpdates         []CustomerRiskSnapshot
-	calendarConnectionErrors    []calendarConnectionError
-	calendarSyncResults         []CalendarEventSyncResult
-	calendarSyncTarget          *CalendarSyncTarget
-	calendarTokenUpdates        []CalendarConnectionTokenUpdate
-	dueNotifications            []DueNotification
-	failedNotifications         []failedNotification
-	metricsRecalculated         []BusinessMetricsDailySnapshot
-	notificationLogs            []NotificationLog
-	offerCount                  int
-	outboxEvents                []OutboxEventInput
-	processed                   map[string]bool
-	reminderSettings            ReminderSettings
-	sentNotifications           []DueNotification
-	scheduledNotifications      []ScheduledNotificationInput
-	lastDueNotificationLimit    int
-	lastMaxNotificationAttempts int
+	appointmentReviews              []AppointmentReviewInput
+	attendance                      CustomerAttendance
+	attendanceAlertRuns             []attendanceAlertRun
+	candidate                       *domain.WaitlistCandidate
+	customerLastAppointmentUpdates  []customerLastAppointmentUpdate
+	customerRiskUpdates             []CustomerRiskSnapshot
+	calendarConnectionErrors        []calendarConnectionError
+	calendarSyncResults             []CalendarEventSyncResult
+	calendarSyncTarget              *CalendarSyncTarget
+	calendarTokenUpdates            []CalendarConnectionTokenUpdate
+	dueNotifications                []DueNotification
+	failedNotifications             []failedNotification
+	metricsRecalculated             []BusinessMetricsDailySnapshot
+	notificationLogs                []NotificationLog
+	offerCount                      int
+	outboxEvents                    []OutboxEventInput
+	processed                       map[string]bool
+	reactivationClaims              []reactivationClaim
+	reactivationTargets             []ReactivationTarget
+	unsubscribeTokens               []customerUnsubscribeToken
+	reminderSettings                ReminderSettings
+	sentNotifications                []DueNotification
+	scheduledNotifications          []ScheduledNotificationInput
+	lastDueNotificationLimit         int
+	lastMaxNotificationAttempts      int
 }
 
 type calendarConnectionError struct {
@@ -750,6 +824,23 @@ type failedNotification struct {
 type attendanceAlertRun struct {
 	limit int
 	now   time.Time
+}
+
+type customerLastAppointmentUpdate struct {
+	customerID        string
+	lastAppointmentAt time.Time
+}
+
+type reactivationClaim struct {
+	cooldownDays   int
+	inactivityDays int
+	limit          int
+	now            time.Time
+}
+
+type customerUnsubscribeToken struct {
+	customerID       string
+	unsubscribeToken string
 }
 
 func newFakeRepository() *fakeRepository {
@@ -924,6 +1015,14 @@ func (repository *fakeRepository) UpdateCalendarConnectionToken(_ context.Contex
 
 func (repository *fakeRepository) UpdateCustomerRisk(_ context.Context, risk CustomerRiskSnapshot) error {
 	repository.customerRiskUpdates = append(repository.customerRiskUpdates, risk)
+	return nil
+}
+
+func (repository *fakeRepository) UpdateCustomerLastAppointment(_ context.Context, customerID string, lastAppointmentAt time.Time) error {
+	repository.customerLastAppointmentUpdates = append(repository.customerLastAppointmentUpdates, customerLastAppointmentUpdate{
+		customerID:         customerID,
+		lastAppointmentAt: lastAppointmentAt,
+	})
 	return nil
 }
 
@@ -1104,6 +1203,26 @@ func assertError(message string) error {
 
 func (repository *fakeRepository) ClaimDueRecurringSeries(_ context.Context, _ time.Time, _ int) ([]domain.RecurringSeries, error) {
 	return nil, nil
+}
+
+func (repository *fakeRepository) ClaimReactivationTargets(_ context.Context, now time.Time, inactivityDays int, cooldownDays int, limit int) ([]ReactivationTarget, error) {
+	repository.reactivationClaims = append(repository.reactivationClaims, reactivationClaim{
+		cooldownDays:   cooldownDays,
+		inactivityDays: inactivityDays,
+		limit:          limit,
+		now:            now,
+	})
+	targets := repository.reactivationTargets
+	repository.reactivationTargets = nil
+	return targets, nil
+}
+
+func (repository *fakeRepository) SetCustomerUnsubscribeToken(_ context.Context, customerID string, unsubscribeToken string) error {
+	repository.unsubscribeTokens = append(repository.unsubscribeTokens, customerUnsubscribeToken{
+		customerID:       customerID,
+		unsubscribeToken: unsubscribeToken,
+	})
+	return nil
 }
 
 func (repository *fakeRepository) IsSlotTaken(_ context.Context, _ string, _, _ time.Time) (bool, error) {

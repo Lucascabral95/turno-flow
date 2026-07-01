@@ -888,6 +888,19 @@ func (repository *txRepository) UpdateCustomerRisk(ctx context.Context, risk wor
 	return nil
 }
 
+func (repository *txRepository) UpdateCustomerLastAppointment(ctx context.Context, customerID string, lastAppointmentAt time.Time) error {
+	_, err := repository.tx.Exec(ctx, `
+		UPDATE customers
+		SET last_appointment_at = $2, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $1 AND (last_appointment_at IS NULL OR last_appointment_at < $2)
+	`, customerID, lastAppointmentAt)
+	if err != nil {
+		return fmt.Errorf("update customer last appointment: %w", err)
+	}
+
+	return nil
+}
+
 func notificationLogSQL() string {
 	return `
 		INSERT INTO notification_logs (
@@ -1003,6 +1016,76 @@ func (repository *Repository) ClaimDueRecurringSeries(ctx context.Context, now t
 	}
 
 	return series, nil
+}
+
+func (repository *Repository) ClaimReactivationTargets(ctx context.Context, now time.Time, inactivityDays int, cooldownDays int, limit int) ([]worker.ReactivationTarget, error) {
+	tx, err := repository.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin reactivation claim: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	inactiveBefore := now.AddDate(0, 0, -inactivityDays)
+	cooldownBefore := now.AddDate(0, 0, -cooldownDays)
+
+	rows, err := tx.Query(ctx, `
+		WITH due AS (
+			SELECT id FROM customers
+			WHERE risk_level IN ('medium', 'high')
+				AND marketing_opt_out = false
+				AND last_appointment_at IS NOT NULL
+				AND last_appointment_at < $1
+				AND (last_reactivation_sent_at IS NULL OR last_reactivation_sent_at < $2)
+			ORDER BY last_appointment_at ASC
+			LIMIT $3
+			FOR UPDATE SKIP LOCKED
+		)
+		UPDATE customers c SET last_reactivation_sent_at = $4
+		FROM due
+		WHERE c.id = due.id
+		RETURNING
+			c.id,
+			c.business_id,
+			c.name,
+			c.email,
+			(SELECT name FROM businesses WHERE id = c.business_id),
+			(SELECT slug FROM businesses WHERE id = c.business_id)
+	`, inactiveBefore, cooldownBefore, limit, now)
+	if err != nil {
+		return nil, fmt.Errorf("claim reactivation targets: %w", err)
+	}
+	defer rows.Close()
+
+	var targets []worker.ReactivationTarget
+	for rows.Next() {
+		var target worker.ReactivationTarget
+		if err := rows.Scan(
+			&target.CustomerID, &target.BusinessID, &target.CustomerName, &target.CustomerEmail,
+			&target.BusinessName, &target.BusinessSlug,
+		); err != nil {
+			return nil, fmt.Errorf("scan reactivation target: %w", err)
+		}
+		targets = append(targets, target)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate reactivation targets: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit reactivation claim: %w", err)
+	}
+
+	return targets, nil
+}
+
+func (repository *Repository) SetCustomerUnsubscribeToken(ctx context.Context, customerID string, unsubscribeToken string) error {
+	_, err := repository.pool.Exec(ctx, `
+		UPDATE customers SET unsubscribe_token = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1
+	`, customerID, unsubscribeToken)
+	if err != nil {
+		return fmt.Errorf("set customer unsubscribe token: %w", err)
+	}
+
+	return nil
 }
 
 func (repository *Repository) IsSlotTaken(ctx context.Context, staffMemberID string, startsAt, endsAt time.Time) (bool, error) {
