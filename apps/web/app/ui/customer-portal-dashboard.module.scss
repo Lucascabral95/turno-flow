@@ -88,12 +88,25 @@
     padding: 16px;
   }
 
+  .header {
+    align-items: stretch;
+    display: grid;
+    gap: 12px;
+  }
+
   .appointmentActions {
-    flex-wrap: wrap;
+    align-items: stretch;
+    display: grid;
+    grid-template-columns: 1fr;
+
+    button,
+    a {
+      width: 100%;
+    }
   }
 
   .rebookForm {
-    flex-direction: column;
     align-items: stretch;
+    display: grid;
   }
 }

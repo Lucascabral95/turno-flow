@@ -21,6 +21,28 @@ import styles from "./dashboard-appointments.module.scss";
 const DEFAULT_PAGE_SIZE = 20;
 const PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 
+const STATUS_FILTER_OPTIONS: Array<{ label: string; value: "active" | Appointment["status"] }> = [
+  { label: "Activos", value: "active" },
+  { label: "Pendientes", value: "pending" },
+  { label: "Confirmados", value: "confirmed" },
+  { label: "Completados", value: "completed" },
+  { label: "No-shows", value: "no_show" },
+  { label: "Cancelados por cliente", value: "cancelled_by_customer" },
+  { label: "Cancelados por negocio", value: "cancelled_by_business" }
+];
+
+function matchesStatusFilter(appointment: Appointment, filter: "active" | Appointment["status"], now: number | Date): boolean {
+  if (filter === "active") {
+    return isOperationalAppointment(appointment, now);
+  }
+
+  if (appointment.status !== filter) {
+    return false;
+  }
+
+  return !isActionableAppointment(appointment) || isOperationalAppointment(appointment, now);
+}
+
 export function AppointmentsView({
   appointments,
   business,
@@ -154,37 +176,33 @@ function AppointmentsOperationsPanel({
     setPage(1);
   }, [pageSize, query, statusFilter]);
 
+  const matchesQuery = (appointment: Appointment) => {
+    const normalizedQuery = query.trim().toLowerCase();
+
+    if (!normalizedQuery) {
+      return true;
+    }
+
+    return [
+      appointment.customer.name,
+      appointment.customer.email,
+      appointment.customer.phone ?? "",
+      appointment.service.name,
+      appointment.staffMember.name,
+      appointment.status
+    ].some((value) => value.toLowerCase().includes(normalizedQuery));
+  };
+
   const filteredAppointments = appointments
-    .filter((appointment) => {
-      if (statusFilter === "active") {
-        return isOperationalAppointment(appointment, now);
-      }
-
-      if (appointment.status !== statusFilter) {
-        return false;
-      }
-
-      return !isActionableAppointment(appointment) || isOperationalAppointment(appointment, now);
-    })
-    .filter((appointment) => {
-      const normalizedQuery = query.trim().toLowerCase();
-
-      if (!normalizedQuery) {
-        return true;
-      }
-
-      return [
-        appointment.customer.name,
-        appointment.customer.email,
-        appointment.customer.phone ?? "",
-        appointment.service.name,
-        appointment.staffMember.name,
-        appointment.status
-      ].some((value) => value.toLowerCase().includes(normalizedQuery));
-    })
+    .filter((appointment) => matchesStatusFilter(appointment, statusFilter, now))
+    .filter(matchesQuery)
     .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime());
   const totalPages = pageCount(filteredAppointments.length, pageSize);
   const visibleAppointments = paginate(filteredAppointments, page, pageSize);
+  const statusFilterCounts = STATUS_FILTER_OPTIONS.map((option) => ({
+    ...option,
+    count: appointments.filter((appointment) => matchesStatusFilter(appointment, option.value, now) && matchesQuery(appointment)).length
+  }));
 
   useEffect(() => {
     setPage((currentPage) => Math.min(currentPage, totalPages));
@@ -202,6 +220,20 @@ function AppointmentsOperationsPanel({
         </div>
         <span className="badge badge-soft">{filteredAppointments.length} visibles</span>
       </header>
+      <div className="pill-filter-row">
+        {statusFilterCounts.map((option) => (
+          <button
+            aria-pressed={statusFilter === option.value}
+            className="pill-filter"
+            key={option.value}
+            onClick={() => setStatusFilter(option.value)}
+            type="button"
+          >
+            {option.label}
+            <span className="pill-filter-count">{option.count}</span>
+          </button>
+        ))}
+      </div>
       <div className="appointments-toolbar">
         <label>
           Buscar
@@ -210,21 +242,6 @@ function AppointmentsOperationsPanel({
             placeholder="Cliente, email, servicio o profesional"
             value={query}
           />
-        </label>
-        <label>
-          Estado
-          <select
-            onChange={(event) => setStatusFilter(event.target.value as "active" | Appointment["status"])}
-            value={statusFilter}
-          >
-            <option value="active">Activos</option>
-            <option value="pending">Pendientes</option>
-            <option value="confirmed">Confirmados</option>
-            <option value="completed">Completados</option>
-            <option value="no_show">No-shows</option>
-            <option value="cancelled_by_customer">Cancelados por cliente</option>
-            <option value="cancelled_by_business">Cancelados por negocio</option>
-          </select>
         </label>
         <label>
           Por pagina
@@ -265,7 +282,7 @@ function AppointmentsOperationsPanel({
 
                 return (
                   <tr className={displayStatus.overdue ? styles.overdueRow : undefined} key={appointment.id}>
-                    <td>
+                    <td data-label="Cliente">
                       <div className="table-primary">
                         <strong>
                           {capitalizeFirst(appointment.customer.name)}
@@ -275,35 +292,35 @@ function AppointmentsOperationsPanel({
                         {appointment.customer.phone ? <span>{appointment.customer.phone}</span> : null}
                       </div>
                     </td>
-                    <td>
+                    <td data-label="Servicio">
                       <div className="table-primary">
                         <strong>{appointment.service.name}</strong>
                         <span>{appointment.service.durationMinutes} min</span>
                       </div>
                     </td>
-                    <td>{capitalizeFirst(appointment.staffMember.name)}</td>
-                    <td>
+                    <td data-label="Profesional">{capitalizeFirst(appointment.staffMember.name)}</td>
+                    <td data-label="Horario">
                       <div className="table-primary">
                         <strong>{formatDateTime(appointment.startsAt)}</strong>
                         <span>Fin: {formatDateTime(appointment.endsAt)}</span>
                         {timingHint ? <span className={upcoming ? styles.upcomingHint : styles.liveHint}>{timingHint}</span> : null}
                       </div>
                     </td>
-                    <td>
+                    <td data-label="Estado">
                       <div className={styles.statusCell}>
                         <span className={displayStatus.className}>{displayStatus.label}</span>
                         {upcoming ? <span className={styles.upcomingMeta}>Proximo</span> : null}
                         {!upcoming && actionable ? <span className={styles.liveMeta}>En curso</span> : null}
                       </div>
                     </td>
-                    <td>
+                    <td data-label="SeÃ±a">
                       <PaymentStatusCell appointment={appointment} onPaymentStatus={onPaymentStatus} />
                     </td>
-                    <td>{formatMoney(appointment.service.priceCents)}</td>
-                    <td>
+                    <td data-label="Valor">{formatMoney(appointment.service.priceCents)}</td>
+                    <td data-label="Acciones">
                       <div className="appointment-actions">
                         <button
-                          className="button-secondary"
+                          className="action-btn action-btn-neutral"
                           disabled={!actionable}
                           onClick={() => {
                             if (reschedulingId === appointment.id) {
@@ -319,7 +336,7 @@ function AppointmentsOperationsPanel({
                           Reprogramar
                         </button>
                         <button
-                          className="button-secondary"
+                          className="action-btn action-btn-success"
                           disabled={!actionable}
                           onClick={() => onStatus(appointment.id, "completed")}
                           type="button"
@@ -327,7 +344,7 @@ function AppointmentsOperationsPanel({
                           Completar
                         </button>
                         <button
-                          className="button-danger"
+                          className="action-btn action-btn-warning"
                           disabled={!actionable}
                           onClick={() => onStatus(appointment.id, "no_show")}
                           type="button"
@@ -335,7 +352,7 @@ function AppointmentsOperationsPanel({
                           No-show
                         </button>
                         <button
-                          className="button-muted"
+                          className="action-btn action-btn-danger"
                           disabled={!actionable}
                           onClick={() => onStatus(appointment.id, "cancelled_by_business")}
                           type="button"
@@ -451,15 +468,15 @@ function PaymentStatusCell({
       {latestPayment.reference ? <span>Ref: {latestPayment.reference}</span> : null}
       {latestPayment.status === "submitted" ? (
         <div className="appointment-actions">
-          <button className="button-secondary" onClick={() => onPaymentStatus(latestPayment.id, "confirm")} type="button">
+          <button className="action-btn action-btn-info" onClick={() => onPaymentStatus(latestPayment.id, "confirm")} type="button">
             Confirmar
           </button>
-          <button className="button-danger" onClick={() => onPaymentStatus(latestPayment.id, "reject")} type="button">
+          <button className="action-btn action-btn-danger" onClick={() => onPaymentStatus(latestPayment.id, "reject")} type="button">
             Rechazar
           </button>
         </div>
       ) : latestPayment.status === "confirmed" ? (
-        <button className="button-muted" onClick={() => onPaymentStatus(latestPayment.id, "void")} type="button">
+        <button className="action-btn action-btn-neutral" onClick={() => onPaymentStatus(latestPayment.id, "void")} type="button">
           Anular
         </button>
       ) : null}
@@ -669,7 +686,7 @@ function AppointmentHistoryPanel({ appointments }: { appointments: Appointment[]
 
                 return (
                   <tr className={displayStatus.overdue ? styles.overdueRow : undefined} key={appointment.id}>
-                    <td>
+                    <td data-label="Cliente">
                       <div className="table-primary">
                         <strong>
                           {capitalizeFirst(appointment.customer.name)}
@@ -679,27 +696,27 @@ function AppointmentHistoryPanel({ appointments }: { appointments: Appointment[]
                         {appointment.customer.phone ? <span>{appointment.customer.phone}</span> : null}
                       </div>
                     </td>
-                    <td>
+                    <td data-label="Servicio">
                       <div className="table-primary">
                         <strong>{appointment.service.name}</strong>
                         <span>{appointment.service.durationMinutes} min</span>
                       </div>
                     </td>
-                    <td>{capitalizeFirst(appointment.staffMember.name)}</td>
-                    <td>{formatDateTime(appointment.startsAt)}</td>
-                    <td>
+                    <td data-label="Profesional">{capitalizeFirst(appointment.staffMember.name)}</td>
+                    <td data-label="Inicio">{formatDateTime(appointment.startsAt)}</td>
+                    <td data-label="Fin">
                       <div className="table-primary">
                         <strong>{formatDateTime(appointment.endsAt)}</strong>
                         {displayStatus.overdue && timingHint ? <span className={styles.overdueHint}>{timingHint}</span> : null}
                       </div>
                     </td>
-                    <td>
+                    <td data-label="Estado">
                       <div className={styles.statusCell}>
                         <span className={displayStatus.className}>{displayStatus.label}</span>
                         {displayStatus.overdue ? <span className={styles.overdueMeta}>No hubo asistencia confirmada</span> : null}
                       </div>
                     </td>
-                    <td>{formatMoney(appointment.service.priceCents)}</td>
+                    <td data-label="Valor">{formatMoney(appointment.service.priceCents)}</td>
                   </tr>
                 );
               })}

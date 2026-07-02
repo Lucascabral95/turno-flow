@@ -239,11 +239,40 @@
 }
 
 @media (max-width: 560px) {
+  .cancelAppointment {
+    padding: 12px;
+  }
+
   .hero {
     padding: 18px;
   }
 
+  .slotHeader {
+    align-items: stretch;
+    display: grid;
+  }
+
   .slotGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .successBox,
+  .lockedBox {
+    display: grid;
+  }
+
+  .actionPanel,
+  .cancelPanel,
+  .tokenPanel {
+    button,
+    :global(.button-link) {
+      width: 100%;
+    }
+  }
+}
+
+@media (max-width: 380px) {
+  .slotGrid {
+    grid-template-columns: 1fr;
   }
 }

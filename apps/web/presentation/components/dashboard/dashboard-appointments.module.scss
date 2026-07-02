@@ -11,7 +11,7 @@
 
   :global(.appointments-command-copy) {
     display: grid;
-    gap: 8px;
+    gap: 6px;
 
     h2 {
       font-size: 1.45rem;
@@ -25,6 +25,10 @@
       margin: 0;
       max-width: 760px;
     }
+  }
+
+  :global(.dashboard-banner-stats) {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
@@ -57,13 +61,8 @@
   :global(.appointment-actions) {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px;
     justify-content: flex-end;
-
-    button {
-      min-height: 34px;
-      padding: 7px 10px;
-    }
   }
 }
 
@@ -331,6 +330,7 @@
   .appointmentsView {
     :global(.appointments-command) {
       grid-template-columns: 1fr;
+      padding: 16px;
     }
   }
 
@@ -359,6 +359,108 @@
       .rescheduleActions {
         display: grid;
       }
+    }
+  }
+}
+
+@media (max-width: 720px) {
+  .operationsPanel,
+  .historyPanel {
+    :global(.table-shell) {
+      overflow: visible;
+    }
+
+    :global(.appointments-table) {
+      min-width: 0;
+
+      thead {
+        display: none;
+      }
+
+      table,
+      tbody,
+      tr,
+      td {
+        display: block;
+        width: 100%;
+      }
+
+      tr {
+        background: $surface;
+        border: 1px solid $border;
+        border-radius: $radius;
+        box-shadow: $shadow-soft;
+        margin-bottom: 12px;
+        overflow: hidden;
+      }
+
+      td {
+        align-items: start;
+        border-bottom: 1px solid $border-soft;
+        display: grid;
+        gap: 8px;
+        grid-template-columns: minmax(96px, 0.38fr) minmax(0, 1fr);
+        padding: 11px 12px;
+        text-align: left !important;
+
+        &::before {
+          color: $muted;
+          content: attr(data-label);
+          font-size: 0.72rem;
+          font-weight: 780;
+          text-transform: uppercase;
+        }
+
+        &:last-child {
+          border-bottom: 0;
+          max-width: none;
+          width: auto;
+        }
+      }
+    }
+  }
+
+  .operationsPanel {
+    :global(.appointment-actions) {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+
+      button {
+        width: 100%;
+      }
+    }
+  }
+
+  .paginationBar {
+    align-items: stretch;
+    display: grid;
+
+    label,
+    select {
+      width: 100%;
+    }
+  }
+}
+
+@media (max-width: 560px) {
+  .operationsPanel {
+    :global(.appointment-actions) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .rescheduleForm {
+    border-radius: 12px;
+    max-height: calc(100dvh - 24px);
+    max-width: calc(100vw - 20px);
+    padding: 14px;
+    width: calc(100vw - 20px);
+  }
+
+  .rescheduleSlots {
+    button {
+      flex: 1 1 calc(50% - 8px);
+      min-width: 0;
     }
   }
 }

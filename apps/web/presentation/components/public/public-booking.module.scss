@@ -430,3 +430,59 @@
     }
   }
 }
+
+@media (max-width: 560px) {
+  .publicLanding,
+  .publicBooking {
+    gap: 14px;
+    padding: 12px;
+
+    :global(.topbar),
+    :global(.feature-banner),
+    :global(.booking-section),
+    :global(.booking-summary-card),
+    :global(.booking-waitlist-card),
+    :global(.booking-confirmation) {
+      padding: 16px;
+    }
+
+    :global(.public-hero) {
+      width: 100%;
+
+      :global(.button-link),
+      button {
+        width: 100%;
+      }
+    }
+  }
+
+  .publicBooking {
+    .depositToggle {
+      grid-template-columns: 1fr;
+    }
+
+    :global(.booking-slot-header),
+    :global(.summary-row),
+    :global(.booking-confirmation-actions) {
+      align-items: stretch;
+      display: grid;
+      grid-template-columns: 1fr;
+    }
+
+    :global(.booking-slot-panel) {
+      padding: 12px;
+    }
+
+    :global(.slot-grid) {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+}
+
+@media (max-width: 380px) {
+  .publicBooking {
+    :global(.slot-grid) {
+      grid-template-columns: 1fr;
+    }
+  }
+}

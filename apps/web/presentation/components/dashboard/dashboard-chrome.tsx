@@ -1,8 +1,9 @@
 "use client";
 
-import { BarChart3, BellRing, CalendarClock, CalendarDays, ClipboardList, ExternalLink, Home, Hourglass, LogIn, RefreshCcw, Repeat2, RotateCcw, Settings2, ShieldCheck, Star, UserPlus, Users, Wand2 } from "lucide-react";
+import { BarChart3, BellRing, CalendarClock, CalendarDays, ClipboardList, ExternalLink, Home, Hourglass, LogIn, Menu, RefreshCcw, Repeat2, RotateCcw, Settings2, ShieldCheck, Star, UserPlus, Users, Wand2, X } from "lucide-react";
 import Link from "next/link";
 import type { FormEvent, ReactNode } from "react";
+import { useEffect, useState } from "react";
 
 import type { CurrentBusiness } from "../../../lib/api";
 import type { DashboardView } from "./dashboard-app";
@@ -22,9 +23,31 @@ export function DashboardShell({
   children: ReactNode;
   loading: boolean;
 }) {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) {
+      return;
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setMobileMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("keydown", onKeyDown);
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = "";
+    };
+  }, [mobileMenuOpen]);
+
   return (
     <main className={`${styles.dashboardShell} dashboard-shell`}>
-      <aside className="sidebar">
+      <div className="mobile-nav-bar">
         <div className="sidebar-brand">
           <div className="brand-mark">T</div>
           <div>
@@ -32,7 +55,34 @@ export function DashboardShell({
             <span>{business?.name ?? "Workspace"}</span>
           </div>
         </div>
-        <DashboardTabs activeView={activeView} />
+        <button
+          aria-controls="dashboard-navigation"
+          aria-expanded={mobileMenuOpen}
+          aria-label={mobileMenuOpen ? "Cerrar menu" : "Abrir menu"}
+          className="icon-button mobile-menu-trigger"
+          onClick={() => setMobileMenuOpen((open) => !open)}
+          type="button"
+        >
+          {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
+        </button>
+      </div>
+      {mobileMenuOpen ? (
+        <button
+          aria-label="Cerrar menu de navegacion"
+          className="sidebar-backdrop"
+          onClick={() => setMobileMenuOpen(false)}
+          type="button"
+        />
+      ) : null}
+      <aside className={mobileMenuOpen ? "sidebar sidebar-open" : "sidebar"} id="dashboard-navigation">
+        <div className="sidebar-brand">
+          <div className="brand-mark">T</div>
+          <div>
+            <strong>TurnoFlow</strong>
+            <span>{business?.name ?? "Workspace"}</span>
+          </div>
+        </div>
+        <DashboardTabs activeView={activeView} onNavigate={() => setMobileMenuOpen(false)} />
         <div className="sidebar-footer">
           <span className="badge badge-soft">MVP local</span>
           <small>{loading ? "Sincronizando datos..." : "Agenda inteligente activa"}</small>
@@ -59,39 +109,70 @@ export function PageHeader({
   const meta = viewMeta(activeView);
 
   return (
-    <header className="workspace-header">
-      <div className="page-title">
-        <span className="page-kicker">{business ? business.slug : "Onboarding"}</span>
-        <h1>{meta.title}</h1>
-        <p>{meta.description}</p>
-      </div>
-      <div className="header-actions">
-        {business ? (
-          <>
+    <>
+      <div className="topbar">
+        <div className="topbar-biz">
+          <span className="topbar-avatar">{businessInitials(business?.name)}</span>
+          <div>
+            <strong>{business?.name ?? "TurnoFlow"}</strong>
+            <span>{business?.slug ?? "workspace"}</span>
+          </div>
+        </div>
+        <div className="topbar-actions">
+          {business ? (
             <Link className="button-link button-ghost" href={`/${business.slug}`}>
-              <ExternalLink size={17} />
+              <ExternalLink size={15} />
               Pagina publica
             </Link>
-            <Link className="button-link button-ghost" href="/dashboard/recurrente">
-              <RotateCcw size={17} />
-              Recurrentes
-            </Link>
-            <Link className="button-link button-primary" href={`/${business.slug}/book`}>
-              <CalendarClock size={17} />
-              Reservar
-            </Link>
-          </>
-        ) : null}
-        <button className="button-muted" disabled={loading} onClick={onRefresh} type="button">
-          <RefreshCcw size={17} />
-          Actualizar
-        </button>
-        <button className="button-danger" onClick={onLogout} type="button">
-          Salir
-        </button>
+          ) : null}
+          <button className="button-muted" disabled={loading} onClick={onRefresh} type="button">
+            <RefreshCcw size={15} />
+            Actualizar
+          </button>
+          <button className="button-danger" onClick={onLogout} type="button">
+            Salir
+          </button>
+        </div>
       </div>
-    </header>
+
+      <header className="workspace-header">
+        <div className="page-title">
+          <span className="page-kicker">{business ? business.slug : "Onboarding"}</span>
+          <h1>{meta.title}</h1>
+          <p>{meta.description}</p>
+        </div>
+        <div className="header-actions">
+          {business ? (
+            <>
+              <Link className="button-link button-ghost" href="/dashboard/recurrente">
+                <RotateCcw size={17} />
+                Recurrentes
+              </Link>
+              <Link className="button-link button-primary" href={`/${business.slug}/book`}>
+                <CalendarClock size={17} />
+                Reservar
+              </Link>
+            </>
+          ) : null}
+        </div>
+      </header>
+    </>
   );
+}
+
+function businessInitials(name: string | undefined): string {
+  if (!name) {
+    return "TF";
+  }
+
+  const initials = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase() ?? "")
+    .join("");
+
+  return initials || "TF";
 }
 
 export function AuthView({
@@ -157,22 +238,37 @@ export function AuthView({
   );
 }
 
-function DashboardTabs({ activeView }: { activeView: DashboardView }) {
+function DashboardTabs({ activeView, onNavigate }: { activeView: DashboardView; onNavigate?: () => void }) {
   return (
     <nav className="sidebar-nav" aria-label="Dashboard">
-      <TabLink active={activeView === "home"} href="/dashboard" icon={<Home size={18} />} label="Inicio" />
-      <TabLink active={activeView === "onboarding"} href="/dashboard/onboarding" icon={<Wand2 size={18} />} label="Onboarding" />
-      <TabLink active={activeView === "setup"} href="/dashboard/configuracion" icon={<Settings2 size={18} />} label="Configuracion" />
-      <TabLink active={activeView === "schedule"} href="/dashboard/disponibilidad" icon={<CalendarDays size={18} />} label="Disponibilidad" />
-      <TabLink active={activeView === "appointments"} href="/dashboard/turnos" icon={<ClipboardList size={18} />} label="Turnos" />
-      <TabLink active={activeView === "customers"} href="/dashboard/clientes" icon={<Users size={18} />} label="Clientes" />
-      <TabLink active={activeView === "waitlist"} href="/dashboard/lista-espera" icon={<Hourglass size={18} />} label="Lista de espera" />
-      <TabLink active={activeView === "team"} href="/dashboard/equipo" icon={<ShieldCheck size={18} />} label="Equipo" />
-      <TabLink active={activeView === "reminders"} href="/dashboard/recordatorios" icon={<BellRing size={18} />} label="Recordatorios" />
-      <TabLink active={activeView === "booking"} href="/dashboard/reservar" icon={<CalendarClock size={18} />} label="Reservar" />
-      <TabLink active={activeView === "metrics"} href="/dashboard/metricas" icon={<BarChart3 size={18} />} label="Metricas" />
-      <TabLink active={activeView === "recurring"} href="/dashboard/recurrente" icon={<Repeat2 size={18} />} label="Recurrentes" />
-      <TabLink active={activeView === "reviews"} href="/dashboard/resenas" icon={<Star size={18} />} label="Reseñas" />
+      <div className="sidebar-group">
+        <span className="sidebar-group-label">Operacion</span>
+        <TabLink active={activeView === "home"} href="/dashboard" icon={<Home size={17} />} label="Inicio" onNavigate={onNavigate} />
+        <TabLink active={activeView === "appointments"} href="/dashboard/turnos" icon={<ClipboardList size={17} />} label="Turnos" onNavigate={onNavigate} />
+        <TabLink active={activeView === "schedule"} href="/dashboard/disponibilidad" icon={<CalendarDays size={17} />} label="Disponibilidad" onNavigate={onNavigate} />
+        <TabLink active={activeView === "waitlist"} href="/dashboard/lista-espera" icon={<Hourglass size={17} />} label="Lista de espera" onNavigate={onNavigate} />
+        <TabLink active={activeView === "reminders"} href="/dashboard/recordatorios" icon={<BellRing size={17} />} label="Recordatorios" onNavigate={onNavigate} />
+        <TabLink active={activeView === "booking"} href="/dashboard/reservar" icon={<CalendarClock size={17} />} label="Reservar" onNavigate={onNavigate} />
+        <TabLink active={activeView === "recurring"} href="/dashboard/recurrente" icon={<Repeat2 size={17} />} label="Recurrentes" onNavigate={onNavigate} />
+      </div>
+
+      <div className="sidebar-group">
+        <span className="sidebar-group-label">Clientes</span>
+        <TabLink active={activeView === "customers"} href="/dashboard/clientes" icon={<Users size={17} />} label="Clientes" onNavigate={onNavigate} />
+        <TabLink active={activeView === "reviews"} href="/dashboard/resenas" icon={<Star size={17} />} label="Reseñas" onNavigate={onNavigate} />
+      </div>
+
+      <div className="sidebar-group">
+        <span className="sidebar-group-label">Configuracion</span>
+        <TabLink active={activeView === "onboarding"} href="/dashboard/onboarding" icon={<Wand2 size={17} />} label="Onboarding" onNavigate={onNavigate} />
+        <TabLink active={activeView === "setup"} href="/dashboard/configuracion" icon={<Settings2 size={17} />} label="Configuracion" onNavigate={onNavigate} />
+        <TabLink active={activeView === "team"} href="/dashboard/equipo" icon={<ShieldCheck size={17} />} label="Equipo" onNavigate={onNavigate} />
+      </div>
+
+      <div className="sidebar-group">
+        <span className="sidebar-group-label">Analitica</span>
+        <TabLink active={activeView === "metrics"} href="/dashboard/metricas" icon={<BarChart3 size={17} />} label="Metricas" onNavigate={onNavigate} />
+      </div>
     </nav>
   );
 }
@@ -181,15 +277,17 @@ function TabLink({
   active,
   href,
   icon,
-  label
+  label,
+  onNavigate
 }: {
   active: boolean;
   href: string;
   icon: ReactNode;
   label: string;
+  onNavigate?: () => void;
 }) {
   return (
-    <Link aria-current={active ? "page" : undefined} className="tab-button" href={href}>
+    <Link aria-current={active ? "page" : undefined} className="tab-button" href={href} onClick={onNavigate}>
       {icon}
       {label}
     </Link>

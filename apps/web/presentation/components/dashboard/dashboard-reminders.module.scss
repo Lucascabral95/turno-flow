@@ -11,7 +11,7 @@
 
   :global(.reminder-command-copy) {
     display: grid;
-    gap: 8px;
+    gap: 6px;
 
     h2 {
       font-size: 1.45rem;
@@ -117,33 +117,15 @@
   }
 }
 
-.summaryPanel {
-  :global(.summary-value) {
-    background: $surface-soft;
-    border: 1px solid $border;
-    border-radius: $radius;
-    display: grid;
-    gap: 6px;
-    padding: 14px;
-
-    span {
-      color: $muted;
-      font-size: 0.8rem;
-      font-weight: 760;
-    }
-
-    strong {
-      font-size: 0.98rem;
-      line-height: 1.35;
-    }
-  }
-}
-
 @media (max-width: 860px) {
   .remindersView {
     :global(.reminder-command),
     :global(.reminder-command-grid) {
       grid-template-columns: 1fr;
+    }
+
+    :global(.reminder-command) {
+      padding: 16px;
     }
   }
 
@@ -156,6 +138,33 @@
       .badge {
         grid-column: 2;
       }
+    }
+  }
+}
+
+@media (max-width: 560px) {
+  .settingsPanel {
+    :global(.reminder-flow) {
+      div {
+        grid-template-columns: 1fr;
+      }
+    }
+  }
+
+  .queuePanel {
+    :global(.reminder-timeline-item) {
+      grid-template-columns: 1fr;
+
+      .timeline-date,
+      .badge {
+        grid-column: auto;
+      }
+    }
+  }
+
+  .historyPanel {
+    :global(.notification-table) {
+      min-width: 720px;
     }
   }
 }

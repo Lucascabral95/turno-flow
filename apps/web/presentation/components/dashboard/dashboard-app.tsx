@@ -1247,6 +1247,15 @@ function SetupView({
   );
 }
 
+const WAITLIST_STATUS_FILTERS: Array<{ label: string; value: "all" | WaitlistEntry["status"] }> = [
+  { label: "Todos", value: "all" },
+  { label: "Esperando", value: "waiting" },
+  { label: "Ofrecido", value: "offered" },
+  { label: "Reservado", value: "booked" },
+  { label: "Expirado", value: "expired" },
+  { label: "Cancelado", value: "cancelled" }
+];
+
 function WaitlistView({
   entries,
   onCancel,
@@ -1285,17 +1294,19 @@ function WaitlistView({
             </h2>
             <p>El worker avanza automaticamente cuando una oferta expira o se rechaza.</p>
           </div>
-          <label className="compact-filter">
-            Estado
-            <select onChange={(event) => setStatusFilter(event.target.value as "all" | WaitlistEntry["status"])} value={statusFilter}>
-              <option value="all">Todos</option>
-              <option value="waiting">Esperando</option>
-              <option value="offered">Ofrecido</option>
-              <option value="booked">Reservado</option>
-              <option value="expired">Expirado</option>
-              <option value="cancelled">Cancelado</option>
-            </select>
-          </label>
+          <div className="pill-filter-row">
+            {WAITLIST_STATUS_FILTERS.map((option) => (
+              <button
+                aria-pressed={statusFilter === option.value}
+                className="pill-filter"
+                key={option.value}
+                onClick={() => setStatusFilter(option.value)}
+                type="button"
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
         </header>
 
         {entries.length === 0 ? (
@@ -1409,6 +1420,8 @@ function TeamView({
   const [inviteStaffId, setInviteStaffId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const isOwner = currentUserRole === "OWNER";
+  const pendingMembers = members.filter((member) => member.status === "PENDING_INVITE");
+  const rosterMembers = members.filter((member) => member.status !== "PENDING_INVITE");
 
   if (!business) {
     return <EmptyState title="Sin negocio configurado" description="Crea el negocio para habilitar equipo, permisos e integraciones." />;
@@ -1496,42 +1509,90 @@ function TeamView({
             </form>
           ) : null}
 
-          {members.length === 0 ? (
+          {rosterMembers.length === 0 ? (
             <EmptyState compact title="Sin miembros visibles" description="El owner se crea automaticamente al crear el negocio." />
           ) : (
-            <div className="management-list">
-              {members.map((member) => (
-                <article className="management-card" key={member.id}>
-                  <div className="management-card-header">
-                    <div className="management-card-copy">
-                      <strong>{member.user ? capitalizeFirst(member.user.name) : member.inviteEmail ?? "Invitacion pendiente"}</strong>
-                      <span>{member.user?.email ?? member.inviteEmail}</span>
-                      {member.staffMember ? <span>Profesional: {capitalizeFirst(member.staffMember.name)}</span> : null}
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.25rem" }}>
-                      <span className="badge badge-soft">{businessRoleLabel(member.role)}</span>
-                      {member.status === "PENDING_INVITE" ? <span className="badge badge-warning">Pendiente</span> : null}
-                      {!member.active && member.status !== "PENDING_INVITE" ? <span className="badge badge-danger">Inactivo</span> : null}
-                    </div>
+            <div className="table-shell">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Nombre</th>
+                    <th>Rol</th>
+                    <th>Estado</th>
+                    {isOwner ? <th>Acciones</th> : null}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rosterMembers.map((member) => (
+                    <tr key={member.id}>
+                      <td>
+                        <div className="table-primary">
+                          <strong>{member.user ? capitalizeFirst(member.user.name) : member.inviteEmail ?? "Sin nombre"}</strong>
+                          <span>{member.user?.email ?? member.inviteEmail}</span>
+                          {member.staffMember ? <span>Profesional: {capitalizeFirst(member.staffMember.name)}</span> : null}
+                        </div>
+                      </td>
+                      <td>
+                        <span className="badge badge-soft">{businessRoleLabel(member.role)}</span>
+                      </td>
+                      <td>
+                        {member.active ? <span className="badge">Activo</span> : <span className="badge badge-danger">Inactivo</span>}
+                      </td>
+                      {isOwner ? (
+                        <td>
+                          {member.role !== "OWNER" && member.status === "ACTIVE" ? (
+                            <div className="appointment-actions">
+                              {member.role !== "RECEPTIONIST" ? (
+                                <button className="action-btn action-btn-neutral" onClick={() => onChangeMemberRole(member.id, "RECEPTIONIST")} type="button">
+                                  → Recepcion
+                                </button>
+                              ) : null}
+                              {member.role !== "PROFESSIONAL" ? (
+                                <button className="action-btn action-btn-neutral" onClick={() => onChangeMemberRole(member.id, "PROFESSIONAL")} type="button">
+                                  → Profesional
+                                </button>
+                              ) : null}
+                              <button className="action-btn action-btn-danger" onClick={() => onDeactivateMember(member.id)} type="button">
+                                Desactivar
+                              </button>
+                            </div>
+                          ) : null}
+                        </td>
+                      ) : null}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        <section className="panel stack">
+          <header className="panel-header">
+            <div>
+              <h2 className="inline">
+                <Mail size={20} />
+                Invitaciones pendientes
+              </h2>
+              <p>Colaboradores invitados que todavia no aceptaron el acceso.</p>
+            </div>
+          </header>
+          {pendingMembers.length === 0 ? (
+            <span className="muted-text">No hay invitaciones pendientes.</span>
+          ) : (
+            <div className="list">
+              {pendingMembers.map((member) => (
+                <div
+                  className="list-item"
+                  key={member.id}
+                  style={{ alignItems: "center", display: "flex", justifyContent: "space-between", padding: "12px 14px" }}
+                >
+                  <div className="table-primary">
+                    <strong>{member.inviteEmail}</strong>
+                    <span>Enviada el {formatDateTime(member.createdAt)}</span>
                   </div>
-                  {isOwner && member.role !== "OWNER" && member.status === "ACTIVE" ? (
-                    <div className="management-card-actions">
-                      {member.role !== "RECEPTIONIST" ? (
-                        <button className="button-muted" onClick={() => onChangeMemberRole(member.id, "RECEPTIONIST")} type="button">
-                          → Recepcion
-                        </button>
-                      ) : null}
-                      {member.role !== "PROFESSIONAL" ? (
-                        <button className="button-muted" onClick={() => onChangeMemberRole(member.id, "PROFESSIONAL")} type="button">
-                          → Profesional
-                        </button>
-                      ) : null}
-                      <button className="button-danger" onClick={() => onDeactivateMember(member.id)} type="button">
-                        Desactivar
-                      </button>
-                    </div>
-                  ) : null}
-                </article>
+                  <span className="badge badge-warning">Pendiente</span>
+                </div>
               ))}
             </div>
           )}
@@ -1761,7 +1822,7 @@ function SetupInventoryPanel({
   }
 
   return (
-    <section className="grid-3">
+    <section className="stack">
       <ServiceManagementPanel
         business={business}
         onDelete={onServiceDelete}
@@ -2449,7 +2510,7 @@ function ManagedServiceItem({
         </div>
         <div className="management-card-actions">
           <button
-            className="button-muted"
+            className="action-btn action-btn-neutral"
             onClick={() => {
               if (editing) {
                 form.reset({
@@ -2468,11 +2529,11 @@ function ManagedServiceItem({
             }}
             type="button"
           >
-            {editing ? <X size={16} /> : <PencilLine size={16} />}
+            {editing ? <X size={14} /> : <PencilLine size={14} />}
             {editing ? "Cancelar" : "Editar"}
           </button>
           <button
-            className="button-danger"
+            className="action-btn action-btn-danger"
             onClick={() => {
               if (window.confirm(`Se va a eliminar el servicio "${capitalizeFirst(service.name)}".`)) {
                 onDelete(service.id);
@@ -2480,7 +2541,7 @@ function ManagedServiceItem({
             }}
             type="button"
           >
-            <Trash2 size={16} />
+            <Trash2 size={14} />
             Eliminar
           </button>
         </div>
@@ -2675,7 +2736,7 @@ function ManagedStaffItem({
         </div>
         <div className="management-card-actions">
           <button
-            className="button-muted"
+            className="action-btn action-btn-neutral"
             onClick={() => {
               if (editing) {
                 form.reset({
@@ -2687,11 +2748,11 @@ function ManagedStaffItem({
             }}
             type="button"
           >
-            {editing ? <X size={16} /> : <PencilLine size={16} />}
+            {editing ? <X size={14} /> : <PencilLine size={14} />}
             {editing ? "Cancelar" : "Editar"}
           </button>
           <button
-            className="button-danger"
+            className="action-btn action-btn-danger"
             onClick={() => {
               if (window.confirm(`Se va a eliminar el profesional "${capitalizeFirst(staffMember.name)}".`)) {
                 onDelete(staffMember.id);
@@ -2699,7 +2760,7 @@ function ManagedStaffItem({
             }}
             type="button"
           >
-            <Trash2 size={16} />
+            <Trash2 size={14} />
             Eliminar
           </button>
         </div>

@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { Repeat2, UserPlus } from "lucide-react";
+import { Repeat2, Search, UserPlus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -8,16 +8,16 @@ import type { AvailabilitySlot, BusinessMemberRole, CurrentBusiness, CustomerPro
 import { formatSlotTime } from "../../../lib/api";
 import { createLocalDateString } from "../../../lib/booking-forms";
 
-// â”€â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- Constants ---
 
 const INTERVAL_UNIT_LABELS: Record<RecurringIntervalUnit, string> = {
-  DAY: "dÃ­as",
+  DAY: "días",
   MONTH: "meses",
   WEEK: "semanas"
 };
 
 const INTERVAL_UNIT_SINGULAR: Record<RecurringIntervalUnit, string> = {
-  DAY: "dÃ­a",
+  DAY: "día",
   MONTH: "mes",
   WEEK: "semana"
 };
@@ -27,14 +27,14 @@ const DURATION_OPTIONS = [
   { label: "2 meses", months: 2 },
   { label: "3 meses", months: 3 },
   { label: "6 meses", months: 6 },
-  { label: "1 aÃ±o", months: 12 }
+  { label: "1 año", months: 12 }
 ] as const;
 
-const AVATAR_COLORS = ["#635bff", "#2563eb", "#0f8f72", "#b7791f", "#9333ea", "#0891b2"] as const;
+const AVATAR_COLORS = ["#635bff", "#2563eb", "#0f8f72", "#956018", "#9333ea", "#0891b2"] as const;
 const DEFAULT_TIMEZONE = "America/Argentina/Buenos_Aires";
-const VISIBLE_SERIES_DATES = 5;
+const VISIBLE_SERIES_DATES = 4;
 
-// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- Helpers ---
 
 function calcMaxOccurrences(durationMonths: number, intervalValue: number, intervalUnit: RecurringIntervalUnit): number {
   const durationDays = durationMonths * 30;
@@ -103,7 +103,7 @@ function normalizeAvailabilitySlots(slots: AvailabilitySlot[]): AvailabilitySlot
   return [...uniqueSlots.values()].sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime());
 }
 
-// â”€â”€â”€ Sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- Sub-components ---
 
 function CustomerAvatar({ name, size = 38 }: { name: string; size?: number }) {
   return (
@@ -166,9 +166,9 @@ function CustomerCombobox({
         <CustomerAvatar name={value.name} size={36} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 760, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value.name}</div>
-          <div style={{ color: "#6f7382", fontSize: "0.8rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <div style={{ color: "#8a8d99", fontSize: "0.8rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {value.email}
-            {value.totalAppointments > 0 ? ` Â· ${value.totalAppointments} turno${value.totalAppointments !== 1 ? "s" : ""}` : " Â· cliente nuevo"}
+            {value.totalAppointments > 0 ? ` · ${value.totalAppointments} turno${value.totalAppointments !== 1 ? "s" : ""}` : " · cliente nuevo"}
           </div>
         </div>
         <button
@@ -178,7 +178,7 @@ function CustomerCombobox({
           title="Cambiar cliente"
           type="button"
         >
-          Ã—
+          ×
         </button>
       </div>
     );
@@ -187,8 +187,8 @@ function CustomerCombobox({
   return (
     <div style={{ position: "relative" }}>
       <div style={{ position: "relative" }}>
-        <span style={{ color: "#6f7382", left: "12px", pointerEvents: "none", position: "absolute", top: "50%", transform: "translateY(-50%)" }}>
-          âŒ•
+        <span style={{ alignItems: "center", color: "#8a8d99", display: "flex", left: "12px", pointerEvents: "none", position: "absolute", top: "50%", transform: "translateY(-50%)" }}>
+          <Search size={14} />
         </span>
         <input
           onBlur={() => setTimeout(() => setOpen(false), 150)}
@@ -197,7 +197,7 @@ function CustomerCombobox({
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
-          placeholder="Buscar cliente por nombre o emailâ€¦"
+          placeholder="Buscar cliente por nombre o email…"
           style={{ paddingLeft: "32px" }}
           type="text"
           value={query}
@@ -207,7 +207,7 @@ function CustomerCombobox({
         <div
           style={{
             background: "#fff",
-            border: "1px solid #e6e8ef",
+            border: "1px solid #ececf1",
             borderRadius: "8px",
             boxShadow: "0 8px 24px rgb(24 27 39 / 10%)",
             left: 0,
@@ -220,8 +220,8 @@ function CustomerCombobox({
           }}
         >
           {filtered.length === 0 && !query.trim() ? (
-            <div style={{ color: "#6f7382", fontSize: "0.88rem", padding: "14px 16px" }}>
-              No hay clientes registrados aÃºn.
+            <div style={{ color: "#8a8d99", fontSize: "0.88rem", padding: "14px 16px" }}>
+              No hay clientes registrados aún.
             </div>
           ) : (
             <>
@@ -254,7 +254,7 @@ function CustomerCombobox({
                   <CustomerAvatar name={c.name} size={32} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</div>
-                    <div style={{ color: "#6f7382", fontSize: "0.78rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.email}</div>
+                    <div style={{ color: "#8a8d99", fontSize: "0.78rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.email}</div>
                   </div>
                   {c.totalAppointments > 0 ? (
                     <span className="badge badge-soft" style={{ flexShrink: 0, fontSize: "0.72rem" }}>
@@ -302,7 +302,7 @@ function CustomerCombobox({
                     background: "transparent",
                     border: "none",
                     borderRadius: 0,
-                    borderTop: "1px solid #e6e8ef",
+                    borderTop: "1px solid #ececf1",
                     boxShadow: "none",
                     color: "#635bff",
                     cursor: "pointer",
@@ -389,7 +389,7 @@ function NewCustomerForm({
           </label>
         </div>
         <label style={{ marginBottom: 0 }}>
-          TelÃ©fono <span style={{ color: "#9ca3af", fontWeight: 400 }}>(opcional)</span>
+          Teléfono <span style={{ color: "#9ca3af", fontWeight: 400 }}>(opcional)</span>
           <input
             onChange={(e) => setPhone(e.target.value)}
             placeholder="+54 9 11 1234 5678"
@@ -404,7 +404,7 @@ function NewCustomerForm({
             style={{ fontSize: "0.85rem", minHeight: "unset", padding: "7px 14px" }}
             type="submit"
           >
-            {saving ? "Guardandoâ€¦" : "Guardar y seleccionar"}
+            {saving ? "Guardando…" : "Guardar y seleccionar"}
           </button>
           <button
             className="button-muted"
@@ -469,7 +469,7 @@ function SeriesCard({
     <div
       style={{
         background: "#fff",
-        border: "1px solid #e6e8ef",
+        border: "1px solid #ececf1",
         borderRadius: "10px",
         boxShadow: "0 1px 2px rgb(24 27 39 / 6%), 0 4px 12px rgb(24 27 39 / 4%)",
         display: "grid",
@@ -488,7 +488,7 @@ function SeriesCard({
               style={{
                 background: isActive ? "#e7f7f2" : "#fff7df",
                 borderRadius: "20px",
-                color: isActive ? "#0f8f72" : "#b7791f",
+                color: isActive ? "#0f8f72" : "#956018",
                 flexShrink: 0,
                 fontSize: "0.7rem",
                 fontWeight: 760,
@@ -499,7 +499,7 @@ function SeriesCard({
               {isActive ? "Activa" : "Pausada"}
             </span>
           </div>
-          <div style={{ color: "#6f7382", fontSize: "0.8rem", marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <div style={{ color: "#8a8d99", fontSize: "0.8rem", marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {series.customer.email}
           </div>
         </div>
@@ -528,8 +528,8 @@ function SeriesCard({
       </div>
 
       <div style={{ borderTop: "1px solid #f0f1f6", padding: "10px 16px" }}>
-        <div style={{ color: "#202331", fontSize: "0.88rem", fontWeight: 600 }}>{series.service.name}</div>
-        <div style={{ color: "#6f7382", fontSize: "0.8rem", marginTop: "2px" }}>
+        <div style={{ color: "#14151f", fontSize: "0.88rem", fontWeight: 600 }}>{series.service.name}</div>
+        <div style={{ color: "#8a8d99", fontSize: "0.8rem", marginTop: "2px" }}>
           con {series.staffMember.name} · {cadenceLabel}
         </div>
       </div>
@@ -538,7 +538,7 @@ function SeriesCard({
         <div
           style={{
             alignItems: "center",
-            color: "#6f7382",
+            color: "#8a8d99",
             display: "flex",
             flexWrap: "wrap",
             fontSize: "0.72rem",
@@ -571,7 +571,7 @@ function SeriesCard({
             style={{
               alignItems: "center",
               background: canGoPrev ? "#f7f8fb" : "#fbfbfd",
-              border: "1px solid #e6e8ef",
+              border: "1px solid #ececf1",
               borderRadius: "8px",
               color: canGoPrev ? "#4b5563" : "#cbd0dc",
               cursor: "pointer",
@@ -609,8 +609,8 @@ function SeriesCard({
                 <div
                   key={`${series.id}-${date.toISOString()}`}
                   style={{
-                    background: isUpcoming ? (isActive ? "#ecebff" : "#fff7df") : "transparent",
-                    border: `1px solid ${isUpcoming ? (isActive ? "#c4bfff" : "#f6d860") : "#e6e8ef"}`,
+                    background: isUpcoming ? (isActive ? "#f2efff" : "#fff7df") : "transparent",
+                    border: `1px solid ${isUpcoming ? (isActive ? "#c4bfff" : "#f6d860") : "#ececf1"}`,
                     borderRadius: "7px",
                     minWidth: 0,
                     opacity: isPast ? 0.45 : 1,
@@ -618,13 +618,13 @@ function SeriesCard({
                     textAlign: "center"
                   }}
                 >
-                  <div style={{ color: isUpcoming ? (isActive ? "#635bff" : "#b7791f") : "#9ca3af", fontSize: "0.64rem", fontWeight: 700, textTransform: "capitalize" }}>
+                  <div style={{ color: isUpcoming ? (isActive ? "#635bff" : "#956018") : "#9ca3af", fontSize: "0.64rem", fontWeight: 700, textTransform: "capitalize" }}>
                     {weekLabel}
                   </div>
-                  <div style={{ color: isUpcoming ? (isActive ? "#3730a3" : "#92400e") : (isPast ? "#9ca3af" : "#202331"), fontSize: "0.78rem", fontWeight: isUpcoming ? 760 : 500 }}>
+                  <div style={{ color: isUpcoming ? (isActive ? "#3730a3" : "#92400e") : (isPast ? "#9ca3af" : "#14151f"), fontSize: "0.78rem", fontWeight: isUpcoming ? 760 : 500 }}>
                     {dayLabel}
                   </div>
-                  <div style={{ color: isUpcoming ? (isActive ? "#635bff" : "#b7791f") : "#6f7382", fontSize: "0.68rem" }}>
+                  <div style={{ color: isUpcoming ? (isActive ? "#635bff" : "#956018") : "#8a8d99", fontSize: "0.68rem" }}>
                     {timeLabel}
                   </div>
                 </div>
@@ -639,7 +639,7 @@ function SeriesCard({
             style={{
               alignItems: "center",
               background: canGoNext ? "#f7f8fb" : "#fbfbfd",
-              border: "1px solid #e6e8ef",
+              border: "1px solid #ececf1",
               borderRadius: "8px",
               color: canGoNext ? "#4b5563" : "#cbd0dc",
               cursor: "pointer",
@@ -659,10 +659,10 @@ function SeriesCard({
         </div>
 
         {series.maxOccurrences !== null ? (
-          <div style={{ background: "#e6e8ef", borderRadius: "4px", height: "3px", marginTop: "8px", overflow: "hidden" }}>
+          <div style={{ background: "#ececf1", borderRadius: "4px", height: "3px", marginTop: "8px", overflow: "hidden" }}>
             <div
               style={{
-                background: isActive ? "#635bff" : "#b7791f",
+                background: isActive ? "#635bff" : "#956018",
                 borderRadius: "4px",
                 height: "100%",
                 transition: "width 0.4s ease",
@@ -677,7 +677,7 @@ function SeriesCard({
         style={{
           alignItems: "center",
           background: "#f7f8fb",
-          borderTop: "1px solid #e6e8ef",
+          borderTop: "1px solid #ececf1",
           display: "flex",
           flexWrap: "wrap",
           gap: "8px",
@@ -869,7 +869,7 @@ export function RecurringPanel({
       setDurationMonths(1);
       setCreatingCustomer(false);
     } else {
-      toast.error("No se pudo crear la serie. RevisÃ¡ que todos los turnos futuros tengan disponibilidad.");
+      toast.error("No se pudo crear la serie. Revisá que todos los turnos futuros tengan disponibilidad.");
     }
   }
 
@@ -897,12 +897,12 @@ export function RecurringPanel({
       {/* Header */}
       <div style={{ alignItems: "flex-start", display: "flex", gap: "16px", justifyContent: "space-between" }}>
         <div>
-          <span className="page-kicker">AutomatizaciÃ³n</span>
-          <h2 style={{ margin: "2px 0 6px" }}>
+          <span className="page-kicker">Automatización</span>
+          <h2 style={{ margin: "2px 0 4px" }}>
             <Repeat2 size={18} style={{ marginRight: "6px", verticalAlign: "middle" }} />
             Turnos recurrentes
           </h2>
-          <p style={{ color: "#6f7382", fontSize: "0.88rem", margin: 0 }}>
+          <p style={{ color: "#8a8d99", fontSize: "0.88rem", margin: 0 }}>
             Los turnos se crean y bloquean en la agenda al instante. Eliminar una serie cancela los turnos futuros y los retira de Google Calendar.
           </p>
         </div>
@@ -926,16 +926,16 @@ export function RecurringPanel({
         <form
           className="stack"
           onSubmit={(e) => void handleSubmit(e)}
-          style={{ background: "#f7f8fb", border: "1px solid #e6e8ef", borderRadius: "10px", padding: "18px" }}
+          style={{ background: "#f7f8fb", border: "1px solid #ececf1", borderRadius: "10px", padding: "18px" }}
         >
           <div style={{ marginBottom: "2px" }}>
             <strong style={{ fontSize: "0.95rem" }}>Nueva serie recurrente</strong>
-            <p style={{ color: "#6f7382", fontSize: "0.82rem", margin: "4px 0 0" }}>
+            <p style={{ color: "#8a8d99", fontSize: "0.82rem", margin: "4px 0 0" }}>
               Todos los turnos se reservan en la agenda inmediatamente al crear la serie.
             </p>
           </div>
 
-          {/* Customer selection â€” or inline registration */}
+          {/* Customer selection — or inline registration */}
           <label>
             Cliente
             {creatingCustomer ? (
@@ -959,7 +959,7 @@ export function RecurringPanel({
             <label>
               Servicio
               <select onChange={(e) => setServiceId(e.target.value)} required value={serviceId}>
-                <option value="">â€” SeleccionÃ¡ un servicio â€”</option>
+                <option value="">— Seleccioná un servicio —</option>
                 {services.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
@@ -970,7 +970,7 @@ export function RecurringPanel({
             <label>
               Profesional
               <select onChange={(e) => setStaffMemberId(e.target.value)} required value={staffMemberId}>
-                <option value="">â€” SeleccionÃ¡ un profesional â€”</option>
+                <option value="">— Seleccioná un profesional —</option>
                 {staffMembers.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
@@ -993,7 +993,7 @@ export function RecurringPanel({
                 value={firstOccurrenceDate}
               />
               {firstOccurrenceDate ? (
-                <span style={{ color: "#6f7382", fontSize: "0.76rem", marginTop: "2px" }}>
+                <span style={{ color: "#8a8d99", fontSize: "0.76rem", marginTop: "2px" }}>
                   {formatLocalDate(firstOccurrenceDate)}
                 </span>
               ) : null}
@@ -1001,7 +1001,7 @@ export function RecurringPanel({
             <label>
               Frecuencia
               <div style={{ display: "flex", gap: "8px" }}>
-                <span style={{ alignSelf: "center", color: "#6f7382", fontSize: "0.82rem", whiteSpace: "nowrap" }}>Cada</span>
+                <span style={{ alignSelf: "center", color: "#8a8d99", fontSize: "0.82rem", whiteSpace: "nowrap" }}>Cada</span>
                 <input
                   min="1"
                   onChange={(e) => setIntervalValue(e.target.value)}
@@ -1011,7 +1011,7 @@ export function RecurringPanel({
                   value={intervalValue}
                 />
                 <select onChange={(e) => setIntervalUnit(e.target.value as RecurringIntervalUnit)} value={intervalUnit}>
-                  <option value="DAY">DÃ­as</option>
+                  <option value="DAY">Días</option>
                   <option value="WEEK">Semanas</option>
                   <option value="MONTH">Meses</option>
                 </select>
@@ -1021,7 +1021,7 @@ export function RecurringPanel({
 
           {/* Duration */}
           <label>
-            DuraciÃ³n de la serie
+            Duración de la serie
             <select onChange={(e) => setDurationMonths(Number(e.target.value))} value={durationMonths}>
               {DURATION_OPTIONS.map((opt) => (
                 <option key={opt.months} value={opt.months}>
@@ -1032,26 +1032,26 @@ export function RecurringPanel({
           </label>
 
           <div className="stack" style={{ gap: "8px" }}>
-            <strong style={{ color: "#202331", fontSize: "0.88rem" }}>Horarios disponibles</strong>
+            <strong style={{ color: "#14151f", fontSize: "0.88rem" }}>Horarios disponibles</strong>
             <div
               aria-label="Horarios disponibles para el primer turno recurrente"
               role="group"
               className="booking-slot-panel"
               style={{
                 background: "#fff",
-                border: "1px solid #e6e8ef",
+                border: "1px solid #ececf1",
                 borderRadius: "10px",
                 padding: "12px"
               }}
             >
               {!serviceId || !staffMemberId ? (
-                <span style={{ color: "#6f7382", fontSize: "0.85rem" }}>Selecciona servicio y profesional para ver horarios reales.</span>
+                <span style={{ color: "#8a8d99", fontSize: "0.85rem" }}>Selecciona servicio y profesional para ver horarios reales.</span>
               ) : slotsLoading ? (
-                <span style={{ color: "#6f7382", fontSize: "0.85rem" }}>Buscando horarios...</span>
+                <span style={{ color: "#8a8d99", fontSize: "0.85rem" }}>Buscando horarios...</span>
               ) : slotsError ? (
                 <span style={{ color: "#c24132", fontSize: "0.85rem" }}>{slotsError}</span>
               ) : availableSlots.length === 0 ? (
-                <span style={{ color: "#6f7382", fontSize: "0.85rem" }}>No hay horarios para ese dia.</span>
+                <span style={{ color: "#8a8d99", fontSize: "0.85rem" }}>No hay horarios para ese dia.</span>
               ) : (
                 <div className="slot-grid">
                   {availableSlots.map((slot) => {
@@ -1068,8 +1068,8 @@ export function RecurringPanel({
                       >
                         {formatSlotTime(slot.startsAt, businessTimezone)}
                         {selectedService ? (
-                          <span style={{ color: selected ? "inherit" : "#6f7382", fontSize: "0.75rem" }}>
-                            {" "}Â· {selectedService.durationMinutes} min
+                          <span style={{ color: selected ? "inherit" : "#8a8d99", fontSize: "0.75rem" }}>
+                            {" "}· {selectedService.durationMinutes} min
                           </span>
                         ) : null}
                       </button>
@@ -1085,7 +1085,7 @@ export function RecurringPanel({
             <div
               style={{
                 alignItems: "center",
-                background: "#ecebff",
+                background: "#f2efff",
                 border: "1px solid #c4bfff",
                 borderRadius: "8px",
                 display: "flex",
@@ -1098,20 +1098,20 @@ export function RecurringPanel({
                 <strong>
                   {maxOccurrences} turno{maxOccurrences !== 1 ? "s" : ""}
                 </strong>{" "}
-                para <strong>{selectedCustomer.name}</strong> Â· cada{" "}
+                para <strong>{selectedCustomer.name}</strong> · cada{" "}
                 {intervalValue === "1"
                   ? INTERVAL_UNIT_SINGULAR[intervalUnit]
                   : `${intervalValue} ${INTERVAL_UNIT_LABELS[intervalUnit]}`}
                 {lastOccurrenceDate ? (
                   <>
                     {" "}
-                    Â· hasta el{" "}
+                    · hasta el{" "}
                     <strong>
                       {lastOccurrenceDate.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", timeZone: businessTimezone, year: "numeric" })}
                     </strong>
                   </>
                 ) : null}
-                {" "}Â· primer turno a las <strong>{formatSlotTime(selectedSlot.startsAt, businessTimezone)}</strong>
+                {" "}· primer turno a las <strong>{formatSlotTime(selectedSlot.startsAt, businessTimezone)}</strong>
               </div>
             </div>
           ) : null}
@@ -1123,7 +1123,7 @@ export function RecurringPanel({
             type="submit"
           >
             {submitting
-              ? "Creando turnosâ€¦"
+              ? "Creando turnos…"
               : `Reservar ${maxOccurrences} turno${maxOccurrences !== 1 ? "s" : ""}`}
           </button>
         </form>
@@ -1131,7 +1131,7 @@ export function RecurringPanel({
 
       {/* Series list */}
       {activeSeries.length > 0 ? (
-        <div style={{ display: "grid", gap: "12px", gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))" }}>
+        <div style={{ display: "grid", gap: "12px", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 420px), 1fr))" }}>
           {activeSeries.map((s) => (
             <SeriesCard
               key={s.id}
@@ -1149,7 +1149,7 @@ export function RecurringPanel({
         <div
           style={{
             alignItems: "center",
-            color: "#6f7382",
+            color: "#8a8d99",
             display: "flex",
             flexDirection: "column",
             gap: "8px",
@@ -1161,7 +1161,7 @@ export function RecurringPanel({
           <p style={{ margin: 0 }}>No hay series activas.</p>
           {!isProfessional ? (
             <p style={{ color: "#9ca3af", fontSize: "0.84rem", margin: 0 }}>
-              CreÃ¡ una serie para automatizar turnos de clientes regulares.
+              Creá una serie para automatizar turnos de clientes regulares.
             </p>
           ) : null}
         </div>
@@ -1169,4 +1169,3 @@ export function RecurringPanel({
     </div>
   );
 }
-
