@@ -43,7 +43,7 @@ button,
 input,
 select {
   background: $surface;
-  border: 1px solid $border;
+  border: 1px solid $border-input;
   border-radius: $radius;
   color: $ink;
   min-height: 42px;
@@ -100,8 +100,8 @@ label {
 .button-ghost,
 .button-muted {
   background: $surface;
-  border-color: $border;
-  color: $ink;
+  border-color: $border-input;
+  color: $ink-soft;
 
   &:hover {
     background: $surface-soft;
@@ -121,7 +121,7 @@ label {
 .icon-button {
   align-items: center;
   background: $surface;
-  border: 1px solid $border;
+  border: 1px solid $border-input;
   border-radius: $radius;
   color: $muted;
   cursor: pointer;
@@ -167,8 +167,10 @@ label {
 
 .dashboard-content,
 .stack {
+  align-content: start;
   display: grid;
-  gap: 14px;
+  gap: 16px;
+  min-width: 0;
 }
 
 .layout-grid {
@@ -189,7 +191,7 @@ label {
 .detail-grid,
 .summary-grid {
   display: grid;
-  gap: 14px;
+  gap: 16px;
 }
 
 .grid-2 {
@@ -231,8 +233,9 @@ label {
 .list-item {
   background: $surface;
   border: 1px solid $border;
-  border-radius: $radius;
+  border-radius: $radius-lg;
   box-shadow: $shadow-soft;
+  min-width: 0;
 }
 
 .panel {
@@ -240,7 +243,10 @@ label {
 
   h2,
   h3 {
-    margin: 0 0 12px;
+    color: $ink;
+    font-size: 0.95rem;
+    font-weight: 750;
+    margin: 0 0 4px;
   }
 }
 
@@ -332,41 +338,87 @@ label {
 .metric {
   align-content: start;
   display: grid;
-  gap: 12px;
-  min-height: 128px;
+  gap: 10px;
+  min-height: 104px;
   padding: 16px;
   position: relative;
 
-  &::after {
-    background: linear-gradient(90deg, rgb(99 91 255 / 30%), transparent);
-    border-radius: 999px;
-    bottom: 13px;
-    content: "";
-    height: 3px;
-    left: 16px;
-    position: absolute;
-    width: 54px;
-  }
-
   strong {
     display: block;
-    font-size: 1.55rem;
+    font-size: 1.45rem;
+    font-weight: 650;
     line-height: 1.1;
   }
 
   .metric-label {
     color: $muted;
-    font-size: 0.82rem;
-    font-weight: 760;
+    font-size: 0.8rem;
+    font-weight: 650;
+  }
+}
+
+.summary-value {
+  background: $surface-soft;
+  border: 1px solid $border;
+  border-radius: $radius;
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+
+  span {
+    color: $muted;
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+
+  strong {
+    color: $ink;
+    font-size: 0.92rem;
+    line-height: 1.35;
+  }
+}
+
+.feature-banner {
+  background: $surface-violet;
+  border: 1px solid #b8b3ff;
+  border-radius: $radius-lg;
+  box-shadow: $shadow-soft;
+  padding: 18px;
+
+  h2 {
+    margin: 4px 0 4px;
+  }
+
+  p {
+    color: $muted;
+    margin-bottom: 0;
+  }
+}
+
+.dashboard-section-banner {
+  align-items: stretch;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 460px);
+  min-width: 0;
+}
+
+.dashboard-banner-stats {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+
+  .metric {
+    min-height: 142px;
   }
 }
 
 .metric-warning {
-  background: linear-gradient(180deg, $surface 0%, $warning-soft 145%);
+  background: $surface;
 }
 
 .metric-danger {
-  background: linear-gradient(180deg, $surface 0%, $danger-soft 145%);
+  background: $surface;
 }
 
 .metric-icon {
@@ -375,9 +427,29 @@ label {
   border-radius: $radius;
   color: $primary-dark;
   display: inline-flex;
-  height: 34px;
+  height: 32px;
   justify-content: center;
-  width: 34px;
+  width: 32px;
+}
+
+.metric-icon-success {
+  background: $success-soft;
+  color: $success;
+}
+
+.metric-icon-warning {
+  background: $warning-soft;
+  color: $warning;
+}
+
+.metric-icon-danger {
+  background: $danger-soft;
+  color: $danger;
+}
+
+.metric-icon-secondary {
+  background: $secondary-soft;
+  color: $secondary;
 }
 
 .badge {
@@ -386,17 +458,22 @@ label {
   border-radius: 999px;
   color: $success;
   display: inline-flex;
-  font-size: 0.76rem;
-  font-weight: 850;
+  font-size: 0.7rem;
+  font-weight: 700;
   justify-self: start;
   line-height: 1;
-  padding: 6px 9px;
+  padding: 5px 9px;
   width: fit-content;
 }
 
 .badge-soft {
   background: $primary-soft;
   color: $primary-dark;
+}
+
+.badge-success {
+  background: $success-soft;
+  color: $success;
 }
 
 .badge-warning {
@@ -407,6 +484,16 @@ label {
 .badge-danger {
   background: $danger-soft;
   color: $danger;
+}
+
+.badge-info {
+  background: $secondary-soft;
+  color: $secondary;
+}
+
+.badge-neutral {
+  background: $neutral-soft;
+  color: $ink-soft;
 }
 
 .message,
@@ -433,18 +520,19 @@ label {
 
 .empty-state {
   align-items: center;
-  background: $surface-soft;
+  background: $surface;
   border: 1px dashed $border-strong;
-  border-radius: $radius;
+  border-radius: $radius-lg;
   color: $muted;
   display: grid;
   gap: 8px;
   justify-items: center;
-  padding: 28px;
+  padding: 32px;
   text-align: center;
 
   strong {
     color: $ink;
+    font-size: 0.94rem;
   }
 }
 
@@ -463,7 +551,7 @@ label {
 .empty-state-icon {
   align-items: center;
   background: $primary-soft;
-  border-radius: $radius;
+  border-radius: $radius-lg;
   color: $primary-dark;
   display: inline-flex;
   height: 44px;
@@ -479,15 +567,15 @@ label {
 
 .skeleton-card {
   animation: pulse 1.5s ease-in-out infinite;
-  background: linear-gradient(90deg, #eef0f6 0%, #f8f9fc 50%, #eef0f6 100%);
-  border-radius: $radius;
+  background: linear-gradient(90deg, $border 0%, #f8f8fb 50%, $border 100%);
+  border-radius: $radius-lg;
   height: 88px;
 }
 
 @keyframes pulse {
   0%,
   100% {
-    opacity: 0.6;
+    opacity: 0.55;
   }
 
   50% {
@@ -496,7 +584,11 @@ label {
 }
 
 .table-shell {
+  border-radius: $radius;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
+  position: relative;
+  -webkit-overflow-scrolling: touch;
 }
 
 .data-table {
@@ -506,16 +598,21 @@ label {
 
   th,
   td {
-    border-bottom: 1px solid $border;
+    border-bottom: 1px solid $border-soft;
     padding: 12px 10px;
     text-align: left;
     vertical-align: top;
+
+    &.numeric-column {
+      text-align: right;
+    }
   }
 
   th {
+    border-bottom: 1px solid $border;
     color: $muted;
-    font-size: 0.78rem;
-    font-weight: 850;
+    font-size: 0.72rem;
+    font-weight: 700;
   }
 
   tbody tr {
@@ -532,9 +629,113 @@ label {
   gap: 3px;
 
   span {
-    color: $muted;
-    font-size: 0.86rem;
+    color: $muted-soft;
+    font-size: 0.84rem;
   }
+}
+
+.action-btn {
+  align-items: center;
+  background: $neutral-soft;
+  border: none;
+  border-radius: 6px;
+  color: $ink-soft;
+  cursor: pointer;
+  display: inline-flex;
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 650;
+  gap: 4px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0 9px;
+  transition:
+    opacity 160ms ease,
+    background 160ms ease;
+
+  &:hover {
+    opacity: 0.85;
+    transform: none;
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+    transform: none;
+  }
+}
+
+.action-btn-neutral {
+  background: $surface;
+  border: 1px solid $border-input;
+  color: $ink-soft;
+}
+
+.action-btn-info {
+  background: $secondary-soft;
+  color: $secondary;
+}
+
+.action-btn-success {
+  background: $success-soft;
+  color: $success;
+}
+
+.action-btn-warning {
+  background: $warning-soft;
+  color: $warning;
+}
+
+.action-btn-danger {
+  background: $danger-soft;
+  color: $danger;
+}
+
+.pill-filter-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pill-filter {
+  align-items: center;
+  background: $surface;
+  border: 1px solid $border-input;
+  border-radius: 999px;
+  color: $ink-soft;
+  cursor: pointer;
+  display: inline-flex;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 650;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+
+  &:hover {
+    border-color: $border-strong;
+  }
+
+  &[aria-pressed="true"] {
+    background: $primary;
+    border-color: $primary;
+    color: #ffffff;
+  }
+}
+
+.pill-filter-count {
+  background: $neutral-soft;
+  border-radius: 999px;
+  color: $muted;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 1px 6px;
+}
+
+.pill-filter[aria-pressed="true"] .pill-filter-count {
+  background: rgb(255 255 255 / 20%);
+  color: #ffffff;
 }
 
 .muted-text {
@@ -570,6 +771,7 @@ label {
   display: grid;
   gap: 8px;
   grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  min-width: 0;
 }
 
 .slot-button,
@@ -614,7 +816,9 @@ label {
   .analytics-grid,
   .analytics-grid-bottom,
   .loading-grid,
-  .detail-grid {
+  .detail-grid,
+  .dashboard-section-banner,
+  .dashboard-banner-stats {
     grid-template-columns: 1fr;
   }
 
@@ -622,5 +826,88 @@ label {
   .header-actions {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .payment-settings-toggle,
+  .deposit-config-toggle,
+  .empty-state-compact {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .empty-state-compact {
+    justify-items: center;
+    text-align: center;
+
+    span {
+      grid-column: auto;
+    }
+  }
+}
+
+@media (max-width: 640px) {
+  .metric-grid,
+  .metric-grid-analytics,
+  .dashboard-banner-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .panel,
+  .feature-banner {
+    padding: 14px;
+  }
+
+  .dashboard-form-panel {
+    padding: 16px;
+  }
+
+  .table-shell {
+    margin-inline: -2px;
+    padding-bottom: 2px;
+  }
+
+  .data-table {
+    min-width: 680px;
+  }
+}
+
+@media (max-width: 560px) {
+  .grid-2,
+  .grid-3,
+  .summary-grid,
+  .metric-grid,
+  .metric-grid-analytics,
+  .dashboard-banner-stats,
+  .slot-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .panel-header,
+  .booking-form-actions,
+  .inline {
+    align-items: stretch;
+    width: 100%;
+
+    button,
+    .button-link {
+      width: 100%;
+    }
+  }
+
+  .pill-filter-row {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .pill-filter {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .empty-state {
+    padding: 22px 16px;
+  }
+
+  .action-btn {
+    justify-content: center;
   }
 }

@@ -21,6 +21,20 @@
   grid-template-columns: minmax(0, 1.25fr) minmax(380px, 0.75fr);
 }
 
+.customerSearchRow {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.customerSearchField {
+  max-width: 280px;
+  min-width: 200px;
+  width: 100%;
+}
+
 .headerActions {
   align-items: center;
   display: flex;
@@ -351,6 +365,10 @@
     :global(.dashboard-banner-stats) {
       grid-template-columns: 1fr;
     }
+
+    :global(.appointments-command) {
+      padding: 16px;
+    }
   }
 
   .customerWorkspace {
@@ -363,6 +381,20 @@
 }
 
 @media (max-width: 720px) {
+  .customerSearchRow,
+  .headerActions,
+  .importForm,
+  .paginationBar {
+    align-items: stretch;
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .customerSearchField {
+    max-width: none;
+    min-width: 0;
+  }
+
   .customerRow {
     align-items: start;
     grid-template-columns: 1fr;
@@ -378,5 +410,25 @@
 
   .appointmentSignals {
     grid-template-columns: 1fr;
+  }
+
+  .detailHeader {
+    display: grid;
+  }
+}
+
+@media (max-width: 560px) {
+  .customersView {
+    :global(.dashboard-banner-stats) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .customerToolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .customerRow {
+    padding: 12px;
   }
 }

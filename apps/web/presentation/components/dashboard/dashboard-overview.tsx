@@ -1,12 +1,13 @@
 "use client";
 
-import { AlertTriangle, CalendarClock, CalendarDays, CheckCircle2, Clock, ExternalLink, ShieldAlert, TrendingDown, TrendingUp, Users, Wand2, Scissors } from "lucide-react";
+import { AlertTriangle, CalendarClock, CalendarDays, CheckCircle2, Clock, Copy, ExternalLink, ShieldAlert, TrendingDown, TrendingUp, Users, Wand2, Scissors } from "lucide-react";
 import Link from "next/link";
+import { toast } from "sonner";
 
 import type { Appointment, CurrentBusiness, DashboardMetrics, StaffMetrics } from "../../../lib/api";
 import { formatDateTime, formatMoney, formatPercent } from "../../../lib/api";
 import { buildRecurringCustomerBars, buildTopServiceBars, buildWeeklyChartBars } from "../../../lib/dashboard-metrics";
-import { countCoveredWeekdays, statusClass } from "./dashboard-helpers";
+import { capitalizeFirst, countCoveredWeekdays, statusClass } from "./dashboard-helpers";
 import { Alert, EmptyState, InventoryPanel, Metric, RiskyCustomersTable } from "./dashboard-shared";
 import styles from "./dashboard-overview.module.scss";
 
@@ -76,10 +77,10 @@ export function MetricsPanel({ metrics, staffMetrics = [] }: { metrics: Dashboar
       <section className="metric-grid metric-grid-analytics">
         <Metric icon={<CalendarDays size={18} />} label="Turnos del mes" value={metrics?.totalAppointments ?? 0} />
         <Metric icon={<Clock size={18} />} label="Activos" value={metrics?.activeAppointments ?? 0} />
-        <Metric icon={<CheckCircle2 size={18} />} label="Completados" value={metrics?.completedAppointments ?? 0} />
+        <Metric icon={<CheckCircle2 size={18} />} label="Completados" value={metrics?.completedAppointments ?? 0} tone="success" />
         <Metric icon={<AlertTriangle size={18} />} label="Cancelados" value={metrics?.cancelledAppointments ?? 0} tone="warning" />
         <Metric icon={<ShieldAlert size={18} />} label="No-shows" value={metrics?.noShowAppointments ?? 0} tone="danger" />
-        <Metric icon={<TrendingUp size={18} />} label="Ingreso estimado" value={formatMoney(metrics?.estimatedRevenueCents ?? 0)} />
+        <Metric icon={<TrendingUp size={18} />} label="Ingreso estimado" value={formatMoney(metrics?.estimatedRevenueCents ?? 0)} tone="success" />
         <Metric icon={<TrendingDown size={18} />} label="Perdida estimada" value={formatMoney(metrics?.lostRevenueCents ?? 0)} tone="warning" />
         <Metric icon={<Users size={18} />} label="Tasa de no-show" value={`${formatPercent(metrics?.noShowRate ?? 0)}%`} tone="danger" />
       </section>
@@ -112,6 +113,38 @@ export function MetricsPanel({ metrics, staffMetrics = [] }: { metrics: Dashboar
             <span className="legend-item"><span className="legend-swatch legend-primary" /> Total diario</span>
             <span className="legend-item"><span className="legend-swatch legend-danger" /> No-shows: {metrics?.noShowAppointments ?? 0}</span>
           </div>
+          {weeklyBars.length === 0 ? null : (
+            <div className="table-shell">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Dia</th>
+                    <th className="numeric-column">Turnos</th>
+                    <th className="numeric-column">Completados</th>
+                    <th className="numeric-column">Cancelados</th>
+                    <th className="numeric-column">No-shows</th>
+                    <th className="numeric-column">Ingreso</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {weeklyBars.map((bar) => {
+                    const day = metrics?.weeklyBreakdown.find((entry) => entry.date === bar.date);
+
+                    return (
+                      <tr key={bar.date}>
+                        <td>{bar.label}</td>
+                        <td className="numeric-column">{bar.totalAppointments}</td>
+                        <td className="numeric-column">{bar.completedAppointments}</td>
+                        <td className="numeric-column">{day?.cancelledAppointments ?? 0}</td>
+                        <td className="numeric-column">{bar.noShowAppointments}</td>
+                        <td className="numeric-column">{formatMoney(day?.estimatedRevenueCents ?? 0)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
 
         <section className="panel stack">
@@ -238,8 +271,30 @@ export function BookingAdminView({ business }: { business: CurrentBusiness | nul
   const bookingUrl = `/${business.slug}/book`;
   const hasBookableSetup = business.services.length > 0 && business.staffMembers.length > 0 && business.availabilityRules.length > 0;
 
+  async function handleCopyLink() {
+    await navigator.clipboard.writeText(publicUrl);
+    toast.success("Link publico copiado");
+  }
+
   return (
     <section className={`stack ${styles.bookingAdminView}`}>
+      <section className="panel business-info-row">
+        <div>
+          <strong>{capitalizeFirst(business.name)}</strong>
+          <span>{business.timezone} · {publicUrl}</span>
+        </div>
+        <div className="header-actions">
+          <button className="button-ghost" onClick={() => void handleCopyLink()} type="button">
+            <Copy size={16} />
+            Copiar link
+          </button>
+          <Link className="button-link button-primary" href={publicUrl}>
+            <ExternalLink size={16} />
+            Compartir pagina
+          </Link>
+        </div>
+      </section>
+
       <section className="feature-banner public-hero">
         <div>
           <span className="badge badge-soft">Reserva publica</span>

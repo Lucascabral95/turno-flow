@@ -49,13 +49,22 @@ export function Metric({
 }: {
   icon?: ReactNode;
   label: string;
-  tone?: "danger" | "warning";
+  tone?: "danger" | "success" | "warning";
   value: number | string;
 }) {
   const className = tone === "danger" ? "metric metric-danger" : tone === "warning" ? "metric metric-warning" : "metric";
+  const iconClassName =
+    tone === "danger"
+      ? "metric-icon metric-icon-danger"
+      : tone === "warning"
+        ? "metric-icon metric-icon-warning"
+        : tone === "success"
+          ? "metric-icon metric-icon-success"
+          : "metric-icon";
+
   return (
     <div className={className}>
-      {icon ? <div className="metric-icon">{icon}</div> : null}
+      {icon ? <div className={iconClassName}>{icon}</div> : null}
       <strong>{value}</strong>
       <span className="metric-label">{label}</span>
     </div>

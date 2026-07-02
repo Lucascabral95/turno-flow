@@ -12,6 +12,13 @@ import styles from "./dashboard-customers.module.scss";
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 
+const RISK_FILTER_OPTIONS: Array<{ label: string; value: CustomerFilters["riskLevel"] }> = [
+  { label: "Todos", value: "all" },
+  { label: "Bajo", value: "low" },
+  { label: "Medio", value: "medium" },
+  { label: "Alto", value: "high" }
+];
+
 type CustomerFilters = {
   deposit: "all" | "required" | "not_required";
   page: number;
@@ -268,8 +275,8 @@ export function CustomersView({
             </div>
           ) : null}
 
-          <div className={styles.customerToolbar}>
-            <label>
+          <div className={styles.customerSearchRow}>
+            <label className={styles.customerSearchField}>
               Buscar
               <input
                 onChange={(event) => updateFilters({ query: event.target.value })}
@@ -277,18 +284,22 @@ export function CustomersView({
                 value={filters.query}
               />
             </label>
-            <label>
-              Riesgo
-              <select
-                onChange={(event) => updateFilters({ riskLevel: event.target.value as CustomerFilters["riskLevel"] })}
-                value={filters.riskLevel}
-              >
-                <option value="all">Todos</option>
-                <option value="low">Bajo</option>
-                <option value="medium">Medio</option>
-                <option value="high">Alto</option>
-              </select>
-            </label>
+            <div className="pill-filter-row">
+              {RISK_FILTER_OPTIONS.map((option) => (
+                <button
+                  aria-pressed={filters.riskLevel === option.value}
+                  className="pill-filter"
+                  key={option.value}
+                  onClick={() => updateFilters({ riskLevel: option.value })}
+                  type="button"
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className={styles.customerToolbar}>
             <label>
               Recurrencia
               <select
