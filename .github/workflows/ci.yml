@@ -15,13 +15,12 @@ permissions:
 jobs:
   quality:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: package-lock.json
       - run: npm ci
       - name: Repair rolldown native binding on Linux
         run: |
@@ -34,13 +33,12 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: package-lock.json
       - run: npm ci
       - name: Repair rolldown native binding on Linux
         run: |
@@ -52,6 +50,7 @@ jobs:
 
   worker:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: apps/worker
@@ -67,19 +66,19 @@ jobs:
 
   compose:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - run: docker compose config
 
   integration:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: package-lock.json
+          node-version: 20
       - run: npm ci
       - name: Repair rolldown native binding on Linux
         run: |
